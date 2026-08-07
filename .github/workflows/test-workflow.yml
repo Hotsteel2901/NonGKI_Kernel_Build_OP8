@@ -5,5 +5,7 @@ on:
 
 jobs:
   test:
-    uses: ./.github/workflows/test-callee.yml
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🪝 Test emoji step
+        uses: ./.github/workflows/build-env
