@@ -1,10 +1,9 @@
-name: Test 工作流
+name: Test Workflow
 
 on:
   workflow_dispatch:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo hello
+    uses: ./.github/workflows/test-callee.yml
+    secrets: inherit
