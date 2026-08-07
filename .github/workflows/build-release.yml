@@ -19,9 +19,6 @@ on:
         type: boolean
         default: true
 
-  schedule:
-    - cron: '0 3 * * 3'
-
 jobs:
   build-kernel:
     name: "Step Build Kernel"
@@ -29,17 +26,17 @@ jobs:
     secrets: inherit
     strategy:
       fail-fast: true
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.build-kernel == true)
+    if: github.event_name == 'workflow_dispatch' && inputs.build-kernel == true
 
   release-kernel:
     name: "Step Release Kernel"
     runs-on: ubuntu-latest
     needs:
       - build-kernel
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.build-kernel == true)
+    if: github.event_name == 'workflow_dispatch' && inputs.build-kernel == true
     env:
-      REPO_OWNER: JackA1ltman
-      REPO_NAME: NonGKI_Kernel_Build
+      REPO_OWNER: Hotsteel2901
+      REPO_NAME: NonGKI_Kernel_Build_OP8
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_NAME: "Pre-built"
       RELEASE_NOTES: |
