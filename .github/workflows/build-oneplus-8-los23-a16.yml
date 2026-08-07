@@ -147,7 +147,7 @@ jobs:
       - name: 🖼️ Generate DTB (kona + kona-v2 + kona-v2.1)
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
-          cat arch/arm64/boot/dts/vendor/oplus/kona.dtb arch/arm64/boot/dts/vendor/oplus/kona-v2.dtb arch/arm64/boot/dts/vendor/oplus/kona-v2.1.dtb > arch/arm64/boot/dtb.img
+          cat out/arch/arm64/boot/dts/vendor/oplus/kona.dtb out/arch/arm64/boot/dts/vendor/oplus/kona-v2.dtb out/arch/arm64/boot/dts/vendor/oplus/kona-v2.1.dtb > out/arch/arm64/boot/dtb.img
           echo "[+] Generated dtb.img"
 
       - name: 🔩 Pack Process
