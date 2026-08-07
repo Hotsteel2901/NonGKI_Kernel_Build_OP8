@@ -47,14 +47,14 @@ Chinese docs: [README_cn.md](README_cn.md)
 
 ## Patch Record Archive (Patches/Archive/)
 
-开发过程中的完整补丁记录 (来自本地开发存档):
-- `0000-full-all-changes.patch` — 全部改动合集
-- `0001-resukisu-susfs.patch` — ReSukiSU+SUSFS v2.2.0 完整集成 (含 namei/namespace/proc 等)
+Complete patch records from local development:
+- `0000-full-all-changes.patch` — full combined patch set
+- `0001-resukisu-susfs.patch` — ReSukiSU+SUSFS v2.2.0 complete integration (namei/namespace/proc etc.)
 - `0001-rekernel.patch` / `0001-droidspaces-cgroup-prefix.patch` / `0001-baseband-guard.patch` / `0001-defconfig.patch`
-- `README-record.md` — 开发记录 (版本历史/已知问题/构建注意事项)
+- `README-record.md` — development log (version history / known issues / build notes)
 
-> 注意: 工作流实际使用的是 `Patches/Patch/` 与 `Patches/Rekernel/` 下的补丁;
-> `Archive/` 仅作记录存档, 不参与构建。
+> Note: the workflows actually use the patches under `Patches/Patch/` and `Patches/Rekernel/`;
+> `Archive/` is for record only and is not used in builds.
 
 ## Credits
 [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) · [ReSukiSU](https://github.com/ReSukiSU/ReSukiSU) · [SuSFS](https://gitlab.com/simonpunk/susfs4ksu) · [Re:Kernel](https://github.com/Sakion-Team/Re-Kernel) · [Droidspaces](https://github.com/ravindu644/Droidspaces-OSS) · [Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)
