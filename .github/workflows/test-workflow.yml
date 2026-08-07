@@ -1,6 +1,11 @@
 name: Test Workflow
 
+permissions:
+  contents: write
+  actions: write
+
 on:
+  workflow_call:
   workflow_dispatch:
 
 jobs:
