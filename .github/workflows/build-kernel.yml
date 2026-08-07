@@ -1,4 +1,4 @@
-name: Build Kernel v2
+name: Build Kernel
 
 permissions:
   contents: write
