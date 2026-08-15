@@ -7,7 +7,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Integrations
 | Component | Note |
 |---|---|
-| ReSukiSU | KernelSU fork, CONFIG_KSU_SUSFS (inline hook) mode |
+| KernelSU (backslashxx) | KernelSU fork (`xxksu`), manual hooks per [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5); no SUSFS-version detection in manager |
 | SUSFS v2.2.0 | Official gki v2.2.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | Re:Kernel | v8.5 (ReKernel-X), CONFIG_REKERNEL_NETWORK=n |
 | DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
@@ -17,13 +17,13 @@ Chinese docs: [README_cn.md](README_cn.md)
 1. Fork this repo, enable **Actions** with `Read and write permissions`.
 2. Run the `Build Kernel` workflow (or push to trigger).
 3. Download the zip artifact and flash it via recovery (AnyKernel3 style).
-4. Verify in KernelSU Manager: SUSFS version **2.2.0**, allowlist & modules working.
+4. Verify in KernelSU Manager: allowlist & modules working (backslashxx fork, like official KernelSU; SUSFS runs kernel-side only, version is **not** shown in the manager).
 
 ## Patches (Patches/)
 | File | Content | Applied by |
 |---|---|---|
 | `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.2.0 kernel-side code | patch-susfs action |
-| `Patch/resukisu_inline_hooks.patch` | ReSukiSU inline hooks (7 hooks) | custom workflow step |
+| `Patch/backslashxx_manual_hooks.patch` | KernelSU manual hooks (execve/faccessat/newfstatat/newfstat-ret/sys_reboot) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | custom workflow step |
 | `Rekernel/rekernel_extra.patch` | Re:Kernel (driver + binder + signal + registration) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
 
@@ -36,14 +36,15 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Key settings (build-oneplus-8-los23-a16.yml)
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **required** (schgm-flash.c needs CONFIG_OPLUS_SM8250_CHARGER)
-- ReSukiSU stays **latest** (setup.sh git pull each run)
+- KernelSU (backslashxx) stays **latest** (setup.sh git pull each run)
 - dtb: custom step concatenates `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img`; dtbo not packed (stock partition used)
 
 ## Deviations from Jack's original (intentional)
 - `patch-no-kprobe` removed: its hook scripts target KSU v1.x bool hooks (incompatible with ReSukiSU inline); its selinuxfs static-symbol removal is skipped anyway (CONFIG_KALLSYMS_ALL=y)
 - Only the 4.19 susfs patch is kept (fixed device kernel version)
 - ReKernel integrated via patch (ReKernel-X v8.5) instead of his rekernel_patches.sh
-- HOOK_METHOD kept but inert: ReSukiSU inline hooks come from resukisu_inline_hooks.patch
+- HOOK_METHOD kept but inert: manual hooks come from backslashxx_manual_hooks.patch (backslashxx mode); `CONFIG_KSU_HACK_ARM64_BRANCH_LINK`/`CONFIG_KSU_TAMPER_SYSCALL_TABLE` stay off, KSU uses manual hooks + LSM
+- backslashxx defines no `CONFIG_KSU_SUSFS*` in its Kconfig; orphan config symbols are dropped by `olddefconfig`, so the workflow appends the SUSFS Kconfig block to `drivers/kernelsu/Kconfig` (see "Add SUSFS Kconfig definitions" step). `backslashxx_manual_hooks.patch` also provides `susfs_is_current_ksu_domain()` (backslashxx lacks it), so the unchanged SUSFS 4.19 patch links against this fork.
 
 ## Patch Record Archive (Patches/Archive/)
 

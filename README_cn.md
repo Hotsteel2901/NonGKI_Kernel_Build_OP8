@@ -7,7 +7,7 @@
 
 | 组件 | 说明 |
 |---|---|
-| ReSukiSU | KernelSU 分支, CONFIG_KSU_SUSFS (inline hook) 模式 |
+| KernelSU (backslashxx) | KernelSU 分支 (`xxksu`), 手动钩子参照 [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5); 管理器不带 SUSFS 版本检测 |
 | SUSFS v2.2.0 | 官方 gki v2.2.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
 | Re:Kernel | v8.5 (ReKernel-X), CONFIG_REKERNEL_NETWORK=n |
 | DroidSpaces | cgroup 前缀隐藏 + Non-GKI 配置 (含 USER_NS) |
@@ -22,14 +22,14 @@
    - 重启到 recovery (fastboot boot recovery 或按键进入)
    - Apply update → 选择下载的 zip
    - 或 `adb sideload xxx.zip`
-5. 刷入后通过 KernelSU Manager 验证: 版本显示 **SUSFS 2.2.0**, 授权/模块功能正常
+5. 刷入后通过 KernelSU Manager 验证: 授权/模块功能正常 (backslashxx 分支, 与官方 KernelSU 类似; SUSFS 仅内核侧, 管理器**不显示** SUSFS 版本)
 
 ## 补丁说明 (Patches/)
 
 | 文件 | 内容 | 应用时机 |
 |---|---|---|
 | `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.2.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
-| `Patches/Patch/resukisu_inline_hooks.patch` | ReSukiSU inline 模式必需的 7 个钩子 (exec/open/read_write/stat/input/reboot/setresuid) | 工作流自定义步骤 |
+| `Patches/Patch/backslashxx_manual_hooks.patch` | KernelSU 手动钩子 (execve/faccessat/newfstatat/newfstat-ret/sys_reboot + 32-bit) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | 工作流自定义步骤 |
 | `Patches/Rekernel/rekernel_extra.patch` | Re:Kernel (drivers/rekernel/ + binder + signal + Kconfig/Makefile 注册) | patch-rekernel 动作 |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
 
@@ -43,7 +43,7 @@
 
 - `KERNEL_SOURCE/Branch`: LineageOS 官方仓库 `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **必须保留** (schgm-flash.c 需要 CONFIG_OPLUS_SM8250_CHARGER)
-- `KERNELSU_AUTO_FORK: resukisu` — 自动获取最新 ReSukiSU
+- `KERNELSU_AUTO_FORK: xxksu` — 自动获取最新 backslashxx KernelSU (master 分支)
 - dtb: 构建后自定义步骤拼接 `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img` (与官方 DTB_SZ 一致)
 - dtbo: 不打包 (NEED_DTBO=false, 沿用系统分区的 dtbo)
 
@@ -55,7 +55,12 @@
   部分因本内核 CONFIG_KALLSYMS_ALL=y 而跳过, 无实际作用
 - 仅保留 4.19 版本的 susfs 补丁 (设备内核版本固定, 无需 4.4/4.9/5.4 等)
 - ReKernel 直接用补丁集成 (ReKernel-X v8.5), 不使用其 rekernel_patches.sh 脚本
-- HOOK_METHOD 变量保留但无实际作用: ReSukiSU inline 钩子由 resukisu_inline_hooks.patch 提供
+- HOOK_METHOD 变量保留但无实际作用: 手动钩子由 backslashxx_manual_hooks.patch 提供 (backslashxx 模式);
+  `CONFIG_KSU_HACK_ARM64_BRANCH_LINK` / `CONFIG_KSU_TAMPER_SYSCALL_TABLE` 均保持关闭, KSU 走手动钩子 + LSM
+- backslashxx 的 Kconfig 没有 `CONFIG_KSU_SUSFS*` 定义; 孤儿配置符号会被 `olddefconfig` 丢弃,
+  因此工作流会把 SUSFS 的 Kconfig 块追加到 `drivers/kernelsu/Kconfig` (见 "Add SUSFS Kconfig definitions" 步骤)。
+  `backslashxx_manual_hooks.patch` 还补了 `susfs_is_current_ksu_domain()` (backslashxx 缺失),
+  使未改动的 SUSFS 4.19 补丁能链接到此分支。
 
 ## 补丁记录存档 (Patches/Archive/)
 
@@ -74,4 +79,4 @@
 ## 鸣谢
 
 - [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) — 项目格式与 4.19 移植方法
-- [ReSukiSU](https://github.com/ReSukiSU/ReSukiSU) / [SuSFS](https://gitlab.com/simonpunk/susfs4ksu) / [Re:Kernel](https://github.com/Sakion-Team/Re-Kernel) / [Droidspaces](https://github.com/ravindu644/Droidspaces-OSS) / [Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)
+- [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) / [ReSukiSU](https://github.com/ReSukiSU/ReSukiSU) (本分支参考其 SUSFS 集成) / [SuSFS](https://gitlab.com/simonpunk/susfs4ksu) / [Re:Kernel](https://github.com/Sakion-Team/Re-Kernel) / [Droidspaces](https://github.com/ravindu644/Droidspaces-OSS) / [Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)
