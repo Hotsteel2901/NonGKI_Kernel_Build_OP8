@@ -112,7 +112,10 @@ jobs:
       - name: 📌 Pin kernel to verified base commit
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
-          git checkout 4238ee49a84b
+          # build-ready clones with --depth=1, so the pinned commit is not
+          # in the shallow history; fetch it explicitly before checkout.
+          git fetch --depth=1 origin 4238ee49a84bd418c8515c297563bb29f95ab40b
+          git checkout 4238ee49a84bd418c8515c297563bb29f95ab40b
           grep -q "kernelsu" drivers/Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
           grep -q "source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
           echo "-g4238ee49a84b-hotsteel" > .scmversion
