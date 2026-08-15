@@ -205,15 +205,28 @@ diff --git a/kernel/sys.c b/kernel/sys.c
  	up_read(&uts_sem);
  	if (copy_to_user(name, &tmp, sizeof(tmp)))
  		return -EFAULT;
-@@ -1257,6 +1266,15 @@
+@@ -1257,6 +1266,28 @@
  	return 0;
  }
  
 +#ifdef CONFIG_KSU_SUSFS
 +extern bool is_ksu_domain(void);
 +
++u32 susfs_ksu_sid = 0;
++u32 susfs_priv_app_sid = 0;
++
++static void susfs_populate_sids(void)
++{
++	if (security_secctx_to_secid("u:r:ksu:s0", strlen("u:r:ksu:s0"), &susfs_ksu_sid))
++		susfs_ksu_sid = 0;
++	if (security_secctx_to_secid("u:r:priv_app:s0:c512,c768", strlen("u:r:priv_app:s0:c512,c768"), &susfs_priv_app_sid))
++		susfs_priv_app_sid = 0;
++}
++
 +bool susfs_is_current_ksu_domain(void)
 +{
++	if (unlikely(!susfs_ksu_sid))
++		susfs_populate_sids();
 +	return is_ksu_domain();
 +}
 +#endif
