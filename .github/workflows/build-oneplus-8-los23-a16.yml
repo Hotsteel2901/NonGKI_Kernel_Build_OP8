@@ -109,15 +109,12 @@ jobs:
       - name: ⚙️ Get neccssary tools
         uses: ./.github/workflows/build-ready
 
-      - name: 📌 Pin kernel to verified base commit
+      - name: 📌 Use latest kernel source (no pinned checkout)
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
-          # depth=1 clone doesn't contain the pinned commit; fetch it explicitly first
-          git fetch --depth=1 origin 4238ee49a84bd418c8515c297563bb29f95ab40b
-          git checkout 4238ee49a84bd418c8515c297563bb29f95ab40b
           grep -q "kernelsu" drivers/Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
           grep -q "source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
-          echo "-g4238ee49a84b-hotsteel" > .scmversion
+          echo "-g$(git rev-parse --short HEAD)-hotsteel" > .scmversion
 
       - name: 🪝 Patch Kernel of SUSFS
         uses: ./.github/workflows/patch-susfs
