@@ -22,7 +22,7 @@
    - 重启到 recovery (fastboot boot recovery 或按键进入)
    - Apply update → 选择下载的 zip
    - 或 `adb sideload xxx.zip`
-5. 刷入后通过 KernelSU Manager 验证: 版本显示 **SUSFS 2.2.0**, 授权/模块功能正常
+5. 刷入后通过 KernelSU Manager 验证: 版本显示 **SUSFS 2.2.0**, 授权/模块功能正常.
 
 ## 补丁说明 (Patches/)
 
