@@ -47,6 +47,29 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
     `if (static_branch_unlikely(&not_decrypted)) ksu_handle_execveat; else sucompat;`
     教训: 布尔→静态键替换时注意极性反转 (decrypted=false 与 not_decrypted=true 语义等价,
     不能机械加 !)。
+  - 2026-08-27: 【ReSukiSU 03b60f2 更新破坏构建 → 跟随 Jack 上游修复】ReSukiSU commit
+    03b60f2 "kernel: sync with latest susfs" (2026-08-23, AlexLiuDev233 + simonpunk) 起,
+    CONFIG_KSU_SUSFS 模式下改用新 SUSFS API, 导致 GitHub Actions 链接阶段失败:
+      - undefined reference to `susfs_is_current_proc_no_su` / `susfs_set_current_proc_no_su`
+        / `susfs_clear_current_proc_no_su` / `susfs_set_current_proc_umounted_for_zygote_next`
+        (来自 ReSukiSU kernel/feature/sucompat.c + kernel/hook/setuid_hook.c)
+      - ksu_handle_stat / ksu_handle_faccessat 签名由 `const char __user **` 改为
+        `struct filename **` (GKI 6.6 风格); 若只补函数修好链接, 旧 inline hook 传
+        `const char __user **` 会被新 handler 解引用 `(*filename)->name` 造成运行崩溃
+    修复 (对齐 JackA1ltman/NonGKI_Kernel_Build_2nd mainline+sample 分支当日 23:06 提交):
+      - Patches/Patch/susfs_patch_to_4.19.patch: include/linux/susfs_def.h 新增
+        `TIF_PROC_NO_SU 34` / `TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT 35` 及
+        susfs_clear_current_proc_umounted / zygote_next 三件套 / no_su 三件套 内联函数
+        (与 Jack 逐字一致, 行数 180 -> 210)
+      - Patches/Patch/resukisu_inline_hooks.patch: fs/exec.c guard 改用
+        susfs_is_current_proc_no_su(); fs/open.c do_faccessat 与 fs/stat.c vfs_statx
+        改用 `getname_flags() -> ksu_handle_*(&dfd,&fname,...) -> filename_lookup()` 流程
+        (4.19 filename_lookup 非 static 可直接调用; fs/open.c 已含 "internal.h";
+        fs/stat.c 补 `#include "internal.h"`); 原 newfstatat 旧签名 hook 移除,
+        SUS_KSTAT spoofing 保留; input/read_write/reboot/sys 四节未动
+    其他组件排查 (均非失败原因): DroidSpaces cocci 与上游一致; Re:Kernel 静态
+    rekernel_extra.patch 与 myflavor/ReKernel-X Integrate v8.5 一致 (仅 cfg->static 与
+    jobctl.h 两处既有适配); Baseband-guard 实时下载但编译通过。
 
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 
