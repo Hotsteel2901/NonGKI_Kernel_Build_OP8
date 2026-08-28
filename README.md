@@ -24,6 +24,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 |---|---|---|
 | `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.2.0 kernel-side code | patch-susfs action |
 | `Patch/backslashxx_manual_hooks.patch` | KernelSU manual hooks (execve/faccessat/newfstatat/newfstat-ret/sys_reboot) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | custom workflow step |
+| `Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU bridge into backslashxx source (SUSFS command dispatch, `susfs_init`, sdcard monitor, umount flag) | custom workflow step |
 | `Rekernel/rekernel_extra.patch` | Re:Kernel (driver + binder + signal + registration) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
 
@@ -45,6 +46,12 @@ Chinese docs: [README_cn.md](README_cn.md)
 - ReKernel integrated via patch (ReKernel-X v8.5) instead of his rekernel_patches.sh
 - HOOK_METHOD kept but inert: manual hooks come from backslashxx_manual_hooks.patch (backslashxx mode); `CONFIG_KSU_HACK_ARM64_BRANCH_LINK`/`CONFIG_KSU_TAMPER_SYSCALL_TABLE` stay off, KSU uses manual hooks + LSM
 - backslashxx defines no `CONFIG_KSU_SUSFS*` in its Kconfig; orphan config symbols are dropped by `olddefconfig`, so the workflow appends the SUSFS Kconfig block to `drivers/kernelsu/Kconfig` (see "Add SUSFS Kconfig definitions" step). `backslashxx_manual_hooks.patch` also provides `susfs_is_current_ksu_domain()` (backslashxx lacks it), so the unchanged SUSFS 4.19 patch links against this fork.
+- SUSFS needs the KernelSU fork to bridge between the `ksu_susfs` userspace tool and `fs/susfs.c`. The master branch's ReSukiSU has this built-in; **backslashxx has none of it** (so the tool's sys_reboot(SUSFS_MAGIC) calls went nowhere and SUSFS was inert). `backslashxx_susfs_bridge.patch` ports the missing pieces into backslashxx's source, mirroring ReSukiSU:
+  - `ksu_handle_susfs_cmd()` in `supercall/dispatch.c` (dispatches all `CMD_SUSFS_*` to `fs/susfs.c`)
+  - `SUSFS_MAGIC` routing in `ksu_handle_sys_reboot()` (`supercall/supercall.c`)
+  - `susfs_init()` in `kernelsu_init()` (`ksu.c`)
+  - `susfs_start_sdcard_monitor_fn()` on boot completed (`supercall/dispatch.c`)
+  - `susfs_set_current_proc_umounted()` in `ksu_handle_umount()` (`feature/kernel_umount.c`, so sus_path hiding applies to umounted apps)
 
 ## Patch Record Archive (Patches/Archive/)
 

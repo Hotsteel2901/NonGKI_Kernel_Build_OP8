@@ -200,6 +200,23 @@ jobs:
           rm -f backslashxx_manual_hooks.patch
           echo "[+] KernelSU manual hooks patched."
 
+      - name: 🔗 Patch KernelSU SUSFS Bridge (backslashxx)
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel/
+          # Port ReSukiSU's SUSFS bridge into backslashxx's kernel source
+          # (master branch uses ReSukiSU which has this built-in; backslashxx
+          # has none, so SUSFS tool commands used to go nowhere).
+          # Adds:
+          #  - ksu_handle_susfs_cmd() dispatch (supercall/dispatch.c)
+          #  - SUSFS_MAGIC routing in ksu_handle_sys_reboot() (supercall/supercall.c)
+          #  - susfs_init() at KSU init (ksu.c)
+          #  - susfs_start_sdcard_monitor_fn() on boot completed (supercall/dispatch.c)
+          #  - susfs_set_current_proc_umounted() in ksu_handle_umount (feature/kernel_umount.c)
+          cp /tmp/Patches/Patch/backslashxx_susfs_bridge.patch ./
+          patch -p1 < backslashxx_susfs_bridge.patch
+          rm -f backslashxx_susfs_bridge.patch
+          echo "[+] KernelSU SUSFS bridge patched."
+
       - name: 🪛 Extra Kernel Options
         run: |
           # Only ${{ env.DEVICE_NAME }} use it.
