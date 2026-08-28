@@ -30,6 +30,7 @@
 |---|---|---|
 | `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.2.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
 | `Patches/Patch/backslashxx_manual_hooks.patch` | KernelSU 手动钩子 (execve/faccessat/newfstatat/newfstat-ret/sys_reboot + 32-bit) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | 工作流自定义步骤 |
+| `Patches/Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU 桥接 (命令分发 / `susfs_init` / sdcard 监控 / umount 标记) | 工作流自定义步骤 |
 | `Patches/Rekernel/rekernel_extra.patch` | Re:Kernel (drivers/rekernel/ + binder + signal + Kconfig/Makefile 注册) | patch-rekernel 动作 |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
 
@@ -61,6 +62,19 @@
   因此工作流会把 SUSFS 的 Kconfig 块追加到 `drivers/kernelsu/Kconfig` (见 "Add SUSFS Kconfig definitions" 步骤)。
   `backslashxx_manual_hooks.patch` 还补了 `susfs_is_current_ksu_domain()` (backslashxx 缺失),
   使未改动的 SUSFS 4.19 补丁能链接到此分支。
+- SUSFS 还需要 KernelSU 分支在 `ksu_susfs` 用户态工具与 `fs/susfs.c` 之间做桥接。
+  master 分支的 ReSukiSU 内建了这套桥接; **backslashxx 完全没有** (所以工具的 sys_reboot(SUSFS_MAGIC)
+  调用无人处理, SUSFS 形同虚设)。`backslashxx_susfs_bridge.patch` 参照 ReSukiSU 把缺失部分移植进
+  backslashxx 源码:
+  - `supercall/dispatch.c` 新增 `ksu_handle_susfs_cmd()` (把 `CMD_SUSFS_*` 全部转发到 `fs/susfs.c`),
+    整体以 `#ifdef CONFIG_KSU_SUSFS` 包裹并与 ReSukiSU 保持一致
+  - `supercall/supercall.c` 的 `ksu_handle_sys_reboot()` 新增 `SUSFS_MAGIC` 路由, 并补充
+    `ksu_handle_susfs_cmd` 的 extern 声明; 分发时打印 `sys_reboot: SUSFS cmd dispatch: ...` 便于 `dmesg` 排障
+  - `ksu.c` 的 `kernelsu_init()` 调用 `susfs_init()` (同时引入 `<linux/susfs.h>` 与 `<linux/susfs_def.h>`)
+  - `supercall/dispatch.c` 在 boot completed 时调用 `susfs_start_sdcard_monitor_fn()`
+  - `feature/kernel_umount.c` 的 `ksu_handle_umount()` 调用 `susfs_set_current_proc_umounted()`
+    (使 sus_path 隐藏对 umount 应用生效)
+  工作流在打补丁后还会校验: 若存在 `.rej/.orig` 或源码中找不到分发符号, 构建直接失败, 避免静默产出坏包。
 
 ## 补丁记录存档 (Patches/Archive/)
 
