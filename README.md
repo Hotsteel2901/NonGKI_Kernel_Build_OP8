@@ -47,11 +47,12 @@ Chinese docs: [README_cn.md](README_cn.md)
 - HOOK_METHOD kept but inert: manual hooks come from backslashxx_manual_hooks.patch (backslashxx mode); `CONFIG_KSU_HACK_ARM64_BRANCH_LINK`/`CONFIG_KSU_TAMPER_SYSCALL_TABLE` stay off, KSU uses manual hooks + LSM
 - backslashxx defines no `CONFIG_KSU_SUSFS*` in its Kconfig; orphan config symbols are dropped by `olddefconfig`, so the workflow appends the SUSFS Kconfig block to `drivers/kernelsu/Kconfig` (see "Add SUSFS Kconfig definitions" step). `backslashxx_manual_hooks.patch` also provides `susfs_is_current_ksu_domain()` (backslashxx lacks it), so the unchanged SUSFS 4.19 patch links against this fork.
 - SUSFS needs the KernelSU fork to bridge between the `ksu_susfs` userspace tool and `fs/susfs.c`. The master branch's ReSukiSU has this built-in; **backslashxx has none of it** (so the tool's sys_reboot(SUSFS_MAGIC) calls went nowhere and SUSFS was inert). `backslashxx_susfs_bridge.patch` ports the missing pieces into backslashxx's source, mirroring ReSukiSU:
-  - `ksu_handle_susfs_cmd()` in `supercall/dispatch.c` (dispatches all `CMD_SUSFS_*` to `fs/susfs.c`)
-  - `SUSFS_MAGIC` routing in `ksu_handle_sys_reboot()` (`supercall/supercall.c`)
-  - `susfs_init()` in `kernelsu_init()` (`ksu.c`)
+  - `ksu_handle_susfs_cmd()` in `supercall/dispatch.c` (dispatches all `CMD_SUSFS_*` to `fs/susfs.c`, wrapped in `#ifdef CONFIG_KSU_SUSFS` like ReSukiSU)
+  - `SUSFS_MAGIC` routing in `ksu_handle_sys_reboot()` (`supercall/supercall.c`) plus its `extern` declaration; logs `sys_reboot: SUSFS cmd dispatch: ...` for `dmesg` debugging
+  - `susfs_init()` in `kernelsu_init()` (`ksu.c`, with `<linux/susfs.h>`/`<linux/susfs_def.h>` includes)
   - `susfs_start_sdcard_monitor_fn()` on boot completed (`supercall/dispatch.c`)
   - `susfs_set_current_proc_umounted()` in `ksu_handle_umount()` (`feature/kernel_umount.c`, so sus_path hiding applies to umounted apps)
+  - The workflow verifies after patching: any `.rej/.orig` or a missing dispatch symbol fails the build loudly instead of shipping a broken kernel silently.
 
 ## Patch Record Archive (Patches/Archive/)
 

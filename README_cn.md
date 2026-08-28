@@ -66,12 +66,15 @@
   master 分支的 ReSukiSU 内建了这套桥接; **backslashxx 完全没有** (所以工具的 sys_reboot(SUSFS_MAGIC)
   调用无人处理, SUSFS 形同虚设)。`backslashxx_susfs_bridge.patch` 参照 ReSukiSU 把缺失部分移植进
   backslashxx 源码:
-  - `supercall/dispatch.c` 新增 `ksu_handle_susfs_cmd()` (把 `CMD_SUSFS_*` 全部转发到 `fs/susfs.c`)
-  - `supercall/supercall.c` 的 `ksu_handle_sys_reboot()` 新增 `SUSFS_MAGIC` 路由
-  - `ksu.c` 的 `kernelsu_init()` 调用 `susfs_init()`
+  - `supercall/dispatch.c` 新增 `ksu_handle_susfs_cmd()` (把 `CMD_SUSFS_*` 全部转发到 `fs/susfs.c`),
+    整体以 `#ifdef CONFIG_KSU_SUSFS` 包裹并与 ReSukiSU 保持一致
+  - `supercall/supercall.c` 的 `ksu_handle_sys_reboot()` 新增 `SUSFS_MAGIC` 路由, 并补充
+    `ksu_handle_susfs_cmd` 的 extern 声明; 分发时打印 `sys_reboot: SUSFS cmd dispatch: ...` 便于 `dmesg` 排障
+  - `ksu.c` 的 `kernelsu_init()` 调用 `susfs_init()` (同时引入 `<linux/susfs.h>` 与 `<linux/susfs_def.h>`)
   - `supercall/dispatch.c` 在 boot completed 时调用 `susfs_start_sdcard_monitor_fn()`
   - `feature/kernel_umount.c` 的 `ksu_handle_umount()` 调用 `susfs_set_current_proc_umounted()`
     (使 sus_path 隐藏对 umount 应用生效)
+  工作流在打补丁后还会校验: 若存在 `.rej/.orig` 或源码中找不到分发符号, 构建直接失败, 避免静默产出坏包。
 
 ## 补丁记录存档 (Patches/Archive/)
 

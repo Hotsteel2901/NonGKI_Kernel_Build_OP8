@@ -217,6 +217,22 @@ jobs:
           rm -f backslashxx_susfs_bridge.patch
           echo "[+] KernelSU SUSFS bridge patched."
 
+      - name: 🔍 Verify SUSFS bridge applied (fail loudly if missing)
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel
+          # Any leftover .rej/.orig means a hunk failed -> the bridge is broken,
+          # do NOT ship it silently.
+          if find . -name "*.rej" -o -name "*.orig" | grep -q .; then
+            echo "[-] Found un-applied patch hunks (.rej/.orig):"
+            find . -name "*.rej" -o -name "*.orig"
+            false
+          fi
+          # The dispatch symbol must exist in the patched source.
+          grep -q "ksu_handle_susfs_cmd" drivers/kernelsu/supercall/dispatch.c
+          grep -q "SUSFS_MAGIC" drivers/kernelsu/supercall/supercall.c
+          grep -q "susfs_init();" drivers/kernelsu/ksu.c
+          echo "[+] SUSFS bridge verified in source tree."
+
       - name: 🪛 Extra Kernel Options
         run: |
           # Only ${{ env.DEVICE_NAME }} use it.
