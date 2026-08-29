@@ -9,7 +9,7 @@
 |---|---|
 | KernelSU (backslashxx) | KernelSU 分支 (`xxksu`), 手动钩子参照 [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5); 管理器不带 SUSFS 版本检测 |
 | SUSFS v2.2.0 | 官方 gki v2.2.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
-| Re:Kernel | v8.5 (ReKernel-X), CONFIG_REKERNEL_NETWORK=n |
+| ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup 前缀隐藏 + Non-GKI 配置 (含 USER_NS) |
 | Baseband Guard | 分区写保护 LSM |
 
@@ -31,7 +31,7 @@
 | `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.2.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
 | `Patches/Patch/backslashxx_manual_hooks.patch` | KernelSU 手动钩子 (execve/faccessat/newfstatat/newfstat-ret/sys_reboot + 32-bit) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | 工作流自定义步骤 |
 | `Patches/Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU 桥接 (命令分发 / `susfs_init` / sdcard 监控 / umount 标记) | 工作流自定义步骤 |
-| `Patches/Rekernel/rekernel_extra.patch` | Re:Kernel (drivers/rekernel/ + binder + signal + Kconfig/Makefile 注册) | patch-rekernel 动作 |
+| `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
 
 > 注意: 所有补丁基于内核提交 **`4238ee49a84b`** 生成。工作流会自动 `git checkout 4238ee49a84b`
@@ -55,7 +55,7 @@
   在 4.19 上由 kernel_compat.mk 条件编译排除, 无需补丁); 其 selinuxfs 静态符号移除
   部分因本内核 CONFIG_KALLSYMS_ALL=y 而跳过, 无实际作用
 - 仅保留 4.19 版本的 susfs 补丁 (设备内核版本固定, 无需 4.4/4.9/5.4 等)
-- ReKernel 直接用补丁集成 (ReKernel-X v8.5), 不使用其 rekernel_patches.sh 脚本
+- ReKernel-X 4.19 直接用补丁集成 (内置), 替换原 Re:Kernel v8.5
 - HOOK_METHOD 变量保留但无实际作用: 手动钩子由 backslashxx_manual_hooks.patch 提供 (backslashxx 模式);
   `CONFIG_KSU_HACK_ARM64_BRANCH_LINK` / `CONFIG_KSU_TAMPER_SYSCALL_TABLE` 均保持关闭, KSU 走手动钩子 + LSM
 - backslashxx 的 Kconfig 没有 `CONFIG_KSU_SUSFS*` 定义; 孤儿配置符号会被 `olddefconfig` 丢弃,

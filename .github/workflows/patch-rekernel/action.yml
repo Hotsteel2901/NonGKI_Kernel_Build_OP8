@@ -1,21 +1,22 @@
-name: 'Patch ReKernel for Kernel.'
+name: 'Patch ReKernel-X for Kernel.'
 
 runs:
   using: 'composite'
   steps:
-      - name: Patch ReKernel
+      - name: Patch ReKernel-X
         if: env.REKERNEL_ENABLE == 'true'
         shell: bash
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
-          cp /tmp/Patches/Rekernel/rekernel_extra.patch ./
-          patch -p1 < rekernel_extra.patch || true
-          rm -f rekernel_extra.patch
+          cp /tmp/Patches/RekernelX/rkx-4.19.patch ./
+          patch -p1 < rkx-4.19.patch || { echo "::error::rkx-4.19.patch failed to apply"; exit 1; }
+          rm -f rkx-4.19.patch
 
-          grep -q "rekernel" drivers/Makefile || printf "\nobj-\$(CONFIG_REKERNEL) += rekernel/\n" >> drivers/Makefile
-          grep -q "source \"drivers/rekernel/Kconfig\"" drivers/Kconfig || sed -i "/endmenu/i\source \"drivers/rekernel/Kconfig\"" drivers/Kconfig
+          # Manual wiring: Kconfig/Makefile may already be modified by other patch steps,
+          # so hook up drivers/rekernel_x/ here instead of inside the patch.
+          grep -q "rekernel_x" drivers/Makefile || printf "\nobj-\$(CONFIG_REKERNEL_X) += rekernel_x/\n" >> drivers/Makefile
+          grep -q "source \"drivers/rekernel_x/Kconfig\"" drivers/Kconfig || sed -i "/endmenu/i\source \"drivers/rekernel_x/Kconfig\"" drivers/Kconfig
 
-          echo "CONFIG_REKERNEL=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo "CONFIG_REKERNEL_NETWORK=n" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
+          echo "CONFIG_REKERNEL_X=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
 
-          echo "[+] Patched Re:Kernel for your kernel successfully."
+          echo "[+] Patched ReKernel-X for your kernel successfully."
