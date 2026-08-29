@@ -1,27 +1,3 @@
-diff --git a/drivers/Kconfig b/drivers/Kconfig
-index e0866eda8..534be8746 100644
---- a/drivers/Kconfig
-+++ b/drivers/Kconfig
-@@ -232,4 +232,6 @@ source "drivers/sensors/Kconfig"
- source "drivers/gpu/msm/Kconfig"
- 
- source "drivers/energy_model/Kconfig"
-+
-+source "drivers/rekernel_x/Kconfig"
- endmenu
-diff --git a/drivers/Makefile b/drivers/Makefile
-index 9a258f18e..a4480efff 100644
---- a/drivers/Makefile
-+++ b/drivers/Makefile
-@@ -182,6 +182,8 @@ obj-$(CONFIG_CORESIGHT)		+= hwtracing/coresight/
- obj-y				+= hwtracing/intel_th/
- obj-$(CONFIG_STM)		+= hwtracing/stm/
- obj-$(CONFIG_ANDROID)		+= android/
-+
-+obj-$(CONFIG_REKERNEL_X)	+= rekernel_x/
- obj-$(CONFIG_NVMEM)		+= nvmem/
- obj-$(CONFIG_FPGA)		+= fpga/
- obj-$(CONFIG_FSI)		+= fsi/
 diff --git a/drivers/android/binder.c b/drivers/android/binder.c
 index 1eb251a3c..8a07e2b83 100644
 --- a/drivers/android/binder.c
