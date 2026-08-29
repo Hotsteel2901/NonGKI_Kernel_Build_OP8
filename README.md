@@ -9,7 +9,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 |---|---|
 | ReSukiSU | KernelSU fork, CONFIG_KSU_SUSFS (inline hook) mode |
 | SUSFS v2.2.0 | Official gki v2.2.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
-| Re:Kernel | v8.5 (ReKernel-X), CONFIG_REKERNEL_NETWORK=n |
+| ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
 | Baseband Guard | partition write protection LSM |
 
@@ -24,7 +24,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 |---|---|---|
 | `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.2.0 kernel-side code | patch-susfs action |
 | `Patch/resukisu_inline_hooks.patch` | ReSukiSU inline hooks (7 hooks) | custom workflow step |
-| `Rekernel/rekernel_extra.patch` | Re:Kernel (driver + binder + signal + registration) | patch-rekernel action |
+| `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
 
 > All patches are generated against kernel commit `4238ee49a84b`; the workflow pins that commit (`git checkout 4238ee49a84b`).
@@ -42,7 +42,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Deviations from Jack's original (intentional)
 - `patch-no-kprobe` removed: its hook scripts target KSU v1.x bool hooks (incompatible with ReSukiSU inline); its selinuxfs static-symbol removal is skipped anyway (CONFIG_KALLSYMS_ALL=y)
 - Only the 4.19 susfs patch is kept (fixed device kernel version)
-- ReKernel integrated via patch (ReKernel-X v8.5) instead of his rekernel_patches.sh
+- ReKernel-X 4.19 in-tree port via patch (replaces Re:Kernel v8.5)
 - HOOK_METHOD kept but inert: ReSukiSU inline hooks come from resukisu_inline_hooks.patch
 
 ## Patch Record Archive (Patches/Archive/)
