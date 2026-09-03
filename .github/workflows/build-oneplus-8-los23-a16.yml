@@ -198,6 +198,8 @@ jobs:
           cp /tmp/Patches/Patch/backslashxx_manual_hooks.patch ./
           patch -p1 < backslashxx_manual_hooks.patch
           rm -f backslashxx_manual_hooks.patch
+          # patch(1) leaves harmless .orig backups on successful apply; drop them
+          find . -name "*.orig" -delete
           echo "[+] KernelSU manual hooks patched."
 
       - name: 🔗 Patch KernelSU SUSFS Bridge (backslashxx)
@@ -215,16 +217,19 @@ jobs:
           cp /tmp/Patches/Patch/backslashxx_susfs_bridge.patch ./
           patch -p1 < backslashxx_susfs_bridge.patch
           rm -f backslashxx_susfs_bridge.patch
+          # Drop harmless .orig backups (patch(1) creates them on success).
+          find . -name "*.orig" -delete
           echo "[+] KernelSU SUSFS bridge patched."
 
       - name: 🔍 Verify SUSFS bridge applied (fail loudly if missing)
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
-          # Any leftover .rej/.orig means a hunk failed -> the bridge is broken,
-          # do NOT ship it silently.
-          if find . -name "*.rej" -o -name "*.orig" | grep -q .; then
-            echo "[-] Found un-applied patch hunks (.rej/.orig):"
-            find . -name "*.rej" -o -name "*.orig"
+          # Only .rej files mean a hunk FAILED -> the bridge is broken,
+          # do NOT ship it silently. (.orig files are just patch backups on
+          # successful apply, they are cleaned up above.)
+          if find . -name "*.rej" | grep -q .; then
+            echo "[-] Found un-applied patch hunks (.rej):"
+            find . -name "*.rej"
             false
           fi
           # The dispatch symbol must exist in the patched source.
