@@ -7,8 +7,8 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Integrations
 | Component | Note |
 |---|---|
-| KernelSU (backslashxx) | KernelSU fork (`xxksu`), manual hooks per [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5); no SUSFS-version detection in manager |
-| SUSFS v2.2.0 | Official gki v2.2.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
+| KernelSU (backslashxx) | KernelSU fork (`xxksu`), manual hooks per [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5) (v2.3, exec via do_execveat_common); no SUSFS-version detection in manager |
+| SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
 | Baseband Guard | partition write protection LSM |
@@ -22,8 +22,8 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Patches (Patches/)
 | File | Content | Applied by |
 |---|---|---|
-| `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.2.0 kernel-side code | patch-susfs action |
-| `Patch/backslashxx_manual_hooks.patch` | KernelSU manual hooks (execve/faccessat/newfstatat/newfstat-ret/sys_reboot) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | custom workflow step |
+| `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
+| `Patch/backslashxx_manual_hooks.patch` | KernelSU manual hooks (do_execveat_common execve / faccessat / newfstatat / newfstat-ret / sys_reboot, #5 v2.3) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | custom workflow step |
 | `Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU bridge into backslashxx source (SUSFS command dispatch, `susfs_init`, sdcard monitor, umount flag) | custom workflow step |
 | `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |

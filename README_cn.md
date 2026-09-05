@@ -7,8 +7,8 @@
 
 | 组件 | 说明 |
 |---|---|
-| KernelSU (backslashxx) | KernelSU 分支 (`xxksu`), 手动钩子参照 [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5); 管理器不带 SUSFS 版本检测 |
-| SUSFS v2.2.0 | 官方 gki v2.2.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
+| KernelSU (backslashxx) | KernelSU 分支 (`xxksu`), 手动钩子参照 [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5) (v2.3, exec 经 do_execveat_common); 管理器不带 SUSFS 版本检测 |
+| SUSFS v2.3.0 | 官方 gki v2.3.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup 前缀隐藏 + Non-GKI 配置 (含 USER_NS) |
 | Baseband Guard | 分区写保护 LSM |
@@ -28,8 +28,8 @@
 
 | 文件 | 内容 | 应用时机 |
 |---|---|---|
-| `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.2.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
-| `Patches/Patch/backslashxx_manual_hooks.patch` | KernelSU 手动钩子 (execve/faccessat/newfstatat/newfstat-ret/sys_reboot + 32-bit) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | 工作流自定义步骤 |
+| `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
+| `Patches/Patch/backslashxx_manual_hooks.patch` | KernelSU 手动钩子 (do_execveat_common execve/faccessat/newfstatat/newfstat-ret/sys_reboot + 32-bit, #5 v2.3) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | 工作流自定义步骤 |
 | `Patches/Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU 桥接 (命令分发 / `susfs_init` / sdcard 监控 / umount 标记) | 工作流自定义步骤 |
 | `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
@@ -87,7 +87,7 @@
 ## 已知限制
 
 - 构建需要 x86_64 环境 (GitHub Actions 默认 runner 即可)
-- SUSFS v2.2.0 的 OPEN_REDIRECT 实际重定向在 4.19 上不生效 (架构限制, 与官方一致)
+- SUSFS v2.3.0 的 OPEN_REDIRECT 实际重定向在 4.19 上不生效 (架构限制, 与官方一致)
 - 若使用本地构建 (非 GitHub Actions), 内存 ≥ 8G 且用 `make -j2` (手机本体构建严禁 -j8)
 
 ## 鸣谢

@@ -1,38 +1,18 @@
 diff --git a/fs/exec.c b/fs/exec.c
-@@ -1911,12 +1911,20 @@
- 	return __do_execve_file(AT_FDCWD, NULL, argv, envp, 0, file);
- }
- 
-+#ifdef CONFIG_KSU
-+extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
-+			void *argv, void *envp, int *flags);
-+#endif
-+
- int do_execve(struct filename *filename,
- 	const char __user *const __user *__argv,
- 	const char __user *const __user *__envp)
+@@ -1900,6 +1900,11 @@ static int do_execveat_common(int fd, struct filename *filename,
+ 			      struct user_arg_ptr envp,
+ 			      int flags)
  {
- 	struct user_arg_ptr argv = { .ptr.native = __argv };
- 	struct user_arg_ptr envp = { .ptr.native = __envp };
 +#ifdef CONFIG_KSU
-+	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
++	extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
++			void *argv, void *envp, int *flags);
++	ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
 +#endif
- 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
+ 	return __do_execve_file(fd, filename, argv, envp, flags, NULL);
  }
  
-@@ -1944,6 +1952,9 @@
- 		.is_compat = true,
- 		.ptr.compat = __envp,
- 	};
-+#ifdef CONFIG_KSU
-+	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
-+#endif
- 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
- }
- 
-
 diff --git a/fs/open.c b/fs/open.c
-@@ -451,8 +451,16 @@
+@@ -451,8 +451,16 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
  	return res;
  }
  
@@ -49,7 +29,6 @@ diff --git a/fs/open.c b/fs/open.c
  	return do_faccessat(dfd, filename, mode);
  }
  
-
 diff --git a/fs/stat.c b/fs/stat.c
 @@ -30,6 +30,10 @@
   * found on the VFS inode structure.  This is the default if no getattr inode
@@ -62,7 +41,7 @@ diff --git a/fs/stat.c b/fs/stat.c
  void generic_fillattr(struct inode *inode, struct kstat *stat)
  {
  	stat->dev = inode->i_sb->s_dev;
-@@ -45,6 +49,9 @@
+@@ -45,6 +49,9 @@ void generic_fillattr(struct inode *inode, struct kstat *stat)
  	stat->ctime = inode->i_ctime;
  	stat->blksize = i_blocksize(inode);
  	stat->blocks = inode->i_blocks;
@@ -72,7 +51,7 @@ diff --git a/fs/stat.c b/fs/stat.c
  
  	if (IS_NOATIME(inode))
  		stat->result_mask &= ~STATX_ATIME;
-@@ -76,8 +83,18 @@
+@@ -76,8 +83,18 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
  	request_mask &= STATX_ALL;
  	query_flags &= KSTAT_QUERY_FLAGS;
  	if (inode->i_op->getattr)
@@ -91,7 +70,7 @@ diff --git a/fs/stat.c b/fs/stat.c
  
  	generic_fillattr(inode, stat);
  	return 0;
-@@ -353,6 +370,11 @@
+@@ -353,6 +370,11 @@ SYSCALL_DEFINE2(newlstat, const char __user *, filename,
  	return cp_new_stat(&stat, statbuf);
  }
  
@@ -103,7 +82,7 @@ diff --git a/fs/stat.c b/fs/stat.c
  #if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)
  SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
  		struct stat __user *, statbuf, int, flag)
-@@ -360,6 +382,9 @@
+@@ -360,6 +382,9 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
  	struct kstat stat;
  	int error;
  
@@ -113,7 +92,7 @@ diff --git a/fs/stat.c b/fs/stat.c
  	error = vfs_fstatat(dfd, filename, &stat, flag);
  	if (error)
  		return error;
-@@ -367,6 +392,13 @@
+@@ -367,6 +392,13 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
  }
  #endif
  
@@ -127,7 +106,7 @@ diff --git a/fs/stat.c b/fs/stat.c
  SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
  {
  	struct kstat stat;
-@@ -375,6 +407,9 @@
+@@ -375,6 +407,9 @@ SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
  	if (!error)
  		error = cp_new_stat(&stat, statbuf);
  
@@ -137,7 +116,7 @@ diff --git a/fs/stat.c b/fs/stat.c
  	return error;
  }
  
-@@ -501,6 +536,9 @@
+@@ -501,6 +536,9 @@ SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
  	if (!error)
  		error = cp_new_stat64(&stat, statbuf);
  
@@ -147,7 +126,7 @@ diff --git a/fs/stat.c b/fs/stat.c
  	return error;
  }
  
-@@ -510,6 +548,9 @@
+@@ -510,6 +548,9 @@ SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
  	struct kstat stat;
  	int error;
  
@@ -157,9 +136,8 @@ diff --git a/fs/stat.c b/fs/stat.c
  	error = vfs_fstatat(dfd, filename, &stat, flag);
  	if (error)
  		return error;
-
 diff --git a/kernel/reboot.c b/kernel/reboot.c
-@@ -305,6 +305,10 @@
+@@ -305,6 +305,10 @@ DEFINE_MUTEX(system_transition_mutex);
   *
   * reboot doesn't sync: do that yourself before calling this.
   */
@@ -170,7 +148,7 @@ diff --git a/kernel/reboot.c b/kernel/reboot.c
  SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
  		void __user *, arg)
  {
-@@ -312,6 +316,10 @@
+@@ -312,6 +316,10 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
  	char buffer[256];
  	int ret = 0;
  
@@ -181,9 +159,8 @@ diff --git a/kernel/reboot.c b/kernel/reboot.c
  	/* We only trust the superuser with rebooting the system. */
  	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
  		return -EPERM;
-
 diff --git a/kernel/sys.c b/kernel/sys.c
-@@ -1240,12 +1240,21 @@
+@@ -1240,12 +1240,21 @@ static int override_release(char __user *release, size_t len)
  	return ret;
  }
  
@@ -205,7 +182,7 @@ diff --git a/kernel/sys.c b/kernel/sys.c
  	up_read(&uts_sem);
  	if (copy_to_user(name, &tmp, sizeof(tmp)))
  		return -EFAULT;
-@@ -1257,6 +1266,28 @@
+@@ -1257,6 +1266,28 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
  	return 0;
  }
  
@@ -234,4 +211,3 @@ diff --git a/kernel/sys.c b/kernel/sys.c
  #ifdef __ARCH_WANT_SYS_OLD_UNAME
  /*
   * Old cruft
-

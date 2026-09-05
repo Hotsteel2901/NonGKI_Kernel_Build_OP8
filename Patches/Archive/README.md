@@ -44,9 +44,21 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
     错写成 `if (unlikely(!static_branch_unlikely(&susfs_is_sdcard_android_data_not_decrypted)))`
     (not_decrypted 默认 true → 恒假) -> ksu_handle_execveat 永不执行 -> KernelSU 核心
     exec 处理 (授权/ksud/escape_to_root) 全死。构建 #10 修复为官方 v2.2.0 分支:
-    `if (static_branch_unlikely(&not_decrypted)) ksu_handle_execveat; else sucompat;`
-    教训: 布尔→静态键替换时注意极性反转 (decrypted=false 与 not_decrypted=true 语义等价,
-    不能机械加 !)。
+     `if (static_branch_unlikely(&not_decrypted)) ksu_handle_execveat; else sucompat;`
+     教训: 布尔→静态键替换时注意极性反转 (decrypted=false 与 not_decrypted=true 语义等价,
+     不能机械加 !)。
+  - 2026-09-05: 【KSU 分支】SUSFS v2.2.0 -> v2.3.0 (对齐 Jack sample 12e1465 / simonpunk
+    fb16b41a)。此线为 backslashxx (xxksu) + manual hooks, 有意保留 simonpunk 原版
+    susfs_def.h (180 行, 无 ReSukiSU 的 no_su/zygote_next TIF 34/35) 与经典 KSU 语义,
+    因此只升 `include/linux/susfs.h` 的 SUSFS_VERSION 宏; 不移植 master 的 zygote_next
+    __lookup_mnt 隐藏块 (经典 KSU 无 flag setter, 且 34/35 位存在冲突风险)。
+    基于 pin 基线 4238ee49a84b。
+  - 2026-09-05: 【KSU 分支】manual hooks 对齐 backslashxx/KernelSU#5 v2.3 (2026-09 修订,
+    "move execve hooks to do_execveat_common")。execve 钩子由旧 do_execve/compat_do_execve
+    两处迁至 do_execveat_common 单点 (native/compat execve+execveat 全收口, A17 QPR2 用
+    execveat), 避免重复挂钩; faccessat / newfstatat(+fstatat64) / newfstat-ret(+fstat64-ret)
+    / sys_reboot 与 #5 v2.3 一致 (newfstat-ret 与 sys_reboot 带 KPROBES_KSUD 防重守卫)。
+    README 集成说明同步标注 v2.3。
 
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 
