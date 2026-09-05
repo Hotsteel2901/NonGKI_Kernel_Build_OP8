@@ -185,7 +185,7 @@ index ec2d20d..46a2f61 100644
  		loff_t pos = file_pos_read(f.file);
  		ret = vfs_read(f.file, buf, count, &pos);
 diff --git a/fs/stat.c b/fs/stat.c
-index 3765431..2b13189 100644
+index 3765431..5970bce 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
 @@ -21,6 +21,15 @@
@@ -233,7 +233,29 @@ index 3765431..2b13189 100644
  
  	generic_fillattr(inode, stat);
  	return 0;
-@@ -163,12 +185,20 @@ EXPORT_SYMBOL(vfs_statx_fd);
+@@ -129,6 +151,10 @@ EXPORT_SYMBOL(vfs_getattr);
+  *
+  * 0 will be returned on success, and a -ve error code if unsuccessful.
+  */
++#ifdef CONFIG_KSU_SUSFS
++extern struct static_key_true ksu_is_init_rc_hook_enabled;
++extern void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr);
++#endif
+ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
+ 		 u32 request_mask, unsigned int query_flags)
+ {
+@@ -142,6 +168,10 @@ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
+ 	if (f.file) {
+ 		error = vfs_getattr(&f.file->f_path, stat,
+ 				    request_mask, query_flags);
++#ifdef CONFIG_KSU_SUSFS
++		if (static_branch_unlikely(&ksu_is_init_rc_hook_enabled))
++			ksu_handle_vfs_fstat(fd, &stat->size);
++#endif
+ 		fdput(f);
+ 	}
+ 	return error;
+@@ -163,12 +193,20 @@ EXPORT_SYMBOL(vfs_statx_fd);
   *
   * 0 will be returned on success, and a -ve error code if unsuccessful.
   */
@@ -254,7 +276,7 @@ index 3765431..2b13189 100644
  
  	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
  		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
-@@ -182,7 +212,23 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
+@@ -182,7 +220,23 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
  		lookup_flags |= LOOKUP_EMPTY;
  
  retry:
@@ -279,7 +301,7 @@ index 3765431..2b13189 100644
  		goto out;
  
 diff --git a/kernel/reboot.c b/kernel/reboot.c
-index 3a87fee..bc2c802 100644
+index 3a87fee..0256d50 100644
 --- a/kernel/reboot.c
 +++ b/kernel/reboot.c
 @@ -305,6 +305,9 @@ DEFINE_MUTEX(system_transition_mutex);
@@ -292,12 +314,13 @@ index 3a87fee..bc2c802 100644
  SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
  		void __user *, arg)
  {
-@@ -312,6 +315,9 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+@@ -312,6 +315,10 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
  	char buffer[256];
  	int ret = 0;
  
 +#ifdef CONFIG_KSU
-+	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
++	if (system_state == SYSTEM_RUNNING)
++		ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
 +#endif
  	/* We only trust the superuser with rebooting the system. */
  	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))

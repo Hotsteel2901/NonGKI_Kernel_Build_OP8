@@ -70,6 +70,31 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
     其他组件排查 (均非失败原因): DroidSpaces cocci 与上游一致; Re:Kernel 静态
     rekernel_extra.patch 与 myflavor/ReKernel-X Integrate v8.5 一致 (仅 cfg->static 与
     jobctl.h 两处既有适配); Baseband-guard 实时下载但编译通过。
+  - 2026-09-05: 【ReSukiSU inline 钩子对齐最新上游】对照 ReSukiSU main (HEAD 3c18828,
+    2026-09-05) 与 Jack sample (HEAD a2cf40a, 2026-09-04):
+      - 符号契约核对: resukisu_inline_hooks.patch 引用的全部符号/签名仍匹配当前
+        ReSukiSU main (sucompat.c/ksud_integration.c/allowlist.c/supercall.c/setuid_hook.c),
+        可过 CONFIG_KSU_SUSFS 编译门禁 tools/inline_hook_check.mk
+      - 对齐 Jack 新增: fs/stat.c vfs_statx_fd 处补 ksu_handle_vfs_fstat(fd,&stat->size)
+        init.rc fstat 大小注入 (extern ksu_is_init_rc_hook_enabled 守卫, ReSukiSU main
+        在 CONFIG_KSU_SUSFS 下导出该函数); kernel/reboot.c 的 ksu_handle_sys_reboot
+        加 `if (system_state == SYSTEM_RUNNING)` 守卫
+      - 不采纳: Jack 脚本 read_write.c 仍用旧 1 参 ksu_handle_sys_read(fd), 与当前
+        ReSukiSU main 的 3 参导出不符, 我们保留 3 参新式
+  - 2026-09-05: 【SUSFS v2.2.0 -> v2.3.0 + 优化】对照 Jack sample 12e1465 (2026-09-04,
+    "susfs version code upgrade to v2.3.0", 引用 simonpunk fb16b41a) 与本仓库内容级比对:
+      - include/linux/susfs.h: SUSFS_VERSION "v2.2.0" -> "v2.3.0"
+      - fs/namespace.c: __lookup_mnt 补 zygote_next 进程的 sus mount 隐藏块
+        (susfs_is_current_proc_umounted_for_zygote_next() 时仅返回非 sus mount,
+         TIF 35 / DEFAULT_KSU_MNT_ID 此前已具备)
+      - 内核源码不同注意: 我们用的 LineageOS sm8250 4.19 是 fs_context 版
+        (namespace.c 钩 vfs_create_mount, 参数 fc), Jack 通用 CAF 4.19 钩
+        vfs_kern_mount(name) —— fc->source vs name 差异属内核结构, 不照抄;
+        namei.c 的 __lookup_hash #ifdef/#else 化仅风格差异无功能变化, 亦不采纳
+      - 其余 15 文件与 Jack 逐字节一致 (fs/susfs.c 1491 行 / susfs_def.h 210 行等)
+      - 补丁已基于 lineage-23.2 最新提交 d504087 (2026-09-05 tip) 重新生成并验证
+        git apply --check 与 patch -p1 --dry-run 干净通过; 注意工作流当前不 pin
+        内核提交, 上游若再漂移需重新生成
 
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 

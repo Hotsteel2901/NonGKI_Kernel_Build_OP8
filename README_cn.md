@@ -8,7 +8,7 @@
 | 组件 | 说明 |
 |---|---|
 | ReSukiSU | KernelSU 分支, CONFIG_KSU_SUSFS (inline hook) 模式 |
-| SUSFS v2.2.0 | 官方 gki v2.2.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
+| SUSFS v2.3.0 | 官方 gki v2.3.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup 前缀隐藏 + Non-GKI 配置 (含 USER_NS) |
 | Baseband Guard | 分区写保护 LSM |
@@ -22,13 +22,13 @@
    - 重启到 recovery (fastboot boot recovery 或按键进入)
    - Apply update → 选择下载的 zip
    - 或 `adb sideload xxx.zip`
-5. 刷入后通过 KernelSU Manager 验证: 版本显示 **SUSFS 2.2.0**, 授权/模块功能正常.
+5. 刷入后通过 KernelSU Manager 验证: 版本显示 **SUSFS 2.3.0**, 授权/模块功能正常.
 
 ## 补丁说明 (Patches/)
 
 | 文件 | 内容 | 应用时机 |
 |---|---|---|
-| `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.2.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
+| `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
 | `Patches/Patch/resukisu_inline_hooks.patch` | ReSukiSU inline 模式必需的 7 个钩子 (exec/open/read_write/stat/input/reboot/setresuid) | 工作流自定义步骤 |
 | `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
@@ -68,7 +68,7 @@
 ## 已知限制
 
 - 构建需要 x86_64 环境 (GitHub Actions 默认 runner 即可)
-- SUSFS v2.2.0 的 OPEN_REDIRECT 实际重定向在 4.19 上不生效 (架构限制, 与官方一致)
+- SUSFS v2.3.0 的 OPEN_REDIRECT 实际重定向在 4.19 上不生效 (架构限制, 与官方一致)
 - 若使用本地构建 (非 GitHub Actions), 内存 ≥ 8G 且用 `make -j2` (手机本体构建严禁 -j8)
 
 ## 鸣谢

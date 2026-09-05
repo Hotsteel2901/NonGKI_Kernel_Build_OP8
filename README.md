@@ -8,7 +8,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 | Component | Note |
 |---|---|
 | ReSukiSU | KernelSU fork, CONFIG_KSU_SUSFS (inline hook) mode |
-| SUSFS v2.2.0 | Official gki v2.2.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
+| SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
 | Baseband Guard | partition write protection LSM |
@@ -17,12 +17,12 @@ Chinese docs: [README_cn.md](README_cn.md)
 1. Fork this repo, enable **Actions** with `Read and write permissions`.
 2. Run the `Build Kernel` workflow (or push to trigger).
 3. Download the zip artifact and flash it via recovery (AnyKernel3 style).
-4. Verify in KernelSU Manager: SUSFS version **2.2.0**, allowlist & modules working.
+4. Verify in KernelSU Manager: SUSFS version **2.3.0**, allowlist & modules working.
 
 ## Patches (Patches/)
 | File | Content | Applied by |
 |---|---|---|
-| `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.2.0 kernel-side code | patch-susfs action |
+| `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
 | `Patch/resukisu_inline_hooks.patch` | ReSukiSU inline hooks (7 hooks) | custom workflow step |
 | `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
