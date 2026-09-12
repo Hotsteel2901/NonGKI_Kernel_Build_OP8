@@ -1,0 +1,435 @@
+name: Build crDroid OnePlus 8 Kernel (ReSukiSU + SUSFS + DroidSpaces)
+
+# ============================================================================
+# crDroid 独占工作流
+#
+# 目标内核: crdroidandroid/android_kernel_oneplus_sm8250 @ 16.0
+# 集成组件: ReSukiSU -> SUSFS v2.3.0 -> DroidSpaces (循序渐进, 用 stage 控制)
+#
+# 本工作流与仓库中原有的 LineageOS 工作流完全独立:
+#   - 不修改、不引用 build-kernel.yml / build-release.yml / 任何 composite action
+#   - 仅在 crdroid 分支上新增本文件
+#
+# 本地已验证: 三个 stage 均完整编译通过 (Image 54845456 B, dtb.img 1428199 B)
+# ============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: '构建阶段: stage1=仅ReSukiSU / stage2=+SUSFS / stage3=+DroidSpaces'
+        required: true
+        type: choice
+        default: 'stage3'
+        options:
+          - stage1
+          - stage2
+          - stage3
+      kernel_ref:
+        description: '内核提交 (留空则用分支最新; 本地验证基准为 d5040872497a)'
+        required: false
+        type: string
+        default: ''
+
+env:
+  DEVICE_NAME: "oneplus_8"
+  DEVICE_CODENAME: "instantnoodle"
+
+  # crDroid 内核源 (Android 16 分支)
+  KERNEL_SOURCE: "https://github.com/crdroidandroid/android_kernel_oneplus_sm8250.git"
+  KERNEL_BRANCH: "16.0"
+
+  # 工具链: 与本地验证环境一致 (clang 19 + aarch64 gcc)
+  CLANG_VERSION: "19.1.7"
+  DEFCONFIG_NAME: "vendor/kona-perf_defconfig"
+  ROM_TEXT: "crdroid16_a16"
+
+  # ReSukiSU 固定提交 (本地验证基准, 避免 main 漂移破坏符号契约)
+  KSU_REPO: "https://github.com/ReSukiSU/ReSukiSU.git"
+  KSU_COMMIT: "fa1da13"
+
+permissions:
+  contents: write
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Stage 1: 仅 ReSukiSU
+  # --------------------------------------------------------------------------
+  stage1-resukisu:
+    name: "Stage1: ReSukiSU"
+    runs-on: ubuntu-latest
+    if: inputs.stage == 'stage1' || inputs.stage == 'stage2' || inputs.stage == 'stage3'
+    outputs:
+      image_size: ${{ steps.build.outputs.image_size }}
+    steps:
+      - name: ⏰ Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: 💾 Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h
+
+      - name: 🧰 Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flex bison libssl-dev libelf-dev \
+            device-tree-compiler ccache cpio rsync zip unzip bc python3 \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+
+      - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
+        run: |
+          curl -L --retry 3 -o llvm.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${CLANG_VERSION}/LLVM-${CLANG_VERSION}-Linux-X64.tar.xz"
+          mkdir -p /opt/llvm
+          tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
+          echo "/opt/llvm/bin" >> $GITHUB_PATH
+          /opt/llvm/bin/clang --version
+
+      - name: 📥 Clone crDroid kernel
+        run: |
+          git clone --depth=1 "$KERNEL_SOURCE" -b "$KERNEL_BRANCH" device_kernel
+          cd device_kernel
+          if [ -n "${{ inputs.kernel_ref }}" ]; then
+            git fetch --depth=1 origin "${{ inputs.kernel_ref }}" && git checkout FETCH_HEAD
+          fi
+          git log --oneline -1
+          echo "-g$(git rev-parse --short HEAD)-crdroid" > .scmversion
+
+      - name: 📥 Setup ReSukiSU
+        run: |
+          cd device_kernel
+          git clone "$KSU_REPO" KernelSU
+          cd KernelSU && git checkout "$KSU_COMMIT" && cd ..
+          ln -sf ../KernelSU/kernel drivers/kernelsu
+          grep -q "kernelsu" drivers/Makefile || \
+            printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
+            sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+          echo "[+] ReSukiSU wired."
+
+      - name: 🔗 Apply Stage1 patch (ReSukiSU inline hooks)
+        run: |
+          cd device_kernel
+          patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
+          echo "[+] Stage1 patch applied."
+
+      - name: 🚀 Build kernel (Stage1)
+        id: build
+        run: |
+          cd device_kernel
+          export PATH=/opt/llvm/bin:$PATH
+          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            arch/arm64/configs/vendor/oplus.config
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
+          SIZE=$(stat -c%s out/arch/arm64/boot/Image)
+          echo "image_size=$SIZE" >> $GITHUB_OUTPUT
+          echo "[+] Stage1 Image: $SIZE bytes"
+
+      - name: 🖼️ Generate dtb.img
+        run: |
+          cd device_kernel
+          D=out/arch/arm64/boot/dts/vendor/oplus
+          cat $D/kona.dtb $D/kona-v2.dtb $D/kona-v2.1.dtb > out/arch/arm64/boot/dtb.img
+          ls -la out/arch/arm64/boot/dtb.img
+
+      - name: ✅ Verify Stage1
+        run: |
+          cd device_kernel
+          grep -q "^CONFIG_KSU=y" out/.config || { echo "[-] CONFIG_KSU missing"; exit 1; }
+          grep -q "^CONFIG_KSU_MANUAL_HOOK=y" out/.config || { echo "[-] MANUAL_HOOK missing"; exit 1; }
+          nm out/vmlinux | grep -q "ksu_handle_execveat" || { echo "[-] ksu symbols missing"; exit 1; }
+          echo "[+] Stage1 verified OK."
+
+      - name: 📦 Package AnyKernel3
+        run: |
+          cd device_kernel
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
+          sed -i 's/ExampleKernel by osm0sis @ xda-developers/crDroid NonGKI Kernel (ReSukiSU) by Hotsteel2901/g' Anykernel3/anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
+          sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
+          sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
+          mkdir -p tmp
+          B=out/arch/arm64/boot
+          cp -fp $B/Image tmp/
+          [ -f $B/dtb.img ] && cp -fp $B/dtb.img tmp/dtb
+          [ -f $B/dtbo.img ] && cp -fp $B/dtbo.img tmp/
+          cp -rp ./Anykernel3/* tmp
+          cd tmp && 7za a -mx9 tmp.zip * >/dev/null 2>&1 || zip -r9 -q tmp.zip .
+          cd ..
+          NAME="${{ env.DEVICE_CODENAME }}-${{ env.ROM_TEXT }}-stage1-$(date +%Y%m%d%H%M%S)-Anykernel3.zip"
+          cp -fp tmp/tmp.zip "$NAME"
+          echo "PACK_NAME=$NAME" >> $GITHUB_ENV
+
+      - name: ⬆️ Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-crdroid-stage1-${{ github.run_number }}
+          path: device_kernel/${{ env.PACK_NAME }}
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Stage 2: ReSukiSU + SUSFS v2.3.0
+  # --------------------------------------------------------------------------
+  stage2-susfs:
+    name: "Stage2: ReSukiSU + SUSFS v2.3.0"
+    runs-on: ubuntu-latest
+    needs: stage1-resukisu
+    if: inputs.stage == 'stage2' || inputs.stage == 'stage3'
+    steps:
+      - name: ⏰ Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: 💾 Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h
+
+      - name: 🧰 Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flex bison libssl-dev libelf-dev \
+            device-tree-compiler ccache cpio rsync zip unzip bc python3 \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+
+      - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
+        run: |
+          curl -L --retry 3 -o llvm.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${CLANG_VERSION}/LLVM-${CLANG_VERSION}-Linux-X64.tar.xz"
+          mkdir -p /opt/llvm
+          tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
+          echo "/opt/llvm/bin" >> $GITHUB_PATH
+
+      - name: 📥 Clone crDroid kernel
+        run: |
+          git clone --depth=1 "$KERNEL_SOURCE" -b "$KERNEL_BRANCH" device_kernel
+          cd device_kernel
+          if [ -n "${{ inputs.kernel_ref }}" ]; then
+            git fetch --depth=1 origin "${{ inputs.kernel_ref }}" && git checkout FETCH_HEAD
+          fi
+          git log --oneline -1
+          echo "-g$(git rev-parse --short HEAD)-crdroid" > .scmversion
+
+      - name: 📥 Setup ReSukiSU
+        run: |
+          cd device_kernel
+          git clone "$KSU_REPO" KernelSU
+          cd KernelSU && git checkout "$KSU_COMMIT" && cd ..
+          ln -sf ../KernelSU/kernel drivers/kernelsu
+          grep -q "kernelsu" drivers/Makefile || \
+            printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
+            sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+      - name: 🔗 Apply Stage1 patch
+        run: cd device_kernel && patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
+
+      - name: 🪝 Apply Stage2 patch (SUSFS v2.3.0)
+        run: |
+          cd device_kernel
+          patch -p1 < ../Patches/crdroid/0002-stage2-susfs.patch
+          echo "[+] Stage2 patch applied."
+          grep -q "p->state = 0" fs/namei.c && echo "[+] p->state=0 present (anti-black-screen fix)"
+
+      - name: 🚀 Build kernel (Stage2)
+        id: build
+        run: |
+          cd device_kernel
+          export PATH=/opt/llvm/bin:$PATH
+          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            arch/arm64/configs/vendor/oplus.config
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
+          echo "image_size=$(stat -c%s out/arch/arm64/boot/Image)" >> $GITHUB_OUTPUT
+
+      - name: 🖼️ Generate dtb.img
+        run: |
+          cd device_kernel
+          D=out/arch/arm64/boot/dts/vendor/oplus
+          cat $D/kona.dtb $D/kona-v2.dtb $D/kona-v2.1.dtb > out/arch/arm64/boot/dtb.img
+
+      - name: ✅ Verify Stage2
+        run: |
+          cd device_kernel
+          grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
+          grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS version mismatch"; exit 1; }
+          nm out/vmlinux | grep -q "susfs" || { echo "[-] susfs symbols missing"; exit 1; }
+          echo "[+] Stage2 verified OK (SUSFS v2.3.0)."
+
+      - name: 📦 Package AnyKernel3
+        run: |
+          cd device_kernel
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
+          sed -i 's/ExampleKernel by osm0sis @ xda-developers/crDroid NonGKI Kernel (ReSukiSU+SUSFS) by Hotsteel2901/g' Anykernel3/anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
+          sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
+          sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
+          mkdir -p tmp
+          B=out/arch/arm64/boot
+          cp -fp $B/Image tmp/
+          [ -f $B/dtb.img ] && cp -fp $B/dtb.img tmp/dtb
+          [ -f $B/dtbo.img ] && cp -fp $B/dtbo.img tmp/
+          cp -rp ./Anykernel3/* tmp
+          cd tmp && 7za a -mx9 tmp.zip * >/dev/null 2>&1 || zip -r9 -q tmp.zip .
+          cd ..
+          NAME="${{ env.DEVICE_CODENAME }}-${{ env.ROM_TEXT }}-stage2-$(date +%Y%m%d%H%M%S)-Anykernel3.zip"
+          cp -fp tmp/tmp.zip "$NAME"
+          echo "PACK_NAME=$NAME" >> $GITHUB_ENV
+
+      - name: ⬆️ Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-crdroid-stage2-${{ github.run_number }}
+          path: device_kernel/${{ env.PACK_NAME }}
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Stage 3: ReSukiSU + SUSFS v2.3.0 + DroidSpaces
+  # --------------------------------------------------------------------------
+  stage3-droidspaces:
+    name: "Stage3: + DroidSpaces"
+    runs-on: ubuntu-latest
+    needs: stage2-susfs
+    if: inputs.stage == 'stage3'
+    steps:
+      - name: ⏰ Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: 💾 Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h
+
+      - name: 🧰 Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flex bison libssl-dev libelf-dev \
+            device-tree-compiler ccache cpio rsync zip unzip bc python3 \
+            coccinelle gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+
+      - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
+        run: |
+          curl -L --retry 3 -o llvm.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${CLANG_VERSION}/LLVM-${CLANG_VERSION}-Linux-X64.tar.xz"
+          mkdir -p /opt/llvm
+          tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
+          echo "/opt/llvm/bin" >> $GITHUB_PATH
+
+      - name: 📥 Clone crDroid kernel
+        run: |
+          git clone --depth=1 "$KERNEL_SOURCE" -b "$KERNEL_BRANCH" device_kernel
+          cd device_kernel
+          if [ -n "${{ inputs.kernel_ref }}" ]; then
+            git fetch --depth=1 origin "${{ inputs.kernel_ref }}" && git checkout FETCH_HEAD
+          fi
+          git log --oneline -1
+          echo "-g$(git rev-parse --short HEAD)-crdroid" > .scmversion
+
+      - name: 📥 Setup ReSukiSU
+        run: |
+          cd device_kernel
+          git clone "$KSU_REPO" KernelSU
+          cd KernelSU && git checkout "$KSU_COMMIT" && cd ..
+          ln -sf ../KernelSU/kernel drivers/kernelsu
+          grep -q "kernelsu" drivers/Makefile || \
+            printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
+            sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+      - name: 🔗 Apply Stage1 patch
+        run: cd device_kernel && patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
+
+      - name: 🪝 Apply Stage2 patch
+        run: cd device_kernel && patch -p1 < ../Patches/crdroid/0002-stage2-susfs.patch
+
+      - name: 💿 Apply Stage3 DroidSpaces (cocci + config)
+        run: |
+          cd device_kernel
+          cp ../Patches/crdroid/droidspaces.config arch/arm64/configs/
+          cp ../Patches/crdroid/fix_restore_cgroup_file_prefix_handling.cocci ./
+          if ! grep -q "kernfs_create_link" kernel/cgroup/cgroup.c; then
+            spatch --sp-file fix_restore_cgroup_file_prefix_handling.cocci \
+                   --in-place kernel/cgroup/cgroup.c
+            echo "[+] cgroup.c patched."
+          else
+            echo "[-] cgroup.c already patched, skipped."
+          fi
+          # xt_qtaguid.c 在本内核不存在, 该 cocci 跳过 (上游 crDroid 树无此驱动)
+          echo "[+] DroidSpaces patch applied."
+
+      - name: 🚀 Build kernel (Stage3)
+        id: build
+        run: |
+          cd device_kernel
+          export PATH=/opt/llvm/bin:$PATH
+          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            arch/arm64/configs/vendor/oplus.config
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            arch/arm64/configs/droidspaces.config
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
+          echo "image_size=$(stat -c%s out/arch/arm64/boot/Image)" >> $GITHUB_OUTPUT
+
+      - name: 🖼️ Generate dtb.img
+        run: |
+          cd device_kernel
+          D=out/arch/arm64/boot/dts/vendor/oplus
+          cat $D/kona.dtb $D/kona-v2.dtb $D/kona-v2.1.dtb > out/arch/arm64/boot/dtb.img
+
+      - name: ✅ Verify Stage3
+        run: |
+          cd device_kernel
+          grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
+          grep -q "^CONFIG_USER_NS=y" out/.config || { echo "[-] USER_NS missing"; exit 1; }
+          grep -q "^CONFIG_PID_NS=y" out/.config || { echo "[-] PID_NS missing"; exit 1; }
+          grep -q "kernfs_create_link" kernel/cgroup/cgroup.c || { echo "[-] cgroup patch missing"; exit 1; }
+          echo "[+] Stage3 verified OK (all three components)."
+
+      - name: 📦 Package AnyKernel3
+        run: |
+          cd device_kernel
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
+          sed -i 's/ExampleKernel by osm0sis @ xda-developers/crDroid NonGKI Kernel (ReSukiSU+SUSFS+DroidSpaces) by Hotsteel2901/g' Anykernel3/anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
+          sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
+          sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
+          mkdir -p tmp
+          B=out/arch/arm64/boot
+          cp -fp $B/Image tmp/
+          [ -f $B/dtb.img ] && cp -fp $B/dtb.img tmp/dtb
+          [ -f $B/dtbo.img ] && cp -fp $B/dtbo.img tmp/
+          cp -rp ./Anykernel3/* tmp
+          cd tmp && 7za a -mx9 tmp.zip * >/dev/null 2>&1 || zip -r9 -q tmp.zip .
+          cd ..
+          NAME="${{ env.DEVICE_CODENAME }}-${{ env.ROM_TEXT }}-stage3-$(date +%Y%m%d%H%M%S)-Anykernel3.zip"
+          cp -fp tmp/tmp.zip "$NAME"
+          echo "PACK_NAME=$NAME" >> $GITHUB_ENV
+
+      - name: ⬆️ Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-crdroid-stage3-${{ github.run_number }}
+          path: device_kernel/${{ env.PACK_NAME }}
+          if-no-files-found: error

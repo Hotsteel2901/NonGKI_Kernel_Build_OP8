@@ -1,0 +1,433 @@
+diff --git a/arch/arm64/configs/vendor/kona-perf_defconfig b/arch/arm64/configs/vendor/kona-perf_defconfig
+index 60e1516de..3ca206c13 100644
+--- a/arch/arm64/configs/vendor/kona-perf_defconfig
++++ b/arch/arm64/configs/vendor/kona-perf_defconfig
+@@ -1,3 +1,5 @@
++CONFIG_KSU=y
++CONFIG_KSU_MANUAL_HOOK=y
+ CONFIG_LOCALVERSION="-perf"
+ CONFIG_AUDIT=y
+ CONFIG_NO_HZ=y
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index e0866eda8..7d4ab68a4 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -232,4 +232,5 @@ source "drivers/sensors/Kconfig"
+ source "drivers/gpu/msm/Kconfig"
+ 
+ source "drivers/energy_model/Kconfig"
++source "drivers/kernelsu/Kconfig"
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 9a258f18e..56957811d 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -192,3 +192,5 @@ obj-$(CONFIG_UNISYS_VISORBUS)	+= visorbus/
+ obj-$(CONFIG_SIOX)		+= siox/
+ obj-$(CONFIG_GNSS)		+= gnss/
+ obj-$(CONFIG_SENSORS_SSC)	+= sensors/
++
++obj-$(CONFIG_KSU) += kernelsu/
+diff --git a/drivers/input/input.c b/drivers/input/input.c
+index 70ffffea3..b53fdb418 100644
+--- a/drivers/input/input.c
++++ b/drivers/input/input.c
+@@ -377,12 +377,20 @@ static int input_get_disposition(struct input_dev *dev,
+ 	*pval = value;
+ 	return disposition;
+ }
+-
++#ifdef CONFIG_KSU_SUSFS
++extern struct static_key_true ksu_is_input_hook_enabled;
++extern __attribute__((cold)) int ksu_handle_input_handle_event(
++			unsigned int *type, unsigned int *code, int *value);
++#endif
+ static void input_handle_event(struct input_dev *dev,
+ 			       unsigned int type, unsigned int code, int value)
+ {
+ 	int disposition = input_get_disposition(dev, type, code, &value);
+ 
++	#ifdef CONFIG_KSU_SUSFS
++	if (unlikely(static_branch_unlikely(&ksu_is_input_hook_enabled)))
++		ksu_handle_input_handle_event(&type, &code, &value);
++	#endif
+ 	if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
+ 		add_input_randomness(type, code, value);
+ 
+diff --git a/fs/exec.c b/fs/exec.c
+index eef84ebca..2f11573ae 100644
+--- a/fs/exec.c
++++ b/fs/exec.c
+@@ -63,6 +63,10 @@
+ #include <linux/compat.h>
+ #include <linux/vmalloc.h>
+ 
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs_def.h>
++#endif
++
+ #include <linux/uaccess.h>
+ #include <asm/mmu_context.h>
+ #include <asm/tlb.h>
+@@ -1728,6 +1732,19 @@ static int exec_binprm(struct linux_binprm *bprm)
+ /*
+  * sys_execve() executes a new program.
+  */
++#ifdef CONFIG_KSU
++__attribute__((hot))
++extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
++				void *argv, void *envp, int *flags);
++#ifdef CONFIG_KSU_SUSFS
++extern struct static_key_true ksu_su_compat_enabled;
++extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
++extern bool __ksu_is_allow_uid_for_current(uid_t uid);
++extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv,
++				void *envp, int *flags);
++#endif // CONFIG_KSU_SUSFS
++#endif // CONFIG_KSU
++
+ static int __do_execve_file(int fd, struct filename *filename,
+ 			    struct user_arg_ptr argv,
+ 			    struct user_arg_ptr envp,
+@@ -1740,6 +1757,23 @@ static int __do_execve_file(int fd, struct filename *filename,
+ 
+ 	if (IS_ERR(filename))
+ 		return PTR_ERR(filename);
++#ifdef CONFIG_KSU
++#ifdef CONFIG_KSU_SUSFS
++	if (likely(susfs_is_current_proc_no_su()))
++		goto orig_flow;
++
++	if (static_branch_likely(&ksu_su_compat_enabled)) {
++		if (static_branch_unlikely(&susfs_is_sdcard_android_data_not_decrypted))
++			ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
++		else
++			ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
++	}
++orig_flow:
++#else
++	ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
++#endif
++#endif
++
+ 
+ 	/*
+ 	 * We move the actual failure in case of RLIMIT_NPROC excess from
+diff --git a/fs/open.c b/fs/open.c
+index 13d70db56..8ab1df1cb 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -32,6 +32,10 @@
+ #include <linux/dnotify.h>
+ #include <linux/compat.h>
+ 
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs_def.h>
++#endif
++
+ #include "internal.h"
+ #include <trace/hooks/syscall_check.h>
+ 
+@@ -354,6 +358,12 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
+  * We do this by temporarily clearing all FS-related capabilities and
+  * switching the fsuid/fsgid around to the real ones.
+  */
++#ifdef CONFIG_KSU_SUSFS
++extern struct static_key_true ksu_su_compat_enabled;
++extern bool __ksu_is_allow_uid_for_current(uid_t uid);
++extern int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode,
++				int *flags);
++#endif
+ long do_faccessat(int dfd, const char __user *filename, int mode)
+ {
+ 	const struct cred *old_cred;
+@@ -363,6 +373,9 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+ 	struct vfsmount *mnt;
+ 	int res;
+ 	unsigned int lookup_flags = LOOKUP_FOLLOW;
++#ifdef CONFIG_KSU_SUSFS
++	struct filename *fname = NULL;
++#endif
+ 
+ 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+ 		return -EINVAL;
+@@ -405,7 +418,23 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+ 
+ 	old_cred = override_creds(override_cred);
+ retry:
++#ifdef CONFIG_KSU_SUSFS
++	fname = getname_flags(filename, lookup_flags, NULL);
++
++	if (likely(susfs_is_current_proc_no_su()))
++		goto orig_flow;
++
++	if (static_branch_likely(&ksu_su_compat_enabled)) {
++		if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
++			ksu_handle_faccessat(&dfd, &fname, &mode, NULL);
++	}
++
++orig_flow:
++	res = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
++	/* no putname(fname) here as filename_lookup() has it done for us already */
++#else
+ 	res = user_path_at(dfd, filename, lookup_flags, &path);
++#endif
+ 	if (res)
+ 		goto out;
+ 
+diff --git a/fs/read_write.c b/fs/read_write.c
+index ec2d20ddd..6cd23cb9f 100644
+--- a/fs/read_write.c
++++ b/fs/read_write.c
+@@ -434,10 +434,12 @@ ssize_t kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
+ }
+ EXPORT_SYMBOL(kernel_read);
+ 
++
+ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+ {
+ 	ssize_t ret;
+ 
++
+ 	if (!(file->f_mode & FMODE_READ))
+ 		return -EBADF;
+ 	if (!(file->f_mode & FMODE_CAN_READ))
+@@ -570,12 +572,20 @@ static inline void file_pos_write(struct file *file, loff_t pos)
+ 	if ((file->f_mode & FMODE_STREAM) == 0)
+ 		file->f_pos = pos;
+ }
+-
++#ifdef CONFIG_KSU_SUSFS
++extern struct static_key_true ksu_is_init_rc_hook_enabled;
++extern __attribute__((cold)) int ksu_handle_sys_read(unsigned int fd,
++				char __user **buf_ptr, size_t *count_ptr);
++#endif
+ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
+ {
+ 	struct fd f = fdget_pos(fd);
+ 	ssize_t ret = -EBADF;
+ 
++	#ifdef CONFIG_KSU_SUSFS
++	if (unlikely(static_branch_unlikely(&ksu_is_init_rc_hook_enabled)))
++		ksu_handle_sys_read(fd, &buf, &count);
++	#endif
+ 	if (f.file) {
+ 		loff_t pos = file_pos_read(f.file);
+ 		ret = vfs_read(f.file, buf, count, &pos);
+diff --git a/fs/stat.c b/fs/stat.c
+index 376543199..f64e75c02 100644
+--- a/fs/stat.c
++++ b/fs/stat.c
+@@ -21,6 +21,22 @@
+ #include <linux/uaccess.h>
+ #include <asm/unistd.h>
+ 
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs_def.h>
++#endif
++#include "internal.h"
++
++#ifdef CONFIG_KSU
++extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
++#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
++extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);
++#endif
++#endif
++
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat);
++#endif
++
+ /**
+  * generic_fillattr - Fill in the basic attributes from the inode struct
+  * @inode: Inode to use as the source
+@@ -45,6 +61,9 @@ void generic_fillattr(struct inode *inode, struct kstat *stat)
+ 	stat->ctime = inode->i_ctime;
+ 	stat->blksize = i_blocksize(inode);
+ 	stat->blocks = inode->i_blocks;
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++	susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
++#endif
+ 
+ 	if (IS_NOATIME(inode))
+ 		stat->result_mask &= ~STATX_ATIME;
+@@ -76,8 +95,18 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
+ 	request_mask &= STATX_ALL;
+ 	query_flags &= KSTAT_QUERY_FLAGS;
+ 	if (inode->i_op->getattr)
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++	{
++		int err = inode->i_op->getattr(path, stat, request_mask,
++					    query_flags);
++		if (!err)
++			susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
++		return err;
++	}
++#else
+ 		return inode->i_op->getattr(path, stat, request_mask,
+ 					    query_flags);
++#endif
+ 
+ 	generic_fillattr(inode, stat);
+ 	return 0;
+@@ -129,6 +158,10 @@ EXPORT_SYMBOL(vfs_getattr);
+  *
+  * 0 will be returned on success, and a -ve error code if unsuccessful.
+  */
++#ifdef CONFIG_KSU_SUSFS
++extern struct static_key_true ksu_is_init_rc_hook_enabled;
++extern void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr);
++#endif
+ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
+ 		 u32 request_mask, unsigned int query_flags)
+ {
+@@ -142,6 +175,10 @@ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
+ 	if (f.file) {
+ 		error = vfs_getattr(&f.file->f_path, stat,
+ 				    request_mask, query_flags);
++#ifdef CONFIG_KSU_SUSFS
++		if (static_branch_unlikely(&ksu_is_init_rc_hook_enabled))
++			ksu_handle_vfs_fstat(fd, &stat->size);
++#endif
+ 		fdput(f);
+ 	}
+ 	return error;
+@@ -163,12 +200,20 @@ EXPORT_SYMBOL(vfs_statx_fd);
+  *
+  * 0 will be returned on success, and a -ve error code if unsuccessful.
+  */
++#ifdef CONFIG_KSU_SUSFS
++extern struct static_key_true ksu_su_compat_enabled;
++extern bool __ksu_is_allow_uid_for_current(uid_t uid);
++extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
++#endif
+ int vfs_statx(int dfd, const char __user *filename, int flags,
+ 	      struct kstat *stat, u32 request_mask)
+ {
+ 	struct path path;
+ 	int error = -EINVAL;
+ 	unsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
++#ifdef CONFIG_KSU_SUSFS
++	struct filename *fname = NULL;
++#endif
+ 
+ 	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
+ 		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
+@@ -182,7 +227,23 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
+ 		lookup_flags |= LOOKUP_EMPTY;
+ 
+ retry:
++#ifdef CONFIG_KSU_SUSFS
++	fname = getname_flags(filename, lookup_flags, NULL);
++
++	if (likely(susfs_is_current_proc_no_su()))
++		goto orig_flow;
++
++	if (static_branch_likely(&ksu_su_compat_enabled)) {
++		if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
++			ksu_handle_stat(&dfd, &fname, &flags);
++	}
++
++orig_flow:
++	error = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
++	/* no putname(fname) here as filename_lookup() has it done for us already */
++#else
+ 	error = user_path_at(dfd, filename, lookup_flags, &path);
++#endif
+ 	if (error)
+ 		goto out;
+ 
+@@ -375,6 +436,10 @@ SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+ 	if (!error)
+ 		error = cp_new_stat(&stat, statbuf);
+ 
++#ifdef CONFIG_KSU
++	ksu_handle_newfstat_ret(&fd, &statbuf);
++#endif
++
+ 	return error;
+ }
+ 
+@@ -501,6 +566,10 @@ SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
+ 	if (!error)
+ 		error = cp_new_stat64(&stat, statbuf);
+ 
++#ifdef CONFIG_KSU
++	ksu_handle_fstat64_ret(&fd, &statbuf);
++#endif
++
+ 	return error;
+ }
+ 
+diff --git a/kernel/reboot.c b/kernel/reboot.c
+index 3a87fee47..0256d5042 100644
+--- a/kernel/reboot.c
++++ b/kernel/reboot.c
+@@ -305,6 +305,9 @@ DEFINE_MUTEX(system_transition_mutex);
+  *
+  * reboot doesn't sync: do that yourself before calling this.
+  */
++#ifdef CONFIG_KSU
++extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
++#endif
+ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+ 		void __user *, arg)
+ {
+@@ -312,6 +315,10 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
+ 	char buffer[256];
+ 	int ret = 0;
+ 
++#ifdef CONFIG_KSU
++	if (system_state == SYSTEM_RUNNING)
++		ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
++#endif
+ 	/* We only trust the superuser with rebooting the system. */
+ 	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
+ 		return -EPERM;
+diff --git a/kernel/sys.c b/kernel/sys.c
+index fa98ba2e9..389b0a38a 100644
+--- a/kernel/sys.c
++++ b/kernel/sys.c
+@@ -623,6 +623,10 @@ SYSCALL_DEFINE1(setuid, uid_t, uid)
+  * This function implements a generic ability to update ruid, euid,
+  * and suid.  This allows you to implement the 4.4 compatible seteuid().
+  */
++#ifdef CONFIG_KSU_SUSFS
++extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);
++#endif
++
+ long __sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+ {
+ 	struct user_namespace *ns = current_user_ns();
+@@ -631,6 +635,10 @@ long __sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+ 	int retval;
+ 	kuid_t kruid, keuid, ksuid;
+ 
++#ifdef CONFIG_KSU_SUSFS
++	(void)ksu_handle_setresuid(ruid, euid, suid);
++#endif
++
+ 	kruid = make_kuid(ns, ruid);
+ 	keuid = make_kuid(ns, euid);
+ 	ksuid = make_kuid(ns, suid);
+@@ -1240,12 +1248,20 @@ static int override_release(char __user *release, size_t len)
+ 	return ret;
+ }
+ 
++#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++extern struct static_key_false susfs_is_uname_spoof_buffer_set;
++extern void susfs_spoof_uname(struct new_utsname* tmp);
++#endif
+ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
+ {
+ 	struct new_utsname tmp;
+ 
+ 	down_read(&uts_sem);
+ 	memcpy(&tmp, utsname(), sizeof(tmp));
++#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++	if (static_branch_likely(&susfs_is_uname_spoof_buffer_set))
++		susfs_spoof_uname(&tmp);
++#endif
+ 	up_read(&uts_sem);
+ 	if (copy_to_user(name, &tmp, sizeof(tmp)))
+ 		return -EFAULT;
