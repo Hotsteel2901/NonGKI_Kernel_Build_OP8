@@ -138,7 +138,7 @@ jobs:
           	depends on KSU
           	default y
           	help
-          	  Kernel-side SUSFS v2.2.0 support, patched by Patches/Patch/susfs_patch_to_4.19.patch.
+          	  Kernel-side SUSFS v2.3.0 support, patched by Patches/Patch/susfs_patch_to_4.19.patch.
           	  Requires THREAD_INFO_IN_TASK (always enabled on arm64).
 
           config KSU_SUSFS_SUS_PATH

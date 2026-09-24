@@ -53,7 +53,7 @@ runs:
         shell: bash
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
-          SUSFS_VERSION="2.2.00"
+          SUSFS_VERSION="2.3.00"
 
           PACK_FILES(){
             temp_dir=$(mktemp -d)
@@ -101,7 +101,7 @@ runs:
 
             if [[ "${{ env.SKIP_PATCH }}" == "true" ]] || [ -n "${{ env.SUSFS_PATCH_FIXED }}" ]; then
                 echo "[+] SuSFS Patch Version: v${SUSFS_VERSION}. "
-                echo "[+] SKIP_PATCH enabled or found SuSFS v2.2.00 Fixed Patch, skipping."
+                echo "[+] SKIP_PATCH enabled or found SuSFS v2.3.00 Fixed Patch, skipping."
                 PACK_FILES
 
             elif [[ "${{ env.SKIP_PATCH }}" != "true" ]] || [ -z "${{ env.SUSFS_PATCH_FIXED }}" ]; then

@@ -59,6 +59,40 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
     execveat), 避免重复挂钩; faccessat / newfstatat(+fstatat64) / newfstat-ret(+fstat64-ret)
     / sys_reboot 与 #5 v2.3 一致 (newfstat-ret 与 sys_reboot 带 KPROBES_KSUD 防重守卫)。
     README 集成说明同步标注 v2.3。
+  - 2026-09-24: 【KSU 分支】susfs_patch_to_4.19.patch + manual hooks 跟进 Jack 最新 4.19 补丁
+    (JackA1ltman/NonGKI_Kernel_Build_2nd @ f15603b, 2026-09-17; 上一版基线为 84af385,
+    2026-09-04 v2.3.0 首版, 中间 13 个 commit)。上游改动 (按文件):
+      - fs/susfs.c: SUS_KSTAT 项新增 spoofed_kstatfs / spoofed_mnt_id 缓存 + statfs 缓存
+        重取; 新增 susfs_sus_kstat_spoof_vfs_statfs / _proc_fd_seq_show / _inotify_fdinfo;
+        open_redirect 目标项同样缓存 kstatfs+mnt_id; SUS_KSTAT_HLIST 桶数 10 -> 14
+      - fs/statfs.c: statfs 伪装改走 sus_kstat (新增 susfs_statfs_by_dentry() 与
+        susfs_is_current_app_uid() 门控), 原 open_redirect statfs 伪装分支移除
+      - fs/stat.c: generic_fillattr 不再直接伪装; vfs_getattr_nosec 改为打
+        STATX_SUS_KSTAT / STATX_SUS_KSTAT_FUSE 标记后在返回前伪装
+        (需要 #include <linux/susfs_def.h>, 上游由 hook 脚本 sed 注入 -> 本仓在
+        manual hooks 补丁里注入, 同时保留本树 KSU stat 钩子)
+      - fs/namei.c: OPEN_REDIRECT 改用 filename_lookup() (fake_filename 生命周期修正,
+        do_o_path 恢复 nd->name); is_fuse 提前求值 (修上游 96998e0 "misplaced is_fuse
+        causing kernel panic")
+      - fs/namespace.c: susfs_get_non_sus_mnt_id/vfsmnt_from_mnt 对非 sus mnt_id 直接返回
+        ("needn't real_mount"), 守卫 CONFIG_KSU_SUSFS_SUS_MOUNT -> CONFIG_KSU_SUSFS
+      - fs/super.c (新增 section): get_anon_bdev() 对 ksu 域分配隐藏 minor dev
+        (DEFAULT_KSU_MNT_MINOR_DEV, 配合 STATX/sus_kstat 的 sdev 伪装)
+      - fs/proc/fd.c, fs/notify/fdinfo.c: fd/fdinfo 伪装改走 sus_kstat, 只对 app uid
+        (susfs_is_current_app_uid) 生效, 用 d_backing_inode()
+      - fs/proc_namespace.c: static_branch_unlikely -> likely; include/linux/susfs.h /
+        susfs_def.h 结构体成员顺序与宏同步 (DEFAULT_KSU_MNT_MINOR_DEV,
+        STATX_SUS_KSTAT(_FUSE), susfs_is_current_app_uid)
+    本线保留的差异 (有意, 非漏搬): 不加 zygote_next 的 __lookup_mnt 隐藏块 (经典 KSU
+    无 flag setter, 见 09-05 条目); susfs_def.h 跟随上游 (含 TIF_PROC_NO_SU 34 /
+    UMOUNTED_FOR_ZYGOTE_NEXT 35 定义, 本树无调用方, 惰性无害; backslashxx KSU 用的是
+    60-63 位, 不冲突); clone_mnt 的 VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT 仍按本地
+    is_mnt_ksu_unshared 置位 (上游改成重判静态键, 但静态键可能在分配后被翻转);
+    namespace.c 继续用本树的 fs_context 版 vfs_create_mount 适配。
+    验证: pin 基线 4238ee49a84b + backslashxx/KernelSU master (bb0be92) 全流程重放
+    (susfs -> manual hooks -> bridge) 0 .rej 且 verify greps 通过; 23 个受影响文件与
+    上游参考树逐一比对 (差异仅上述有意项); 全部涉及文件 (fs/*, kernel/stat 等 20 个 +
+    drivers/kernelsu/) 经 clang 17 目标编译通过 (含 fs/stat.c 的 susfs_def.h 注入修正)。
 
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 
