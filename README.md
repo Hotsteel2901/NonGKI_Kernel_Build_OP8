@@ -23,15 +23,22 @@ Chinese docs: [README_cn.md](README_cn.md)
 | File | Content | Applied by |
 |---|---|---|
 | `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
-| `Patch/resukisu_inline_hooks.patch` | ReSukiSU inline hooks (7 hooks) | custom workflow step |
+| `Patch/resukisu_inline_hooks.patch` | ReSukiSU SUSFS inline hooks: exec / open / read_write / stat / input / reboot / setresuid (+ SUS_KSTAT / SPOOF_UNAME bits) | custom workflow step |
 | `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
 
-> All patches are generated against kernel commit `4238ee49a84b`; the workflow pins that commit (`git checkout 4238ee49a84b`).
-> Regenerate patches after upstream changes:
+> Patches are generated against the then-current lineage-23.2 tip (now `66e230426430`); the workflow uses the
+> **latest** kernel source (no pinned checkout), so `patch -p1` applies them with normal offsets.
+> Regenerate after upstream changes:
 > ```bash
 > git diff <new-base> -- <susfs-files> > Patches/Patch/susfs_patch_to_4.19.patch
 > ```
+>
+> The inline hooks match Jack's official `susfs_inline_hook_patches.sh` (official SUSFS v2.3.00+ inline hooks):
+> all 7 hooks pass ReSukiSU's compile-time `inline_hook_check.mk` (static_key gated).
+> On 4.19 `__do_execve_file()` returns early (before `out_free:`) on the success path, so
+> `ksu_handle_post_execveat_sucompat` sits on the exec-success path (the su fd must be installed after the
+> exec into ksud - semantically the same spot as in the official 5.10 `do_execveat_common` layout).
 
 ## Key settings (build-oneplus-8-los23-a16.yml)
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
@@ -40,7 +47,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 - dtb: custom step concatenates `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img`; dtbo not packed (stock partition used)
 
 ## Deviations from Jack's original (intentional)
-- `patch-no-kprobe` removed: its hook scripts target KSU v1.x bool hooks (incompatible with ReSukiSU inline); its selinuxfs static-symbol removal is skipped anyway (CONFIG_KALLSYMS_ALL=y)
+- `patch-no-kprobe` not used: its `susfs_inline_hook_patches.sh` is Jack's official inline-hook implementation (SUSFS v2.3.00+, compatible with ReSukiSU inline); the repo ships the equivalent content as `resukisu_inline_hooks.patch` (patch-based flow, reviewable, fixed apply order). Its selinuxfs static-symbol removal is skipped anyway (CONFIG_KALLSYMS_ALL=y)
 - Only the 4.19 susfs patch is kept (fixed device kernel version)
 - ReKernel-X 4.19 in-tree port via patch (replaces Re:Kernel v8.5)
 - HOOK_METHOD kept but inert: ReSukiSU inline hooks come from resukisu_inline_hooks.patch

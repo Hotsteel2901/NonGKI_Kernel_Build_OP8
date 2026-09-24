@@ -29,15 +29,20 @@
 | 文件 | 内容 | 应用时机 |
 |---|---|---|
 | `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
-| `Patches/Patch/resukisu_inline_hooks.patch` | ReSukiSU inline 模式必需的 7 个钩子 (exec/open/read_write/stat/input/reboot/setresuid) | 工作流自定义步骤 |
+| `Patches/Patch/resukisu_inline_hooks.patch` | ReSukiSU SUSFS inline 模式官方内联钩子: exec / open / read_write / stat / input / reboot / setresuid (另含 fs/stat.c SUS_KSTAT 与 kernel/sys.c uname 伪装片段) | 工作流自定义步骤 |
 | `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
 
-> 注意: 所有补丁基于内核提交 **`4238ee49a84b`** 生成。工作流会自动 `git checkout 4238ee49a84b`
-> 固定该提交以保证补丁干净应用。若 LineageOS 上游有重大更新导致补丁失败, 请基于新提交重新生成补丁:
+> 说明: 补丁基于生成时 lineage-23.2 最新提交 (当前 `66e230426430`) 生成; 工作流使用**最新**内核源码
+> (不固定 checkout), 常规偏移下 `patch -p1` 自动应用。若 LineageOS 上游更新导致 reject, 请基于新 tip 重新生成:
 > ```bash
 > git diff <新base> -- <susfs相关文件> > Patches/Patch/susfs_patch_to_4.19.patch
 > ```
+>
+> 内联钩子与 Jack 的官方 `susfs_inline_hook_patches.sh` (SUSFS v2.3.00+ 官方内联钩子) 对齐:
+> 7 个钩子均通过 ReSukiSU `inline_hook_check.mk` 的编译期校验 (static_key 门控)。
+> 因 4.19 的 `__do_execve_file()` 成功路径在 `out_free:` 之前提前返回, `ksu_handle_post_execveat_sucompat`
+> 钩子置于 exec 成功路径 (su fd 必须在 exec 进 ksud 之后安装; 与官方 5.10 `do_execveat_common` 布局语义等价)。
 
 ## 关键配置项 (build-oneplus-8-los23-a16.yml)
 
@@ -49,10 +54,10 @@
 
 ## 与 Jack 原版格式的差异（有意为之）
 
-- `patch-no-kprobe` 步骤/动作已移除: 其 `susfs_inline_hook_patches.sh` 面向 KSU v1.x
-  bool 钩子与旧版 selinux 修改, 与 ReSukiSU inline 模式不兼容 (seccomp filter_count
-  在 4.19 上由 kernel_compat.mk 条件编译排除, 无需补丁); 其 selinuxfs 静态符号移除
-  部分因本内核 CONFIG_KALLSYMS_ALL=y 而跳过, 无实际作用
+- `patch-no-kprobe` 步骤/动作未采用: 其 `susfs_inline_hook_patches.sh` 即 Jack 的官方内联钩子实现
+  (SUSFS v2.3.00+, 与 ReSukiSU inline 模式兼容), 本仓库以等价内容固化为
+  `resukisu_inline_hooks.patch` (保持补丁化流程、便于审查与固定应用顺序);
+  该脚本的 selinuxfs 静态符号移除部分因本内核 CONFIG_KALLSYMS_ALL=y 会跳过, 无实际作用
 - 仅保留 4.19 版本的 susfs 补丁 (设备内核版本固定, 无需 4.4/4.9/5.4 等)
 - ReKernel-X 4.19 直接用补丁集成 (内置), 替换原 Re:Kernel v8.5
 - HOOK_METHOD 变量保留但无实际作用: ReSukiSU inline 钩子由 resukisu_inline_hooks.patch 提供
