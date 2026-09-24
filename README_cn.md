@@ -3,6 +3,19 @@
 基于 [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) 的 sample 分支格式，
 为 **OnePlus 8 (instantnoodle, 4.19.325-cip132-st16)** 的 **LineageOS 23.2 (Android 16)** 内核提供自动化编译。
 
+## 分支结构
+
+| 分支 | 内核源 | root 实现 | 工作流 |
+|---|---|---|---|
+| `master` | LineageOS `lineage-23.2` | ReSukiSU (SUSFS inline hook) | `Build Kernel` |
+| `KSU` | LineageOS `lineage-23.2` | KernelSU (backslashxx, 手动钩子 + SUSFS bridge) | `Build Kernel` |
+| `ReSuki_Luk` | luk1337 `luk` | ReSukiSU (SUSFS inline hook) | `Build luk Kernel` |
+
+> **`ReSuki_Luk` 分支**: 面向 [luk1337/android_kernel_oneplus_sm8250](https://github.com/luk1337/android_kernel_oneplus_sm8250)
+> 的 `luk` 分支 (4.19.325)。该内核自带完整 OPLUS/OOS 配置 (`vendor/oplus.config`),
+> **同一份产物同时适用于自定义 ROM (LineageOS / crDroid 等) 与 OOS (氢/氧 OS)**。
+> 该分支独占 `Patches/luk/` 补丁与 `build-luk-op8.yml` 工作流, 详见 [Patches/luk/README.md](Patches/luk/README.md)。
+
 ## 集成内容
 
 | 组件 | 说明 |

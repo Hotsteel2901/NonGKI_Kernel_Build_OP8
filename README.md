@@ -4,6 +4,19 @@ Automated kernel build for **OnePlus 8 (instantnoodle, 4.19.325-cip132-st16)** w
 Formatted after [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) (sample branch).
 Chinese docs: [README_cn.md](README_cn.md)
 
+## Branches
+
+| Branch | Kernel source | Root implementation | Workflow |
+|---|---|---|---|
+| `master` | LineageOS `lineage-23.2` | ReSukiSU (SUSFS inline hooks) | `Build Kernel` |
+| `KSU` | LineageOS `lineage-23.2` | KernelSU (backslashxx, manual hooks + SUSFS bridge) | `Build Kernel` |
+| `ReSuki_Luk` | luk1337 `luk` | ReSukiSU (SUSFS inline hooks) | `Build luk Kernel` |
+
+> **`ReSuki_Luk`**: based on [luk1337/android_kernel_oneplus_sm8250](https://github.com/luk1337/android_kernel_oneplus_sm8250)
+> branch `luk` (4.19.325). That kernel ships the full OPLUS/OOS configuration (`vendor/oplus.config`), so
+> **one artifact works on both custom ROMs (LineageOS / crDroid, ...) and OOS**.
+> The branch has its own `Patches/luk/` set and `build-luk-op8.yml` workflow - see [Patches/luk/README.md](Patches/luk/README.md).
+
 ## Integrations
 | Component | Note |
 |---|---|

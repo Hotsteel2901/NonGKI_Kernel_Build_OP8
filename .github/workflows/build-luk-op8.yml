@@ -1,0 +1,215 @@
+name: Build OnePlus 8 luk Kernel (ReSukiSU + SUSFS + DroidSpaces)
+
+# ============================================================================
+# luk 内核独占工作流 (ReSuki_Luk 分支)
+#
+# 目标内核: luk1337/android_kernel_oneplus_sm8250 @ luk
+#   - 该分支自带完整 OPLUS/OOS 内核配置 (vendor/oplus.config 含全量
+#     OPLUS_FEATURE_* / 驱动 / 特性), 同一份产物同时可用于自定义 ROM
+#     (LineageOS / crDroid 等) 与 OOS (氢/氧 OS), 无需分别编译。
+#   - 因此本工作流固定使用 luk 自带的 vendor/kona-perf_defconfig,
+#     并合并 vendor/oplus.config, 不做任何 AOSP-only 裁剪。
+#
+# 集成组件: ReSukiSU (root 实现, SUSFS inline hook 模式)
+#           -> SUSFS v2.3.0 (JackA1ltman 4.19 实证版)
+#           -> DroidSpaces (可选, cgroup 前缀 + USER_NS 配置)
+#
+# 本工作流自包含: 不引用仓库内其它 composite action, 也不依赖
+# master / KSU 分支的补丁文件 (Patches/luk/ 为该分支独占)。
+# ============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: '内核提交 (留空=分支最新; 本地验证基准 bc6f3fcb9)'
+        required: false
+        type: string
+        default: ''
+      ksu_ref:
+        description: 'ReSukiSU 提交/标签 (留空=main 最新)'
+        required: false
+        type: string
+        default: ''
+      enable_droidspaces:
+        description: '集成 DroidSpaces (cgroup 前缀隐藏 + USER_NS)'
+        required: true
+        type: boolean
+        default: true
+
+env:
+  DEVICE_NAME: "oneplus_8"
+  DEVICE_CODENAME: "instantnoodle"
+
+  KERNEL_SOURCE: "https://github.com/luk1337/android_kernel_oneplus_sm8250.git"
+  KERNEL_BRANCH: "luk"
+
+  CLANG_VERSION: "19.1.7"
+  DEFCONFIG_NAME: "vendor/kona-perf_defconfig"
+  ROM_TEXT: "luk"
+
+  KSU_REPO: "https://github.com/ReSukiSU/ReSukiSU.git"
+
+jobs:
+  build-kernel:
+    name: "OnePlus 8 luk (ReSukiSU + SUSFS v2.3.0)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⏰ Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: 💾 Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h
+
+      - name: 🧰 Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flex bison libssl-dev libelf-dev \
+            device-tree-compiler ccache cpio rsync zip unzip bc python3 \
+            coccinelle gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+
+      - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
+        run: |
+          curl -L --retry 3 -o llvm.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${CLANG_VERSION}/LLVM-${CLANG_VERSION}-Linux-X64.tar.xz"
+          mkdir -p /opt/llvm
+          tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
+          echo "/opt/llvm/bin" >> $GITHUB_PATH
+          /opt/llvm/bin/clang --version
+
+      - name: 📥 Clone luk kernel
+        run: |
+          git clone --depth=1 "$KERNEL_SOURCE" -b "$KERNEL_BRANCH" device_kernel
+          cd device_kernel
+          if [ -n "${{ inputs.kernel_ref }}" ]; then
+            git fetch --depth=1 origin "${{ inputs.kernel_ref }}" && git checkout FETCH_HEAD
+          fi
+          git log --oneline -1
+          echo "-g$(git rev-parse --short HEAD)-luk" > .scmversion
+
+      - name: 📥 Setup ReSukiSU
+        run: |
+          cd device_kernel
+          git clone "$KSU_REPO" KernelSU
+          cd KernelSU
+          if [ -n "${{ inputs.ksu_ref }}" ]; then
+            git checkout "${{ inputs.ksu_ref }}"
+          fi
+          git log --oneline -1
+          cd ..
+          ln -sf ../KernelSU/kernel drivers/kernelsu
+          grep -q "kernelsu" drivers/Makefile || \
+            printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
+            sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+          echo "[+] ReSukiSU wired."
+
+      - name: 🪝 Apply ReSukiSU inline hooks patch
+        run: |
+          cd device_kernel
+          patch -p1 < ../Patches/luk/0001-resukisu-inline-hooks.patch
+          echo "[+] ReSukiSU inline hooks applied."
+
+      - name: 🪝 Apply SUSFS v2.3.0 patch
+        run: |
+          cd device_kernel
+          patch -p1 < ../Patches/luk/0002-susfs-v2.3.0.patch
+          grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
+          grep -q "p->state = 0" fs/namei.c && echo "[+] p->state=0 present."
+          echo "[+] SUSFS v2.3.0 applied."
+
+      - name: 💿 Apply DroidSpaces (cocci + 配置)
+        if: inputs.enable_droidspaces
+        run: |
+          cd device_kernel
+          # luk 树的 net_prio 仍是 css->cgroup->id, 但该树 struct cgroup 无 id 成员
+          # (LineageOS 树已改为 css->id)。DroidSpaces 的 droidspaces.config 会打开
+          # CONFIG_CGROUP_NET_PRIO, 故此处同步该修复, 否则 init/do_mounts.c 编译失败。
+          if grep -q "css->cgroup->id" include/net/netprio_cgroup.h; then
+            patch -p1 < ../Patches/luk/0003-netprio-cgroup-css-id.patch
+            echo "[+] netprio cgroup fix applied."
+          else
+            echo "[-] netprio cgroup already fixed, skipped."
+          fi
+          cp ../Patches/luk/droidspaces.config arch/arm64/configs/
+          cp ../Patches/luk/fix_restore_cgroup_file_prefix_handling.cocci ./
+          if ! grep -q "kernfs_create_link" kernel/cgroup/cgroup.c; then
+            spatch --sp-file fix_restore_cgroup_file_prefix_handling.cocci \
+                   --in-place kernel/cgroup/cgroup.c
+            echo "[+] cgroup.c patched."
+          else
+            echo "[-] cgroup.c already patched, skipped."
+          fi
+          echo "[+] DroidSpaces applied."
+
+      - name: 🚀 Build kernel
+        run: |
+          cd device_kernel
+          export PATH=/opt/llvm/bin:$PATH
+          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
+          TOPTS="CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu-"
+
+          make O=out $MAKE_OPTS $TOPTS $DEFCONFIG_NAME
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            arch/arm64/configs/vendor/oplus.config
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            ../Patches/luk/susfs.config
+          if [ "${{ inputs.enable_droidspaces }}" = "true" ]; then
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              arch/arm64/configs/droidspaces.config
+          fi
+          make O=out $MAKE_OPTS $TOPTS olddefconfig
+          make -j$(nproc) O=out $MAKE_OPTS $TOPTS 2>&1 | tee error.log
+
+      - name: 🖼️ Generate dtb.img
+        run: |
+          cd device_kernel
+          # OnePlus 8 = OPLUS project 19821 (arch/arm64/boot/dts/vendor/Makefile: "# 8" -> 19821)
+          D=out/arch/arm64/boot/dts/vendor/19821
+          [ -d "$D" ] || D=$(dirname "$(find out/arch/arm64/boot/dts -name kona.dtb | head -n1)")
+          cat $D/kona.dtb $D/kona-v2.dtb $D/kona-v2.1.dtb > out/arch/arm64/boot/dtb.img
+          ls -la out/arch/arm64/boot/dtb.img
+
+      - name: ✅ Verify
+        run: |
+          cd device_kernel
+          grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS 未生效"; exit 1; }
+          grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS 版本异常"; exit 1; }
+          nm out/vmlinux | grep -q "ksu_handle_execveat" || { echo "[-] KSU 符号缺失"; exit 1; }
+          nm out/vmlinux | grep -q "susfs_" || { echo "[-] SUSFS 符号缺失"; exit 1; }
+          if [ "${{ inputs.enable_droidspaces }}" = "true" ]; then
+            grep -q "^CONFIG_USER_NS=y" out/.config || { echo "[-] USER_NS 缺失"; exit 1; }
+            grep -q "kernfs_create_link" kernel/cgroup/cgroup.c || { echo "[-] cgroup 补丁缺失"; exit 1; }
+          fi
+          echo "[+] Image: $(stat -c%s out/arch/arm64/boot/Image) bytes"
+          echo "[+] 双系统兼容: luk defconfig + vendor/oplus.config (自定义 ROM / OOS 通用)"
+
+      - name: 📦 Package AnyKernel3
+        run: |
+          cd device_kernel
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
+          sed -i 's/ExampleKernel by osm0sis @ xda-developers/OnePlus 8 luk NonGKI Kernel (ReSukiSU+SUSFS) by Hotsteel2901 - CustomROM+OOS/g' Anykernel3/anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
+          sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
+          sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
+          mkdir -p tmp
+          B=out/arch/arm64/boot
+          cp -fp $B/Image tmp/
+          [ -f $B/dtb.img ] && cp -fp $B/dtb.img tmp/dtb
+          cp -rp ./Anykernel3/* tmp
+          cd tmp && zip -r9 -q tmp.zip .
+          cd ..
+          NAME="${{ env.DEVICE_CODENAME }}-${{ env.ROM_TEXT }}-$(date +%Y%m%d%H%M%S)-Anykernel3.zip"
+          cp -fp tmp/tmp.zip "$NAME"
+          echo "PACK_NAME=$NAME" >> $GITHUB_ENV
+
+      - name: ⬆️ Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-luk-${{ github.run_number }}
+          path: device_kernel/${{ env.PACK_NAME }}
+          if-no-files-found: error
