@@ -163,7 +163,55 @@ jobs:
               arch/arm64/configs/droidspaces.config
           fi
           make O=out $MAKE_OPTS $TOPTS olddefconfig
+
+          # ---- 原厂三态一致性校验 (防止 merge_config 静默覆盖 luk 原厂值) ----
+          # susfs.config 在 oplus.config 之后合并, 若其中出现同名 CONFIG_x=...,
+          # 会覆盖 luk 的原厂设定。历史上曾因 CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST=y
+          # 覆盖原厂 =m, 导致模块变内建、OOS 侧加载 .ko 失败。
+          check_cfg() {
+            local key="$1" want="$2" why="$3"
+            local got
+            got=$(grep -E "^${key}=" out/.config | head -n1 | cut -d= -f2-)
+            if [ "$got" != "$want" ]; then
+              echo "[-] 配置漂移: ${key} 期望 '${want}' 实际 '${got}'"
+              echo "    原因: ${why}"
+              exit 1
+            fi
+            echo "[+] ${key}=${got} (符合 luk 原厂值)"
+          }
+          # 必须保持 =m: obj-$(CONFIG_...) 生成独立 .ko, OOS 侧依赖该文件
+          check_cfg CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST m \
+            "oplus.config:51 为 =m, 被 susfs.config/droidspaces.config 覆盖"
+          # 必须为 n: 强制签名会让 OOS 原厂模块全部无法加载
+          if grep -q "^CONFIG_MODULE_SIG_FORCE=y" out/.config; then
+            echo "[-] CONFIG_MODULE_SIG_FORCE=y: OOS 原厂模块将全部加载失败"
+            exit 1
+          fi
+          echo "[+] CONFIG_MODULE_SIG_FORCE 未启用 (允许加载原厂已签名模块)"
+
           make -j$(nproc) O=out $MAKE_OPTS $TOPTS 2>&1 | tee error.log
+
+      - name: 🧩 Collect & strip kernel modules
+        run: |
+          cd device_kernel
+          export PATH=/opt/llvm/bin:$PATH
+          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
+          TOPTS="CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu-"
+
+          # luk 树只把 CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST 等极少数项设为 =m。
+          # OOS 原厂在系统分区里自带这些 .ko, 因此本 zip 默认不打包模块 —— 只换
+          # kernel, 模块沿用系统分区, 这样两个系统都能用同一份产物。
+          #
+          # 但如果本次配置产生了原厂没有的模块, 就必须随包提供, 否则 OOS 侧缺失。
+          make O=out $MAKE_OPTS $TOPTS INSTALL_MOD_PATH=modules modules_install 2>&1 | tail -5
+          if [ -d modules/lib/modules ]; then
+            find modules -name '*.ko' | sort > ../built_modules.txt
+            echo "[+] 本次构建产生的模块:"
+            cat ../built_modules.txt
+          else
+            echo "[+] 本次构建未产生任何模块 (全部内建), 无需打包"
+            : > ../built_modules.txt
+          fi
 
       - name: 🖼️ Generate dtb.img
         run: |
@@ -185,7 +233,29 @@ jobs:
             grep -q "^CONFIG_USER_NS=y" out/.config || { echo "[-] USER_NS 缺失"; exit 1; }
             grep -q "kernfs_create_link" kernel/cgroup/cgroup.c || { echo "[-] cgroup 补丁缺失"; exit 1; }
           fi
+
+          # ---- OOS 兼容性校验 (双系统同一产物) ----
+          echo "=== OOS 兼容性 ==="
+          # 原厂 oplus.config:51 该值为 m -> 必须产出独立 .ko, 不能被内建
+          rb=$(grep -E "^CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST=" out/.config | cut -d= -f2-)
+          if [ "$rb" != "m" ]; then
+            echo "[-] CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST=${rb} (期望 m)"
+            echo "    OOS 侧按原厂路径加载 oplus_connectivity_routerboost.ko, 该文件将不存在"
+            exit 1
+          fi
+          grep -q "^CONFIG_MODULE_SIG_FORCE=y" out/.config && {
+            echo "[-] MODULE_SIG_FORCE=y 会拒绝 OOS 原厂已签名模块"; exit 1; }
+          # 确认该模块确实被编译成 .ko 而非 built-in.o
+          if [ -f out/net/oplus_connectivity_routerboost/built-in.o ]; then
+            echo "[-] oplus_connectivity_routerboost 被内建 (built-in.o 存在)"
+            exit 1
+          fi
+          for ko in $(cat ../built_modules.txt 2>/dev/null); do
+            echo "[+] 模块: $ko"
+          done
+
           echo "[+] Image: $(stat -c%s out/arch/arm64/boot/Image) bytes"
+          echo "[+] dtb.img: $(stat -c%s out/arch/arm64/boot/dtb.img) bytes"
           echo "[+] 双系统兼容: luk defconfig + vendor/oplus.config (自定义 ROM / OOS 通用)"
 
       - name: 📦 Package AnyKernel3
@@ -200,6 +270,18 @@ jobs:
           B=out/arch/arm64/boot
           cp -fp $B/Image tmp/
           [ -f $B/dtb.img ] && cp -fp $B/dtb.img tmp/dtb
+          # 原厂在系统分区自带这些 .ko, 默认不打包模块 (只替换 kernel)。
+          # 若本次产生了模块, 一并放入 zip 的 modules/ 供刷机脚本按需安装。
+          if [ -s ../built_modules.txt ]; then
+            echo "[+] 打包模块:"
+            while read -r ko; do
+              [ -f "$ko" ] || continue
+              dest="tmp/modules/$(basename "$(dirname "$ko")")"
+              mkdir -p "$dest"
+              cp -fp "$ko" "$dest/"
+              echo "    $ko -> $dest/"
+            done < ../built_modules.txt
+          fi
           cp -rp ./Anykernel3/* tmp
           cd tmp && zip -r9 -q tmp.zip .
           cd ..

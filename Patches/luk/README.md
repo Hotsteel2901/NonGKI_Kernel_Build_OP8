@@ -36,21 +36,90 @@ luk 分支与 LineageOS 树的关键区别: 它**保留了 OPLUS/OOS 的完整�
 
 补充说明:
 
-- luk 的 defconfig 中 `CONFIG_MODULE_SIG=y` + `CONFIG_MODULE_SIG_FORCE=y` **保持不动**:
-  OnePlus 8 的 vendor 分区没有内核模块 (LineageOS 专有文件清单中无任何 `.ko`,
-  WLAN 等全部内建 `=y`), 模块签名校验不影响两个系统的启动
+- **`CONFIG_MODULE_SIG_FORCE` 必须关闭** (见下方"OOS 兼容性修复"): luk 原厂
+  defconfig 带 `CONFIG_MODULE_SIG_FORCE=y`, 会强制校验所有模块签名。OOS 的
+  `vendor_dlkm` / `system_dlkm` 里的 `.ko` 由一加官方私钥签名, 与本内核构建
+  密钥不同, 一旦强制校验将**全部拒绝加载**。这与"vendor 分区没有内核模块"
+  是两回事 —— luk 的 `oplus.config` 本身就有 `=m` 的项 (如
+  `CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST=m`), OOS 侧正是在系统分区里加载这些
+  `.ko`。本分支通过 `susfs.config` 显式关闭 FORCE (保留 `CONFIG_MODULE_SIG=y`,
+  模块仍带签名, 只是不强制校验)
 - ReSukiSU 以内建 (builtin) 方式编入内核, 不依赖模块加载
 - dtb: 构建后拼接 `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img` (与官方一致);
   dtbo 不打包, 沿用系统分区的 dtbo (自定义 ROM / OOS 均是如此)
+- **模块策略**: 本工作流默认只替换 kernel (`Image` + `dtb.img`), 不覆盖系统分区里
+  的原厂 `.ko` —— 两个系统都沿用各自已有的模块, 这也是"同一产物双系统通用"的前提。
+  若本次配置确实产生了模块, 会一并打进 zip 的 `modules/` 目录并在日志中列出
+
+## OOS 兼容性修复 (2026-09)
+
+> 背景: OOS 用户刷入后能正常开机并取得 root, 但反馈 "missing that whole
+> opensource driver" / "wifi not work"。
+
+**根因**: `Patches/luk/susfs.config` 曾含一行
+
+```
+CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST=y
+```
+
+而 luk 原厂 `arch/arm64/configs/vendor/oplus.config:51` 的值是 `=m`。
+
+`merge_config.sh` 按命令行顺序合并, 后合并的片段覆盖先前的:
+
+```
+kona-perf_defconfig  →  vendor/oplus.config (=m)  →  susfs.config (=y)  →  olddefconfig
+                                                          ↑ 这里把 m 覆盖成了 y
+```
+
+`net/Makefile:98` 是 `obj-$(CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST) += oplus_connectivity_routerboost/`,
+于是构建行为从
+
+| 配置 | Kbuild 行为 | 产物 |
+|---|---|---|
+| `=m` (原厂) | `obj-m := oplus_connectivity_routerboost.o` | `oplus_connectivity_routerboost.ko` |
+| `=y` (被覆盖) | `obj-y := oplus_connectivity_routerboost/` | 链接进 `built-in.o`, **不产生 .ko** |
+
+OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 但该文件
+已不存在 → 加载失败 → 相关网络加速特性失效。
+
+**修复**:
+
+1. 删除 `susfs.config` 中的 `CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST=y`, 恢复原厂 `=m`
+2. 在 `susfs.config` 中显式 `# CONFIG_MODULE_SIG_FORCE is not set`, 使 OOS 原厂
+   已签名模块可以加载
+3. 工作流新增**配置漂移守卫**: 构建前断言 `CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST=m`
+   且 `CONFIG_MODULE_SIG_FORCE` 未启用, 任一不符即 fail, 避免同类静默覆盖再次发生
+4. `Verify` 步骤新增 OOS 兼容性断言 (`built-in.o` 不存在 / 模块签名策略正确)
+
+### 关于"vendor/qcom/opensource 三个目录缺失"
+
+此说法经核对**不成立**。luk 树 (`bc6f3fcb9`) 实际情况:
+
+| 目录 | luk 树状态 |
+|---|---|
+| `drivers/staging/qcacld-3.0` | ✅ 存在 (830 文件) |
+| `drivers/staging/qca-wifi-host-cmn` | ✅ 存在 (905 文件) |
+| `drivers/staging/fw-api` | ✅ 存在 (3355 文件) |
+| `techpack/audio` | ✅ 存在 (494 文件) |
+
+- `drivers/staging/utils` 在 luk 树中**本就不需要**: sm8350 (msm-5.4) 的 manifest
+  把 wlan `utils` 软链到 `staging/utils`, 而 luk 的 `qcacld-3.0/Kbuild` 引用的是
+  `$(WLAN_COMMON_ROOT)/utils/...`, 即 `qca-wifi-host-cmn/utils/`, 该目录及其全部
+  子目录 (`host_diag_log` / `epping` / `sys` / `nlink` / `logging`) 均存在
+- audio 走 `techpack/audio` (由 `techpack/Kbuild` 自动纳入构建) 而非
+  `drivers/staging/audio-kernel`, 两者是不同世代的驱动布局
+- 参考 manifest (`fatalcoder524/OP9_KSUN_SUSFS`) 用的是 `<linkfile>`, 即从外部
+  仓库**软链**, 并非 merge; 且其面向 sm8350/msm-5.4, 路径假设不能直接套用 sm8250/luk
 
 ## 补丁清单 (`Patches/luk/`)
+
 
 | 文件 | 内容 | 行数 |
 |---|---|---|
 | `0001-resukisu-inline-hooks.patch` | ReSukiSU SUSFS inline 模式官方 7 个内联钩子 (exec / open / read_write / stat / input / reboot / setresuid) + fs/stat.c 的 SUS_KSTAT 片段 + kernel/sys.c uname 伪装片段 | 401 |
 | `0002-susfs-v2.3.0.patch` | SUSFS v2.3.0 全部内核侧代码 (18 个文件: `fs/susfs.c`、`include/linux/susfs.h`、`susfs_def.h`、namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | 4184 |
 | `0003-netprio-cgroup-css-id.patch` | 修复 luk 树 `net_prio` 使用 `css->cgroup->id` (该树 `struct cgroup` 无 `id` 成员) → `css->id`, 5 处; 仅当 DroidSpaces 打开 `CONFIG_CGROUP_NET_PRIO` 时需要 | 54 |
-| `susfs.config` | KSU + SUSFS 编译开关 (merge_config 片段) | 26 |
+| `susfs.config` | KSU + SUSFS 编译开关 (merge_config 片段); 同时负责关闭 `CONFIG_MODULE_SIG_FORCE` 以保证 OOS 原厂模块可加载 | 40 |
 | `droidspaces.config` | DroidSpaces Non-GKI 配置 (USER_NS / PID_NS / netns 等), 工作流可选启用 | 98 |
 | `fix_restore_cgroup_file_prefix_handling.cocci` | cgroup.c 补 `kernfs_create_link` 前缀链接 (DroidSpaces 用) | 16 |
 
