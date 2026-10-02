@@ -238,6 +238,59 @@ jobs:
           grep -q "susfs_init();" drivers/kernelsu/ksu.c
           echo "[+] SUSFS bridge verified in source tree."
 
+      - name: 🧩 Patch Hybrid Mount VFS Subsystem
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel/
+
+          # Hybrid Mount 的 VFS 后端不是内核通用 VFS，而是它自己的 hybridmount 子系统
+          # （fork 自 NoMount，通过 keyring 驱动）。它只提供 5.10/5.15/6.1/6.6/6.12 的
+          # 预编译 .ko，4.19 一个候选都匹配不到，所以必须 built-in 集成。
+          # 本子系统与 SUSFS / backslashxx KernelSU 完全解耦（不引用任何
+          # ksu_/susfs_ 符号），与 SUSFS 补丁仅在 fs/Makefile 尾部追加处有交集，
+          # 放在 bridge 之后是为了不与前面各步的 .rej 自检互相干扰。
+          cp /tmp/Patches/Patch/hybridmount_patch_to_4.19.patch ./
+          patch -p1 < hybridmount_patch_to_4.19.patch || true
+          rm -f hybridmount_patch_to_4.19.patch
+          # patch(1) 成功时也会留 .orig 备份，清掉以免被下面的 .rej 自检误判
+          find . -name "*.orig" -delete
+
+          # patch -p1 加了 || true，若真有 hunk 打不上这里必须报出来
+          if [ -n "$(find . -name '*.rej')" ]; then
+            echo "[-] hybridmount_patch has rejected hunks!"
+            find . -name "*.rej" -exec cat {} \;
+            false
+          fi
+
+          # 集成结果自检
+          test -f fs/hybridmount/hybridmount.c || { echo "[-] fs/hybridmount/hybridmount.c missing"; false; }
+          grep -qF 'obj-$(CONFIG_HYBRIDMOUNT) += hybridmount/' fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
+          grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
+          echo "[+] Hybrid Mount VFS subsystem patched (built-in)."
+
+      - name: ⚙️ Enable Hybrid Mount VFS in DEFCONFIG
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel
+
+          DEFCONFIG_PATH="./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}"
+
+          # CONFIG_KEYS=y 是 hybridmount 的硬依赖（它要 register_key_type）。
+          # kona-perf_defconfig 里没有这一行，目前是靠 CONFIG_FS_ENCRYPTION=y
+          # 在 fs/crypto/Kconfig 里 'select KEYS' 传递选中的。显式写出来，
+          # 免得将来有人关掉 FS_ENCRYPTION 时把 keyring 一起带走。
+          # 注意：只加 CONFIG_KEYS=y 不够，KEYS 还 select ASSOCIATIVE_ARRAY。
+          sed -i '/^CONFIG_KEYS=/d' "$DEFCONFIG_PATH"
+          sed -i '/^CONFIG_ASSOCIATIVE_ARRAY=/d' "$DEFCONFIG_PATH"
+          echo "CONFIG_KEYS=y" >> "$DEFCONFIG_PATH"
+          echo "CONFIG_ASSOCIATIVE_ARRAY=y" >> "$DEFCONFIG_PATH"
+
+          # =y 而不是 =m：4.19 没有对应的预编译 .ko，内置进内核镜像才生效。
+          # 先删掉可能存在的旧行，避免重复定义。
+          sed -i '/^CONFIG_HYBRIDMOUNT=/d' "$DEFCONFIG_PATH"
+          echo "CONFIG_HYBRIDMOUNT=y" >> "$DEFCONFIG_PATH"
+
+          echo "[+] Appended to ${DEFCONFIG_PATH}:"
+          grep -nE "CONFIG_(HYBRIDMOUNT|KEYS|ASSOCIATIVE_ARRAY)=" "$DEFCONFIG_PATH"
+
       - name: 🪛 Extra Kernel Options
         run: |
           # Only ${{ env.DEVICE_NAME }} use it.
