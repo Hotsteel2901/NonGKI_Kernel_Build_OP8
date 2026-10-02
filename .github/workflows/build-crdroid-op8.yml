@@ -241,6 +241,28 @@ jobs:
           echo "[+] Stage2 patch applied."
           grep -q "p->state = 0" fs/namei.c && echo "[+] p->state=0 present (anti-black-screen fix)"
 
+      - name: 🧩 Apply Hybrid Mount VFS patch
+        run: |
+          cd device_kernel
+          # Hybrid Mount 的 VFS 后端不是内核通用 VFS, 而是它自己的 hybridmount
+          # 子系统 (fork 自 NoMount, 通过 keyring 驱动)。上游只提供 5.10+ 的
+          # 预编译 .ko, 4.19 无匹配候选, 故 built-in 集成。
+          # 与 SUSFS / ReSukiSU 完全解耦: hybridmount.c 不引用任何 ksu_/susfs_ 符号,
+          # 与 SUSFS 补丁仅在 fs/Makefile 尾部追加处有交集 (offset +2, 无冲突)。
+          patch -p1 < ../Patches/crdroid/0004-hybridmount-vfs.patch
+          find . -name "*.orig" -delete
+
+          if [ -n "$(find . -name '*.rej')" ]; then
+            echo "[-] 0004-hybridmount-vfs.patch has rejected hunks!"
+            find . -name "*.rej" -exec cat {} \;
+            false
+          fi
+
+          test -f fs/hybridmount/hybridmount.c || { echo "[-] fs/hybridmount/hybridmount.c missing"; exit 1; }
+          grep -qF 'obj-$(CONFIG_HYBRIDMOUNT) += hybridmount/' fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
+          grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
+          echo "[+] Hybrid Mount VFS applied (built-in)."
+
       - name: 🚀 Build kernel (Stage2)
         id: build
         run: |
@@ -251,6 +273,8 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/vendor/oplus.config
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            ../Patches/crdroid/hybridmount.config
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -268,8 +292,11 @@ jobs:
           cd device_kernel
           grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
           grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS version mismatch"; exit 1; }
+          grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
+          grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (hybridmount hard dependency)"; exit 1; }
           nm out/vmlinux | grep -q "susfs" || { echo "[-] susfs symbols missing"; exit 1; }
-          echo "[+] Stage2 verified OK (SUSFS v2.3.0)."
+          nm out/vmlinux | grep -q "hybridmount" || { echo "[-] hybridmount symbols missing"; exit 1; }
+          echo "[+] Stage2 verified OK (SUSFS v2.3.0 + Hybrid Mount VFS)."
 
       - name: 📦 Package AnyKernel3
         run: |
@@ -359,6 +386,21 @@ jobs:
       - name: 🪝 Apply Stage2 patch
         run: cd device_kernel && patch -p1 < ../Patches/crdroid/0002-stage2-susfs.patch
 
+      - name: 🧩 Apply Hybrid Mount VFS patch
+        run: |
+          cd device_kernel
+          patch -p1 < ../Patches/crdroid/0004-hybridmount-vfs.patch
+          find . -name "*.orig" -delete
+          if [ -n "$(find . -name '*.rej')" ]; then
+            echo "[-] 0004-hybridmount-vfs.patch has rejected hunks!"
+            find . -name "*.rej" -exec cat {} \;
+            exit 1
+          fi
+          test -f fs/hybridmount/hybridmount.c || { echo "[-] fs/hybridmount/hybridmount.c missing"; exit 1; }
+          grep -qF 'obj-$(CONFIG_HYBRIDMOUNT) += hybridmount/' fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
+          grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
+          echo "[+] Hybrid Mount VFS applied (built-in)."
+
       - name: 💿 Apply Stage3 DroidSpaces (cocci + config)
         run: |
           cd device_kernel
@@ -386,6 +428,8 @@ jobs:
             arch/arm64/configs/vendor/oplus.config
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/droidspaces.config
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            ../Patches/crdroid/hybridmount.config
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -405,6 +449,9 @@ jobs:
           grep -q "^CONFIG_USER_NS=y" out/.config || { echo "[-] USER_NS missing"; exit 1; }
           grep -q "^CONFIG_PID_NS=y" out/.config || { echo "[-] PID_NS missing"; exit 1; }
           grep -q "kernfs_create_link" kernel/cgroup/cgroup.c || { echo "[-] cgroup patch missing"; exit 1; }
+          grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
+          grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (hybridmount hard dependency)"; exit 1; }
+          nm out/vmlinux | grep -q "hybridmount" || { echo "[-] hybridmount symbols missing"; exit 1; }
           echo "[+] Stage3 verified OK (all three components)."
 
       - name: 📦 Package AnyKernel3
