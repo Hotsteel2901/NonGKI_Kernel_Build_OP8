@@ -119,7 +119,9 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 | `0001-resukisu-inline-hooks.patch` | ReSukiSU SUSFS inline 模式官方 7 个内联钩子 (exec / open / read_write / stat / input / reboot / setresuid) + fs/stat.c 的 SUS_KSTAT 片段 + kernel/sys.c uname 伪装片段 | 401 |
 | `0002-susfs-v2.3.0.patch` | SUSFS v2.3.0 全部内核侧代码 (18 个文件: `fs/susfs.c`、`include/linux/susfs.h`、`susfs_def.h`、namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | 4184 |
 | `0003-netprio-cgroup-css-id.patch` | 修复 luk 树 `net_prio` 使用 `css->cgroup->id` (该树 `struct cgroup` 无 `id` 成员) → `css->id`, 5 处; 仅当 DroidSpaces 打开 `CONFIG_CGROUP_NET_PRIO` 时需要 | 54 |
+| `0004-hybridmount-vfs.patch` | Hybrid Mount 的 VFS 后端子系统 (`fs/hybridmount/`, fork 自 NoMount, 通过 keyring 驱动) built-in 集成; 7 文件: `fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}` | 3102 |
 | `susfs.config` | KSU + SUSFS 编译开关 (merge_config 片段); 同时负责关闭 `CONFIG_MODULE_SIG_FORCE` 以保证 OOS 原厂模块可加载 | 40 |
+| `hybridmount.config` | Hybrid Mount 编译开关 (`CONFIG_HYBRIDMOUNT=y` + 显式 `CONFIG_KEYS=y` / `CONFIG_ASSOCIATIVE_ARRAY=y`) | 34 |
 | `droidspaces.config` | DroidSpaces Non-GKI 配置 (USER_NS / PID_NS / netns 等), 工作流可选启用 | 98 |
 | `fix_restore_cgroup_file_prefix_handling.cocci` | cgroup.c 补 `kernfs_create_link` 前缀链接 (DroidSpaces 用) | 16 |
 
@@ -132,6 +134,10 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 > git diff <新base> -- fs include/linux/susfs.h include/linux/susfs_def.h kernel/kallsyms.c \
 >   mm/memory.c security/selinux/avc.c > Patches/luk/0002-susfs-v2.3.0.patch
 > ```
+>
+> `0004-hybridmount-vfs.patch` 与 master / KSU 分支的
+> `Patches/Patch/hybridmount_patch_to_4.19.patch` 是**同一份内容**
+> (md5 `43debcca69d6dbb6320fc30c1964b997`), 仅文件名按本目录的编号约定重命名。
 
 ## 为什么需要单独适配 (与 LineageOS 树的差异)
 
@@ -151,7 +157,7 @@ luk 树与 LineageOS `lineage-23.2` 树**不同源**, 直接套用本仓库 Line
 
 | 检查项 | 结果 |
 |---|---|
-| 补丁应用 (纯净 luk 树, `patch -p1`) | 0001: 7 文件 0 reject; 0002: 18 文件 0 reject (若干 hunk 带偏移) |
+| 补丁应用 (纯净 luk 树, `patch -p1`) | 0001: 7 文件 0 reject; 0002: 18 文件 0 reject (若干 hunk 带偏移); 0004: 7 文件 0 reject |
 | ReSukiSU 编译期钩子校验 (`inline_hook_check.mk`) | 7/7 通过: setresuid / execveat / faccessat / sys_read / stat / sys_reboot / input |
 | SUSFS 版本识别 | `SUSFS_VERSION: v2.3.0` (`kernel/Kbuild` 自动读取) |
 | KSU 内核类型判定 | `KERNEL_TYPE: Non-GKI`, `using SuSFS Inline hook` |

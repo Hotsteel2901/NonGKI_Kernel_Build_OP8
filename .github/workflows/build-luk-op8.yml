@@ -122,6 +122,29 @@ jobs:
           grep -q "p->state = 0" fs/namei.c && echo "[+] p->state=0 present."
           echo "[+] SUSFS v2.3.0 applied."
 
+      - name: 🧩 Apply Hybrid Mount VFS patch
+        run: |
+          cd device_kernel
+          # Hybrid Mount 的 VFS 后端不是内核通用 VFS, 而是它自己的 hybridmount
+          # 子系统 (fork 自 NoMount, 通过 keyring 驱动)。上游只提供 5.10+ 的
+          # 预编译 .ko, 4.19 无匹配候选, 故 built-in 集成。
+          # 与 SUSFS / ReSukiSU 完全解耦: hybridmount.c 不引用任何 ksu_/susfs_ 符号,
+          # 与 SUSFS 补丁仅在 fs/Makefile 尾部追加处有交集 (offset +2, 无冲突)。
+          patch -p1 < ../Patches/luk/0004-hybridmount-vfs.patch
+          # patch(1) 成功时也会留 .orig 备份, 清掉
+          find . -name "*.orig" -delete
+
+          if [ -n "$(find . -name '*.rej')" ]; then
+            echo "[-] 0004-hybridmount-vfs.patch has rejected hunks!"
+            find . -name "*.rej" -exec cat {} \;
+            false
+          fi
+
+          test -f fs/hybridmount/hybridmount.c || { echo "[-] fs/hybridmount/hybridmount.c missing"; false; }
+          grep -qF 'obj-$(CONFIG_HYBRIDMOUNT) += hybridmount/' fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
+          grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
+          echo "[+] Hybrid Mount VFS applied (built-in)."
+
       - name: 💿 Apply DroidSpaces (cocci + 配置)
         if: inputs.enable_droidspaces
         run: |
@@ -158,6 +181,8 @@ jobs:
             arch/arm64/configs/vendor/oplus.config
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             ../Patches/luk/susfs.config
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            ../Patches/luk/hybridmount.config
           if [ "${{ inputs.enable_droidspaces }}" = "true" ]; then
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               arch/arm64/configs/droidspaces.config
