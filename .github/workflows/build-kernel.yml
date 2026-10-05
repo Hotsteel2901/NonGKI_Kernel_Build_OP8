@@ -29,7 +29,7 @@ on:
         type: boolean
         default: false
       vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (尚未实现 4.19 移植, 开启会 fail)'
+        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
         required: false
         type: boolean
         default: false
@@ -54,7 +54,7 @@ on:
         type: boolean
         default: false
       vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (尚未实现 4.19 移植, 开启会 fail)'
+        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
         required: true
         type: boolean
         default: false
