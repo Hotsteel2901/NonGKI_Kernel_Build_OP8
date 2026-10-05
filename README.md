@@ -9,6 +9,8 @@ Chinese docs: [README_cn.md](README_cn.md)
 |---|---|
 | BakaSU | KernelSU fork (formerly ReSukiSU), CONFIG_KSU_SUSFS (inline hook) mode |
 | SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
+| Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
+| NoMount VFS | `fs/nomount` built-in via upstream `kernel/setup.sh` (keyring magic `"NOMOUNT"`), off by default |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
 | Baseband Guard | partition write protection LSM |
@@ -33,6 +35,9 @@ Chinese docs: [README_cn.md](README_cn.md)
 |---|---|---|
 | `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
 | `Patch/resukisu_inline_hooks.patch` | BakaSU inline hooks (7 hooks) | custom workflow step |
+| `Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS subsystem (`fs/hybridmount`, keyring magic `"hm1"`) | custom workflow step (gated by `VFS_HYBRIDMOUNT`) |
+| `crdroid/0004-hybridmount-vfs.patch` | Second copy of the same Hybrid Mount patch, used by `build-crdroid-op8.yml` (identical content) | custom workflow step (gated by `VFS_HYBRIDMOUNT`) |
+| *(NoMount)* | no in-repo patch — pulled from upstream `kernel/setup.sh` | custom workflow step (gated by `VFS_NOMOUNT`) |
 | `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
 
@@ -42,9 +47,46 @@ Chinese docs: [README_cn.md](README_cn.md)
 > git diff <new-base> -- <susfs-files> > Patches/Patch/susfs_patch_to_4.19.patch
 > ```
 
+## VFS backends (pick at most ONE)
+
+Three path-redirection backends are supported. They all hijack **the same VFS layer**
+(`inode_operations` / `file_operations` / `dentry_operations`) and each speaks its own
+**incompatible keyring protocol**, so **exactly one may be enabled at a time**. Enabling
+two makes the drivers fight over the same hooks: the userspace metamodule cannot handshake
+(it reports "kernel not supported"), and it can crash outright. Upstream Hybrid Mount's own
+Kconfig states it is *"not compatible with NoMount's metamodule or its tooling"*.
+
+A validation step runs at the start of every stage that integrates VFS and **fails
+immediately** if more than one backend is enabled.
+
+| Switch | Backend | Default | Kernel side |
+|---|---|---|---|
+| `VFS_HYBRIDMOUNT` | Hybrid Mount VFS | `true` | `fs/hybridmount` (in-tree 4.19 port) |
+| `VFS_NOMOUNT` | NoMount VFS | `false` | `fs/nomount` (upstream `setup.sh` integration) |
+| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | **not implemented yet** — enabling fails the build |
+
+Set them in `build-crdroid-op8.yml`'s `env:` block. Scope on this branch:
+
+- **Stage1** integrates BakaSU only — it has **no** VFS backend and skips the check.
+- **Stage2 / Stage3** carry the VFS integration and each run the validation independently.
+- The shared `build-oneplus-8-los23-a16.yml` (LineageOS kernel) also honours the same
+  three switches via its own `env:` block.
+
+> All three must be built-in (`=y`), never `=m`: 4.19 has no matching prebuilt `.ko`
+> (upstream only ships 5.10/5.15/6.1/6.6/6.12 modules).
+>
+> Hybrid Mount and NoMount are **same-root, different vendors**: `fs/hybridmount` was forked
+> from NoMount but renamed its symbols and changed its wire magic (`"HYBRIDMO"` vs `"NOMOUNT"`),
+> so metamodules and tooling are **not** interchangeable. Pick the one your userspace
+> manager supports.
+>
+> The AK3 title line is assembled at build time from the backend actually enabled, so the
+> title never claims a backend the kernel does not contain.
+
 ## Key settings (build-oneplus-8-los23-a16.yml)
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **required** (schgm-flash.c needs CONFIG_OPLUS_SM8250_CHARGER)
+- `VFS_HYBRIDMOUNT / VFS_NOMOUNT / VFS_ZEROMOUNT` — mutually exclusive, see the section above
 - BakaSU stays **latest** (setup.sh git pull each run)
 - dtb: custom step concatenates `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img`; dtbo not packed (stock partition used)
 

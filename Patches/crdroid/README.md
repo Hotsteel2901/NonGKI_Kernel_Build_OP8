@@ -38,8 +38,31 @@
 | `0001-stage1-resukisu.patch` | BakaSU inline hooks（8 文件）+ defconfig + Makefile/Kconfig 接线 | 433 |
 | `0002-stage2-susfs.patch` | SUSFS v2.3.0 全部内核侧代码（17 文件） | 2066 |
 | `0003-stage3-droidspaces.patch` | cgroup 前缀隐藏 + droidspaces.config | 16 |
+| `0004-hybridmount-vfs.patch` | Hybrid Mount VFS 后端子系统（`fs/hybridmount/`，fork 自 NoMount，keyring 驱动）built-in 集成（7 文件：`fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}`） | 3102 |
 | `droidspaces.config` | DroidSpaces Non-GKI 内核配置（含 USER_NS 等） | 98 |
+| `hybridmount.config` | Hybrid Mount 编译开关（`CONFIG_HYBRIDMOUNT=y` + 显式 `CONFIG_KEYS=y` / `CONFIG_ASSOCIATIVE_ARRAY=y`） | 34 |
+| `nomount.config` | NoMount 编译开关（`CONFIG_NOMOUNT=y` + 显式 `CONFIG_KEYS=y` / `CONFIG_ASSOCIATIVE_ARRAY=y`） | 40 |
 | `fix_restore_cgroup_file_prefix_handling.cocci` | cgroup.c 补 `kernfs_create_link` 前缀链接 | 16 |
+
+## VFS 后端三选一（互斥，`stage2` / `stage3` 生效）
+
+HybridMount / NoMount / ZeroMount 三者都劫持同一层 VFS
+（`inode_operations` / `file_operations` / `dentry_operations`），且各自使用**互不兼容的
+keyring 协议**，**同期最多只能开一个**。两个 stage 开头的校验步骤会在开启多个时直接 fail。
+
+| 后端 | 开关 | 默认 | 相关文件 |
+|---|---|---|---|
+| Hybrid Mount VFS | `VFS_HYBRIDMOUNT` | 开 | `0004-hybridmount-vfs.patch` + `hybridmount.config` |
+| NoMount VFS | `VFS_NOMOUNT` | 关 | 无本地补丁（走上游 `kernel/setup.sh`）+ `nomount.config` |
+| ZeroMount VFS | `VFS_ZEROMOUNT` | 关 | 尚未实现 4.19 移植，开启会 fail |
+
+> `stage1` 仅集成 BakaSU，不含任何 VFS 后端，跳过该校验。
+>
+> `0004-hybridmount-vfs.patch` 与 `Patches/Patch/hybridmount_patch_to_4.19.patch`
+> 是同一份内容（sha256 `4264a03a...`），后者供共享的 `build-oneplus-8-los23-a16.yml` 使用。
+>
+> AK3 标题按实际启用的后端动态拼装（`AK3_TITLE_STAGE{2,3}_PREFIX` + VFS 段 + `_SUFFIX`），
+> 关了某个后端标题里就不会再出现它的名字。
 
 ## 本地验证过程中修复的三个关键问题
 
