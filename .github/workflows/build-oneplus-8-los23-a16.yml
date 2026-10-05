@@ -1,4 +1,4 @@
-name: Build Oneplus 8 (LineageOS 23.2 A16) (ReSukiSU+SUSFS Kernel)
+name: Build Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
 
 on:
   workflow_call:
@@ -32,7 +32,7 @@ env:
   KERNELSU_SOURCE : ""
   KERNELSU_BRANCH : ""
 
-  # 保持 latest: 每次构建都会通过 ReSukiSU setup.sh (git pull) 拉取最新 main 分支
+  # 保持 latest: 每次构建都会通过 BakaSU setup.sh (git pull) 拉取最新 main 分支
   KERNELSU_AUTO_GET : "true" # if u want easy setting kernelsu, u can true.
   KERNELSU_AUTO_FORK : "resukisu" # xxksu, rsuntk, next, resukisu and sukisu
 
@@ -92,7 +92,7 @@ env:
 
 jobs:
   build-kernel:
-    name: Oneplus 8 (LineageOS 23.2 A16) (ReSukiSU+SUSFS Kernel)
+    name: Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
     runs-on: ubuntu-latest
     env:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
@@ -119,13 +119,13 @@ jobs:
       - name: 🪝 Patch Kernel of SUSFS
         uses: ./.github/workflows/patch-susfs
 
-      - name: 🔗 Patch ReSukiSU Inline Hooks
+      - name: 🔗 Patch BakaSU Inline Hooks
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
           cp /tmp/Patches/Patch/resukisu_inline_hooks.patch ./
           patch -p1 < resukisu_inline_hooks.patch || true
           rm -f resukisu_inline_hooks.patch
-          echo "[+] ReSukiSU inline hooks patched."
+          echo "[+] BakaSU inline hooks patched."
 
       - name: 🧩 Patch Hybrid Mount VFS Subsystem
         run: |
@@ -134,7 +134,7 @@ jobs:
           # Hybrid Mount 的 VFS 后端不是内核通用 VFS，而是它自己的 hybridmount 子系统
           # （fork 自 NoMount，通过 keyring 驱动）。它只提供 5.10/5.15/6.1/6.6/6.12 的
           # 预编译 .ko，4.19 一个候选都匹配不到，所以必须 built-in 集成。
-          # 本子系统与 SUSFS / ReSukiSU 完全解耦（不引用任何 ksu_/susfs_ 符号），
+          # 本子系统与 SUSFS / BakaSU 完全解耦（不引用任何 ksu_/susfs_ 符号），
           # 与 SUSFS 补丁仅在 fs/Makefile 尾部追加处有交集，补丁顺序对结果无影响。
           cp /tmp/Patches/Patch/hybridmount_patch_to_4.19.patch ./
           patch -p1 < hybridmount_patch_to_4.19.patch || true
