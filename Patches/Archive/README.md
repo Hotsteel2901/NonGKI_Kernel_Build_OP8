@@ -146,6 +146,49 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
       BakaSU/susfs_inline 钩子全部 found（含 ksu_handle_stat），产出
       Kernel-instantnoodle-lineage23.2_a16-*.zip（24 MB）。
 
+    缺陷 3 — **KSU 分支不能照抄 BakaSU 的守卫清单（实测暴露）**。
+      KSU 分支与本仓其余三支**结构不同**，务必区分：
+        - KSU 用 backslashxx/KernelSU（**手动补丁**），**没有官方 SUSFS 支持**，
+          全部桥接（backslashxx_manual_hooks.patch + backslashxx_susfs_bridge.patch）
+          都是手写的；它**完全不使用** resukisu_inline_hooks.patch。
+        - KSU 把内核 pin 在 4238ee49a84bd418c8515c297563bb29f95ab40b，与其余分支
+          的基线不同。
+      因此两套符号集**实质不同**：
+        | 符号 | BakaSU/ReSukiSU | backslashxx/KernelSU |
+        |---|---|---|
+        | ksu_handle_stat | ✓ | ✓ |
+        | ksu_handle_vfs_fstat | ✓ | ✗ |
+        | ksu_is_init_rc_hook_enabled | ✓ | ✗ |
+        | ksu_handle_sys_read | ✓ | ✗ |
+        | ksu_handle_setresuid | ✓ | ✗（其 setresuid 走 selinux hook）|
+        | ksu_handle_newfstat_ret | ✗ | ✓ |
+        | ksu_handle_fstat64_ret | ✗ | ✓ |
+        | ksu_handle_sys_reboot | ✓ | ✓ |
+      我最初把 BakaSU 的 9 符号清单**原样部署到了 KSU 工作流**，实测证明这会**假失败**：
+      在 KSU 真实基线上 grep 那 4 个 BakaSU 专有符号，`ksu_handle_vfs_fstat` /
+      `ksu_is_init_rc_hook_enabled` / `ksu_handle_sys_read` 命中 **0 个文件**，
+      `ksu_handle_setresuid` 虽然存在但不在清单指定的 fs/read_write.c 里 ——
+      守卫会在补丁**完全正确**的情况下报错退出。
+      修复: KSU 工作流的守卫改为 KSU 专用的 8 符号清单
+        fs/stat.c  : ksu_handle_stat / ksu_handle_newfstat_ret / ksu_handle_fstat64_ret
+                     / susfs_sus_kstat_spoof_generic_fillattr / zeromount_stat_hook
+        fs/exec.c  : ksu_handle_execveat
+        fs/open.c  : ksu_handle_faccessat
+        kernel/reboot.c : ksu_handle_sys_reboot
+      并用 /tmp/verify_guards.py 逐分支校验「守卫引用的每个符号，该分支自己的钩子
+      补丁确实提供」，四个分支全部通过。
+
+      KSU 本地实测（在真实 baseline 4238ee49a84b、真实 KSU 顺序
+      SUSFS -> manual hooks -> SUSFS bridge -> ZeroMount 下）:
+        - 旧补丁: 产生 **1 个 .rej**（fs/stat.c.rej），但 ksu_handle_stat 竟然活了下来
+          —— 说明「有 rej」与「钩子丢失」是两件独立的事，两边的表现都不一致，
+          更印证了必须用逐符号守卫而非 rej 计数。
+        - 新补丁: 0 个 .rej，8/8 KSU 钩子齐全，ksu_handle_vfs_fstat 等 BakaSU 专有
+          符号正确缺席，CONFIG_ZEROMOUNT=y，fs/stat.o 与 fs/zeromount.o 编译干净。
+        - 注意: 新补丁在 KSU 上带 **fuzz 1 / fuzz 2** 警告（锚点上下文与 BakaSU 不同）。
+          已核对插入位置正确（zeromount_stat_hook 落在 vfs_statx 内、retry: 标签之前），
+          fuzz 本身不影响正确性，但这也是守卫必须逐符号核对的原因。
+
   - 2026-10-05: 【Release tag 机制修正】
     build-release.yml 原先的 tag 设计有多个缺陷，导致「一天只能发一次 release」：
       - tag 命名改为带分支前缀 `<branch>-v<version>-<unix-ts>`，冲突时追加 -2/-3
