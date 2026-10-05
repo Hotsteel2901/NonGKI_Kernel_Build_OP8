@@ -35,6 +35,14 @@ env:
   DEVICE_NAME: "oneplus_8"
   DEVICE_CODENAME: "instantnoodle"
 
+  # AK3 刷机包在 recovery 里显示的标题行。
+  # 格式: 管理器（分支名） + 集成内容 Built By hotsteel
+  # 本分支三段式构建，各 stage 的标题如实反映该 stage 实际集成的组件
+  # （本分支未集成 ReKernel-X / Baseband Guard，故不出现在标题里）。
+  AK3_TITLE_STAGE1: "BakaSU (crdroid) Built By hotsteel"
+  AK3_TITLE_STAGE2: "BakaSU (crdroid) + SUSFS v2.3.0 + Hybrid Mount VFS Built By hotsteel"
+  AK3_TITLE_STAGE3: "BakaSU (crdroid) + SUSFS v2.3.0 + Hybrid Mount VFS + DroidSpaces Built By hotsteel"
+
   # crDroid 内核源 (Android 16 分支)
   KERNEL_SOURCE: "https://github.com/crdroidandroid/android_kernel_oneplus_sm8250.git"
   KERNEL_BRANCH: "16.0"
@@ -154,7 +162,16 @@ jobs:
         run: |
           cd device_kernel
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
-          sed -i 's/ExampleKernel by osm0sis @ xda-developers/crDroid NonGKI Kernel (BakaSU) by Hotsteel2901/g' Anykernel3/anykernel.sh
+          # AK3 标题行: 管理器（分支名） + 集成内容 Built By hotsteel
+          # sed 替换串里 & 代表"整个匹配"，必须转义。
+          AK3_TITLE_RESOLVED="${{ env.AK3_TITLE_STAGE1 }}"
+          if [ -z "$AK3_TITLE_RESOLVED" ]; then
+            echo "[!] AK3_TITLE_STAGE1 is empty"
+            exit 1
+          fi
+          AK3_TITLE_ESCAPED=$(printf '%s' "$AK3_TITLE_RESOLVED" | sed 's/[&\\]/\\&/g')
+          sed -i "s/ExampleKernel by osm0sis @ xda-developers/$AK3_TITLE_ESCAPED/g" Anykernel3/anykernel.sh
+          echo "[+] AK3 title set to: $AK3_TITLE_RESOLVED"
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
           sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
           sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
@@ -303,7 +320,16 @@ jobs:
         run: |
           cd device_kernel
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
-          sed -i 's/ExampleKernel by osm0sis @ xda-developers/crDroid NonGKI Kernel (BakaSU+SUSFS) by Hotsteel2901/g' Anykernel3/anykernel.sh
+          # AK3 标题行: 管理器（分支名） + 集成内容 Built By hotsteel
+          # sed 替换串里 & 代表"整个匹配"，必须转义。
+          AK3_TITLE_RESOLVED="${{ env.AK3_TITLE_STAGE2 }}"
+          if [ -z "$AK3_TITLE_RESOLVED" ]; then
+            echo "[!] AK3_TITLE_STAGE2 is empty"
+            exit 1
+          fi
+          AK3_TITLE_ESCAPED=$(printf '%s' "$AK3_TITLE_RESOLVED" | sed 's/[&\\]/\\&/g')
+          sed -i "s/ExampleKernel by osm0sis @ xda-developers/$AK3_TITLE_ESCAPED/g" Anykernel3/anykernel.sh
+          echo "[+] AK3 title set to: $AK3_TITLE_RESOLVED"
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
           sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
           sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
@@ -459,7 +485,16 @@ jobs:
         run: |
           cd device_kernel
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
-          sed -i 's/ExampleKernel by osm0sis @ xda-developers/crDroid NonGKI Kernel (BakaSU+SUSFS+DroidSpaces) by Hotsteel2901/g' Anykernel3/anykernel.sh
+          # AK3 标题行: 管理器（分支名） + 集成内容 Built By hotsteel
+          # sed 替换串里 & 代表"整个匹配"，必须转义。
+          AK3_TITLE_RESOLVED="${{ env.AK3_TITLE_STAGE3 }}"
+          if [ -z "$AK3_TITLE_RESOLVED" ]; then
+            echo "[!] AK3_TITLE_STAGE3 is empty"
+            exit 1
+          fi
+          AK3_TITLE_ESCAPED=$(printf '%s' "$AK3_TITLE_RESOLVED" | sed 's/[&\\]/\\&/g')
+          sed -i "s/ExampleKernel by osm0sis @ xda-developers/$AK3_TITLE_ESCAPED/g" Anykernel3/anykernel.sh
+          echo "[+] AK3 title set to: $AK3_TITLE_RESOLVED"
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
           sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
           sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
