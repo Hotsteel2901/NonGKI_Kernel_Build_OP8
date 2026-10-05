@@ -9,6 +9,11 @@ env:
   DEVICE_NAME : "oneplus_8"
   DEVICE_CODENAME : "instantnoodle"
 
+  # AK3 刷机包在 recovery 里显示的标题行。
+  # 格式: 管理器（分支名） + 集成内容 Built By hotsteel
+  # 本分支 root 实现是 backslashxx 的 KernelSU（非 BakaSU），故管理器名如实写作 KernelSU。
+  AK3_TITLE: "KernelSU (KSU) + SUSFS v2.3.0 + Hybrid Mount VFS + ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
+
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
   EXTRA_CMDS : ""
 
