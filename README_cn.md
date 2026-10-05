@@ -81,7 +81,7 @@
 |---|---|---|---|
 | `VFS_HYBRIDMOUNT` / `vfs_hybridmount` | Hybrid Mount VFS | `true` | `fs/hybridmount` (本仓库 4.19 内置移植) |
 | `VFS_NOMOUNT` / `vfs_nomount` | NoMount VFS | `false` | `fs/nomount` (上游 `setup.sh` 集成) |
-| `VFS_ZEROMOUNT` / `vfs_zeromount` | ZeroMount VFS | `false` | **尚未实现** —— 开启会导致构建失败 |
+| `VFS_ZEROMOUNT` / `vfs_zeromount` | ZeroMount VFS | `false` | `fs/zeromount` (本仓库自研 4.19 移植, 自带字符设备 + ioctl, SUSFS 感知) |
 
 本分支有两条独立构建路径，开关位置不同：
 
@@ -98,6 +98,27 @@
 > 两者元模块与工具链**互不通用**。按你的 userspace 管理器支持哪套来选。
 >
 > AK3 标题行在构建时按**实际启用**的后端动态拼装，因此标题不会出现内核里其实没有的后端。
+>
+> **ZeroMount 移植说明**：上游 `Enginex0/zeromount` 只提供 5.4 / 5.10 / 5.15 / 6.1 / 6.6 / 6.12
+> 的补丁，non-GKI 4.19 在它的 roadmap 里仍标着 *Planned*。本分支的
+> `Patches/luk/0005-zeromount-vfs.patch` 是自研移植（12 个文件、+1962 行），
+> 与 ZeroMount 5.4 原版保持 `zeromount.c` / `zeromount.h` **逐字一致**，差异只在
+> 4.19 内核侧的接线：
+>
+> - 4.19 没有 `CONFIG_ANDROID_VENDOR_OEM_DATA` / `current->android_oem_data1`，
+>   自动回落到头文件内置的 `current->journal_info` 重入标记分支；
+> - 4.19 的 `SYSCALL_DEFINE3(getdents64, ...)` 只是 `ksys_getdents64()` 的壳，
+>   真正的 `iterate_dir` 调用在后者里，因此 dents 注入钩子挂在 `ksys_getdents64`；
+> - `vfs_getattr` / `inode_permission` / `kern_path` / `lookup_one_len` 等接口签名
+>   与 5.4 完全一致，无需适配。
+>
+> 与 HybridMount / NoMount 不同，ZeroMount 走**自己的 `/dev/zeromount` 字符设备 +
+> ioctl 协议**，**不依赖 kernel keyring**。
+>
+> 该补丁的**基线是「SUSFS + HybridMount 之后」的树**（不是 pristine 4.19），因为它与
+> SUSFS 在 `fs/readdir.c`（SUSFS 重写了 `iterate_dir` 调用点并加 `orig_flow:` 标签）
+> 和 `fs/proc/task_mmu.c`（两者都要往 `show_map_vma` 插钩子）上有大量上下文重叠。
+> 工作流里 ZeroMount 步骤已排在 SUSFS / BakaSU hooks / HybridMount 之后，顺序不能调换。
 
 ## 关键配置项 (build-oneplus-8-los23-a16.yml)
 

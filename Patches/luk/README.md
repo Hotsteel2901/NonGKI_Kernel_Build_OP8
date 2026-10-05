@@ -139,6 +139,10 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 > `0004-hybridmount-vfs.patch` 与 master / KSU 分支的
 > `Patches/Patch/hybridmount_patch_to_4.19.patch` 是**同一份内容**
 > (md5 `43debcca69d6dbb6320fc30c1964b997`), 仅文件名按本目录的编号约定重命名。
+>
+> `0005-zeromount-vfs.patch` 与 master / KSU 分支的
+> `Patches/Patch/zeromount_patch_to_4.19.patch` 是**同一份内容**，
+> 仅文件名按本目录的编号约定重命名。
 
 ## VFS 后端三选一（互斥）
 
@@ -149,7 +153,7 @@ HybridMount / NoMount / ZeroMount 三者都劫持同一层 VFS 且 keyring 协�
 |---|---|---|---|
 | Hybrid Mount VFS | `VFS_HYBRIDMOUNT` / `vfs_hybridmount` | 开 | `0004-hybridmount-vfs.patch` + `hybridmount.config` |
 | NoMount VFS | `VFS_NOMOUNT` / `vfs_nomount` | 关 | 无本地补丁（走上游 `kernel/setup.sh`）+ `nomount.config` |
-| ZeroMount VFS | `VFS_ZEROMOUNT` / `vfs_zeromount` | 关 | 尚未实现 4.19 移植，开启会 fail |
+| ZeroMount VFS | `VFS_ZEROMOUNT` / `vfs_zeromount` | 关 | `0005-zeromount-vfs.patch` + `zeromount.config` |
 
 > 注意: `build-oneplus-8-los23-a16.yml`（共享 LOS 工作流）用 `Patches/Patch/`
 > 下的 `hybridmount_patch_to_4.19.patch`，`build-luk-op8.yml` 用本目录的
