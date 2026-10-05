@@ -1,4 +1,4 @@
-name: Build Oneplus 8 (LineageOS 23.2 A16) (ReSukiSU+SUSFS Kernel)
+name: Build Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
 
 on:
   workflow_call:
@@ -36,7 +36,7 @@ env:
   KERNELSU_SOURCE : ""
   KERNELSU_BRANCH : ""
 
-  # 保持 latest: 每次构建都会通过 ReSukiSU setup.sh (git pull) 拉取最新 main 分支
+  # 保持 latest: 每次构建都会通过 BakaSU setup.sh (git pull) 拉取最新 main 分支
   KERNELSU_AUTO_GET : "true" # if u want easy setting kernelsu, u can true.
   KERNELSU_AUTO_FORK : "resukisu" # xxksu, rsuntk, next, resukisu and sukisu
 
@@ -96,7 +96,7 @@ env:
 
 jobs:
   build-kernel:
-    name: Oneplus 8 (LineageOS 23.2 A16) (ReSukiSU+SUSFS Kernel)
+    name: Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
     runs-on: ubuntu-latest
     env:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
@@ -123,13 +123,13 @@ jobs:
       - name: 🪝 Patch Kernel of SUSFS
         uses: ./.github/workflows/patch-susfs
 
-      - name: 🔗 Patch ReSukiSU Inline Hooks
+      - name: 🔗 Patch BakaSU Inline Hooks
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
           cp /tmp/Patches/Patch/resukisu_inline_hooks.patch ./
           patch -p1 < resukisu_inline_hooks.patch || true
           rm -f resukisu_inline_hooks.patch
-          echo "[+] ReSukiSU inline hooks patched."
+          echo "[+] BakaSU inline hooks patched."
 
       - name: 🪛 Extra Kernel Options
         run: |
