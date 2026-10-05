@@ -26,6 +26,13 @@ on:
         required: false
         type: boolean
         default: false
+    # 把「实际参与编译的内核 commit」向上暴露给 build-kernel / build-release，
+    # 让 release tag 能精确打在这个 commit 上，而不是 release job 自己
+    # checkout 出来的 HEAD（两者的 commit 在并发/后续提交场景下可能不同）。
+    outputs:
+      build_sha:
+        description: '本次内核实际构建所用的 commit SHA'
+        value: ${{ jobs.build-kernel.outputs.build_sha }}
   workflow_dispatch:
     inputs:
       vfs_hybridmount:
@@ -166,6 +173,8 @@ jobs:
   build-kernel:
     name: Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
     runs-on: ubuntu-latest
+    outputs:
+      build_sha: ${{ steps.build_sha.outputs.build_sha }}
     env:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
@@ -242,10 +251,14 @@ jobs:
           echo "[+] AK3 title will be: $TITLE"
 
       - name: 📌 Use latest kernel source (no pinned checkout)
+        id: build_sha
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
           grep -q "kernelsu" drivers/Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
           grep -q "source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
+          # 记录本次实际参与编译的内核 commit，向上透传给 release 的 tag 步骤。
+          echo "build_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "[+] Build SHA: $(git rev-parse HEAD)"
           echo "-g$(git rev-parse --short HEAD)-hotsteel" > .scmversion
 
       - name: 🪝 Patch Kernel of SUSFS
@@ -362,47 +375,93 @@ jobs:
         if: inputs.vfs_zeromount == true
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
-
           # ZeroMount 是 Enginex0/zeromount 的路径重定向子系统，与 HybridMount /
           # NoMount 完全不同源：它自带 /dev/zeromount 字符设备 + 自定义 ioctl
           # 协议（不依赖 keyring），因此 CONFIG_KEYS 不是它的依赖。
           #
-          # 上游只提供 5.4 / 5.10 / 5.15 / 6.1 / 6.6 / 6.12 的补丁，non-GKI 4.19
-          # 在它的 roadmap 里仍标着 Planned —— 本仓库的这份补丁是自研移植版。
+          # 上游只提供 5.4/5.10/5.15/6.1/6.6/6.12 补丁，non-GKI 4.19 在其 roadmap
+          # 里仍标着 Planned —— 本仓库的这份补丁是自研移植版。
           #
-          # ⚠️ 移植补丁的基线是「SUSFS + HybridMount 之后」的树，因为它与这两个
-          # 补丁在 fs/Makefile / fs/Kconfig / fs/readdir.c / fs/proc/task_mmu.c
-          # 上有大量上下文重叠：
-          #   * SUSFS 重写了 fs/readdir.c 的 iterate_dir 调用点（加 #ifdef 与
-          #     orig_flow: 标签），ZeroMount 的 dents 注入必须挂在同一位置；
-          #   * 两者都要往 fs/proc/task_mmu.c 的 show_map_vma 插钩子；
-          #   * HybridMount 在 fs/Makefile 尾部追加了自己的 obj- 行。
-          # 因此本步骤必须排在 SUSFS / BakaSU hooks / HybridMount 之后。
+          # ⚠️ 补丁核心 hunk 只落在 fs/d_path.c fs/namei.c fs/proc/base.c
+          # fs/proc/task_mmu.c fs/readdir.c fs/stat.c fs/statfs.c fs/xattr.c
+          # fs/zeromount.c include/linux/zeromount.h。
+          # 其中 readdir.c / task_mmu.c 与 SUSFS 有上下文重叠，因此本步骤必须
+          # 排在 SUSFS / BakaSU hooks 之后。
+          #
+          # fs/Makefile 与 fs/Kconfig 不在这份补丁里 —— 那两个文件的双后端上下文
+          # 锚点无法同时兼容「有 HybridMount」与「没有 HybridMount」两种树
+          # （patch 的 fuzz 匹配会静默插错位置），改由下面的文本注入完成，
+          # 这样 ZeroMount 才能脱离 HybridMount 独立启用。
           cp /tmp/Patches/Patch/zeromount_patch_to_4.19.patch ./
           patch -p1 < zeromount_patch_to_4.19.patch || true
           rm -f zeromount_patch_to_4.19.patch
 
-          # patch -p1 加了 || true：真有 hunk 打不上必须立刻报出来，
-          # 否则会出现「内核少了一半钩子却照样编译过」的静默失败。
+          # patch -p1 加了 || true：真有 hunk 打不上必须立刻报出来。
           if [ -n "$(find . -name '*.rej')" ]; then
             echo "[-] zeromount_patch has rejected hunks!"
             find . -name "*.rej" -exec sh -c 'echo "--- {} ---"; cat {}' \;
             false
           fi
 
+          # ⚠️ 光看 .rej 不够：旧的 zeromount 补丁是把 SUSFS/KSU 的整段上下文
+          # 当成「要替换掉的旧代码」写的（86 删 / 46 增），应用时 0 reject
+          # 却把 ksu_handle_stat 等钩子静默删掉了，最后死在 BakaSU 的
+          # inline_hook_check.mk（"You lost ksu_handle_stat hook"）。
+          # 所以这里必须逐符号核对「补丁后仍存在」，任何 SUSFS/KSU 钩子丢失即失败。
+          for chk in \
+            "fs/stat.c:ksu_handle_stat" \
+            "fs/stat.c:ksu_handle_vfs_fstat" \
+            "fs/stat.c:ksu_is_init_rc_hook_enabled" \
+            "fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr" \
+            "fs/stat.c:zeromount_stat_hook" \
+            "fs/exec.c:ksu_handle_execveat" \
+            "fs/open.c:ksu_handle_faccessat" \
+            "fs/read_write.c:ksu_handle_sys_read" \
+            "kernel/sys.c:ksu_handle_setresuid" \
+          ; do
+            chk_file="${chk%%:*}"
+            chk_sym="${chk##*:}"
+            if ! grep -q "$chk_sym" "$chk_file"; then
+              echo "[-] $chk_sym missing from $chk_file after ZeroMount patch!"
+              echo "[-] (ZeroMount 补丁必须与 SUSFS/KSU 钩子共存，不能覆盖它们)"
+              false
+            fi
+          done
+          echo "[+] SUSFS/KSU hooks preserved alongside ZeroMount."
+
+          # fs/Kconfig：在「最后一个 endmenu」之前插入 config 块
+          ENDMENU_LINE=$(grep -n '^endmenu' fs/Kconfig | tail -1 | cut -d: -f1)
+          if [ -z "$ENDMENU_LINE" ]; then
+            echo "[-] fs/Kconfig has no endmenu anchor"; false
+          fi
+          printf '%s\n' \
+            'config ZEROMOUNT' \
+            '	bool "ZeroMount Path Redirection Subsystem"' \
+            '	default y' \
+            '	help' \
+            '	  ZeroMount allows path redirection and virtual file injection' \
+            '	  without mounting filesystems. Useful for systemless modifications.' \
+            '' > /tmp/zm_kconfig_block.txt
+          { head -n $((ENDMENU_LINE - 1)) fs/Kconfig
+            cat /tmp/zm_kconfig_block.txt
+            tail -n +$ENDMENU_LINE fs/Kconfig
+          } > fs/Kconfig.zmnew && mv fs/Kconfig.zmnew fs/Kconfig
+          rm -f /tmp/zm_kconfig_block.txt
+
+          # fs/Makefile：末尾追加（Makefile 内部顺序无语义要求）
+          grep -qF 'CONFIG_ZEROMOUNT' fs/Makefile \
+            || echo 'obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o' >> fs/Makefile
+
           # 集成结果自检
           test -f fs/zeromount.c || { echo "[-] fs/zeromount.c missing"; false; }
           test -f include/linux/zeromount.h || { echo "[-] include/linux/zeromount.h missing"; false; }
-          grep -qF 'obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o' fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
-          grep -qF 'config ZEROMOUNT' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
-          # 钩子必须真的落到 VFS 层，不能只把驱动文件拷进去
+          grep -qF 'obj-$(CONFIG_ZEROMOUNT)' fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
+          grep -q '^config ZEROMOUNT$' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
           grep -q 'zeromount_inject_dents64' fs/readdir.c || { echo "[-] fs/readdir.c hook missing"; false; }
           grep -q 'zeromount_stat_hook' fs/stat.c || { echo "[-] fs/stat.c hook missing"; false; }
           grep -q 'zeromount_getname_hook' fs/namei.c || { echo "[-] fs/namei.c hook missing"; false; }
-          # SUSFS 的 readdir 改写不能被我们覆盖掉
           grep -q 'CONFIG_KSU_SUSFS_SUS_PATH' fs/readdir.c || { echo "[-] SUSFS readdir hooks lost!"; false; }
           echo "[+] ZeroMount VFS subsystem patched (built-in, SUSFS-aware)."
-
       - name: ⚙️ Enable ZeroMount VFS in DEFCONFIG
         if: inputs.vfs_zeromount == true
         run: |
