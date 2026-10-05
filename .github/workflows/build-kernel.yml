@@ -36,6 +36,12 @@ on:
         required: false
         type: boolean
         default: false
+    # 透传下层 build-oneplus-8-los23-a16.yml 导出的「实际构建 commit」，
+    # 供 build-release.yml 把 tag 精确打在该 commit 上。
+    outputs:
+      build_sha:
+        description: '本次内核实际构建所用的 commit SHA'
+        value: ${{ jobs.build-oneplus-8-lineageos23-a16.outputs.build_sha }}
   workflow_dispatch:
     inputs:
       # ─────────────────────────────────────────────────────────────────────
@@ -70,6 +76,8 @@ jobs:
       fail-fast: true
     uses: ./.github/workflows/build-oneplus-8-los23-a16.yml
     secrets: inherit
+    # 转发下层 reusable workflow 的 outputs（job 用 uses: 调用时，
+    # 直接写 outputs: <name>: ${{ jobs.<local-job>.outputs.<name> }} 即可）。
     with:
       # 透传 VFS 后端选择。workflow_dispatch 直触发时用 UI 的值；
       # 被 build-release.yml 调用时用对方 with: 传入的值。

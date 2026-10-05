@@ -431,13 +431,15 @@ jobs:
           # 上游只提供 5.4/5.10/5.15/6.1/6.6/6.12 补丁，non-GKI 4.19 在其 roadmap
           # 里仍是 Planned —— 这份 0005 是自研移植版。
           #
-          # ⚠️ 基线是「SUSFS + HybridMount 之后」的树，因为它与这两个补丁在
-          # fs/Makefile / fs/Kconfig / fs/readdir.c / fs/proc/task_mmu.c 上大量重叠：
-          #   * SUSFS 重写了 fs/readdir.c 的 iterate_dir 调用点（加 #ifdef 与
-          #     orig_flow: 标签），ZeroMount 的 dents 注入必须挂在同一位置；
-          #   * 两者都要往 fs/proc/task_mmu.c 的 show_map_vma 插钩子；
-          #   * HybridMount 在 fs/Makefile 尾部追加了自己的 obj- 行。
-          # 所以本步骤必须排在 SUSFS / BakaSU hooks / HybridMount 之后，不可调换。
+          # ⚠️ 补丁核心 hunk 只落在 fs/d_path.c fs/namei.c fs/proc/base.c
+          # fs/proc/task_mmu.c fs/readdir.c fs/stat.c fs/statfs.c fs/xattr.c
+          # fs/zeromount.c include/linux/zeromount.h。
+          # 其中 readdir.c / task_mmu.c 与 SUSFS 重叠，所以本步骤必须排在
+          # SUSFS / BakaSU hooks 之后。
+          #
+          # fs/Makefile 与 fs/Kconfig 不在这份补丁里 —— 那两个文件的双后端
+          # 上下文锚点无法同时兼容「有 HybridMount」与「没有 HybridMount」
+          # 两种树（patch 的 fuzz 匹配会静默插错位置），改由下面的文本注入完成。
           patch -p1 < ../Patches/crdroid/0005-zeromount-vfs.patch
           find . -name "*.orig" -delete
 
@@ -446,11 +448,55 @@ jobs:
             find . -name "*.rej" -exec sh -c 'echo "--- {} ---"; cat {}' \;
             exit 1
           fi
+          # ⚠️ 0 reject 不等于打对了：旧的 zeromount 补丁按「替换 SUSFS/KSU 段」的
+          # 思路写成（86 删 / 46 增），应用时 0 reject 却把 ksu_handle_stat 静默删掉，
+          # 最终死在 BakaSU 的 inline_hook_check.mk（"You lost ksu_handle_stat hook"）。
+          # 因此必须逐符号确认补丁后钩子仍在。
+          for chk in \
+            "fs/stat.c:ksu_handle_stat" \
+            "fs/stat.c:ksu_handle_vfs_fstat" \
+            "fs/stat.c:ksu_is_init_rc_hook_enabled" \
+            "fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr" \
+            "fs/stat.c:zeromount_stat_hook" \
+            "fs/exec.c:ksu_handle_execveat" \
+            "fs/open.c:ksu_handle_faccessat" \
+            "fs/read_write.c:ksu_handle_sys_read" \
+            "kernel/sys.c:ksu_handle_setresuid" \
+          ; do
+            chk_file="${chk%%:*}"
+            chk_sym="${chk##*:}"
+            if ! grep -q "$chk_sym" "$chk_file"; then
+              echo "[-] $chk_sym missing from $chk_file after ZeroMount patch!"
+              exit 1
+            fi
+          done
+          echo "[+] SUSFS/KSU hooks preserved alongside ZeroMount."
+          ENDMENU_LINE=$(grep -n '^endmenu' fs/Kconfig | tail -1 | cut -d: -f1)
+          if [ -z "$ENDMENU_LINE" ]; then
+            echo "[-] fs/Kconfig has no endmenu anchor"; exit 1
+          fi
+          printf '%s\n' \
+            'config ZEROMOUNT' \
+            '	bool "ZeroMount Path Redirection Subsystem"' \
+            '	default y' \
+            '	help' \
+            '	  ZeroMount allows path redirection and virtual file injection' \
+            '	  without mounting filesystems. Useful for systemless modifications.' \
+            '' > /tmp/zm_kconfig_block.txt
+          { head -n $((ENDMENU_LINE - 1)) fs/Kconfig
+            cat /tmp/zm_kconfig_block.txt
+            tail -n +$ENDMENU_LINE fs/Kconfig
+          } > fs/Kconfig.zmnew && mv fs/Kconfig.zmnew fs/Kconfig
+          rm -f /tmp/zm_kconfig_block.txt
+
+          grep -qF 'CONFIG_ZEROMOUNT' fs/Makefile \
+            || echo 'obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o' >> fs/Makefile
+
 
           test -f fs/zeromount.c || { echo "[-] fs/zeromount.c missing"; exit 1; }
           test -f include/linux/zeromount.h || { echo "[-] include/linux/zeromount.h missing"; exit 1; }
-          grep -qF 'obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o' fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
-          grep -qF 'config ZEROMOUNT' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
+          grep -qF 'obj-$(CONFIG_ZEROMOUNT)' fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
+          grep -q '^config ZEROMOUNT$' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
           grep -q 'zeromount_inject_dents64' fs/readdir.c || { echo "[-] fs/readdir.c hook missing"; exit 1; }
           grep -q 'zeromount_stat_hook' fs/stat.c || { echo "[-] fs/stat.c hook missing"; exit 1; }
           grep -q 'zeromount_getname_hook' fs/namei.c || { echo "[-] fs/namei.c hook missing"; exit 1; }
@@ -700,8 +746,8 @@ jobs:
           cd device_kernel
           # ZeroMount 走自有 /dev/zeromount 字符设备 + ioctl 协议, 不依赖 keyring,
           # 与 HybridMount / NoMount 完全不同源。上游无 4.19 补丁, 这份 0005 是
-          # 自研移植版。基线是「SUSFS + HybridMount 之后」的树 (readdir.c /
-          # task_mmu.c / fs/Makefile 上与此二者大量重叠), 步骤顺序不可调换。
+          # 自研移植版。readdir.c / task_mmu.c 上与 SUSFS 重叠, 步骤顺序不可调换。
+          # fs/Makefile / fs/Kconfig 不进补丁, 由下面文本注入完成 (兼容两种树)。
           patch -p1 < ../Patches/crdroid/0005-zeromount-vfs.patch
           find . -name "*.orig" -delete
 
@@ -710,9 +756,54 @@ jobs:
             find . -name "*.rej" -exec sh -c 'echo "--- {} ---"; cat {}' \;
             exit 1
           fi
+          # ⚠️ 0 reject 不等于打对了：旧的 zeromount 补丁按「替换 SUSFS/KSU 段」的
+          # 思路写成（86 删 / 46 增），应用时 0 reject 却把 ksu_handle_stat 静默删掉，
+          # 最终死在 BakaSU 的 inline_hook_check.mk（"You lost ksu_handle_stat hook"）。
+          # 因此必须逐符号确认补丁后钩子仍在。
+          for chk in \
+            "fs/stat.c:ksu_handle_stat" \
+            "fs/stat.c:ksu_handle_vfs_fstat" \
+            "fs/stat.c:ksu_is_init_rc_hook_enabled" \
+            "fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr" \
+            "fs/stat.c:zeromount_stat_hook" \
+            "fs/exec.c:ksu_handle_execveat" \
+            "fs/open.c:ksu_handle_faccessat" \
+            "fs/read_write.c:ksu_handle_sys_read" \
+            "kernel/sys.c:ksu_handle_setresuid" \
+          ; do
+            chk_file="${chk%%:*}"
+            chk_sym="${chk##*:}"
+            if ! grep -q "$chk_sym" "$chk_file"; then
+              echo "[-] $chk_sym missing from $chk_file after ZeroMount patch!"
+              exit 1
+            fi
+          done
+          echo "[+] SUSFS/KSU hooks preserved alongside ZeroMount."
+          ENDMENU_LINE=$(grep -n '^endmenu' fs/Kconfig | tail -1 | cut -d: -f1)
+          if [ -z "$ENDMENU_LINE" ]; then
+            echo "[-] fs/Kconfig has no endmenu anchor"; exit 1
+          fi
+          printf '%s\n' \
+            'config ZEROMOUNT' \
+            '	bool "ZeroMount Path Redirection Subsystem"' \
+            '	default y' \
+            '	help' \
+            '	  ZeroMount allows path redirection and virtual file injection' \
+            '	  without mounting filesystems. Useful for systemless modifications.' \
+            '' > /tmp/zm_kconfig_block.txt
+          { head -n $((ENDMENU_LINE - 1)) fs/Kconfig
+            cat /tmp/zm_kconfig_block.txt
+            tail -n +$ENDMENU_LINE fs/Kconfig
+          } > fs/Kconfig.zmnew && mv fs/Kconfig.zmnew fs/Kconfig
+          rm -f /tmp/zm_kconfig_block.txt
+
+          grep -qF 'CONFIG_ZEROMOUNT' fs/Makefile \
+            || echo 'obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o' >> fs/Makefile
+
 
           test -f fs/zeromount.c || { echo "[-] fs/zeromount.c missing"; exit 1; }
-          grep -qF 'obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o' fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
+          grep -qF 'obj-$(CONFIG_ZEROMOUNT)' fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
+          grep -q '^config ZEROMOUNT$' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
           grep -q 'zeromount_inject_dents64' fs/readdir.c || { echo "[-] fs/readdir.c hook missing"; exit 1; }
           grep -q 'CONFIG_KSU_SUSFS_SUS_PATH' fs/readdir.c || { echo "[-] SUSFS readdir hooks lost!"; exit 1; }
           echo "[+] ZeroMount VFS applied (built-in, SUSFS-aware)."

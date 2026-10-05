@@ -11,6 +11,7 @@
 | SUSFS v2.3.0 | 官方 gki v2.3.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` 4.19 内置移植 (keyring 魔数 `"hm1"`), **默认开启** |
 | NoMount VFS | `fs/nomount` 内置集成, 走上游 `kernel/setup.sh` (keyring 魔数 `"NOMOUNT"`), 默认关闭 |
+| ZeroMount VFS | `fs/zeromount` 自研 4.19 移植 (`/dev/zeromount` 字符设备 + 自定义 ioctl, 不依赖 keyring), 默认关闭 |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup 前缀隐藏 + Non-GKI 配置 (含 USER_NS) |
 | Baseband Guard | 分区写保护 LSM |
@@ -19,9 +20,9 @@
 
 1. **Fork 本仓库** 到你自己的 GitHub 账号
 2. **Settings → Actions → General → Workflow permissions** 选择 `Read and write permissions`
-3. 进入 **Actions** 页, 选择 `Build Kernel` (或 `Build crDroid Kernel`) 工作流, 点 **Run workflow** (或直接 push 触发)
+3. 进入 **Actions** 页, 选择 `Build Kernel` 工作流, 点 **Run workflow** (或直接 push 触发)
 4. 构建完成后在 **Actions → 本次运行 → Artifacts** 下载 zip。本包为 **AnyKernel3** 格式, 刷入步骤:
-   - 重启到 recovery (crDroid Recovery / TWRP / Lineage Recovery)
+   - 重启到 recovery (TWRP / Lineage Recovery / crDroid Recovery)
    - **Apply update (应用更新)** → **Apply from ADB (从 ADB 应用)**, 然后执行 `adb sideload NonGKI_Kernel_<代号>_<构建号>.zip`
    - 重启进入系统
    - 仅替换内核镜像, **不会清空** `/data`; 刷入前建议**备份原厂 `boot.img`** 以便回滚
@@ -36,18 +37,23 @@
 | 文件 | 内容 | 应用时机 |
 |---|---|---|
 | `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
-| `Patches/Patch/resukisu_inline_hooks.patch` | BakaSU inline 模式必需的 7 个钩子 (exec/open/read_write/stat/input/reboot/setresuid) | 工作流自定义步骤 |
-| `Patches/Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS 子系统 (`fs/hybridmount`, keyring 魔数 `"hm1"`), 供共享 LOS 工作流使用 | 工作流自定义步骤 (受 `VFS_HYBRIDMOUNT` 控制) |
-| `Patches/crdroid/0004-hybridmount-vfs.patch` | 同上内容的另一份, 供 `build-crdroid-op8.yml` 使用 (内容完全一致) | 工作流自定义步骤 (受 `VFS_HYBRIDMOUNT` 控制) |
+| `Patches/Patch/resukisu_inline_hooks.patch` | BakaSU SUSFS inline 模式官方内联钩子: exec / open / read_write / stat / input / reboot / setresuid (另含 fs/stat.c SUS_KSTAT 与 kernel/sys.c uname 伪装片段) | 工作流自定义步骤 |
+| `Patches/Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS 子系统 (`fs/hybridmount`, keyring 魔数 `"hm1"`) | 工作流自定义步骤 (受 `VFS_HYBRIDMOUNT` 控制) |
+| `Patches/Patch/zeromount_patch_to_4.19.patch` | ZeroMount VFS 子系统 (`fs/zeromount`, `/dev/zeromount` + ioctl) | 工作流自定义步骤 (受 `VFS_ZEROMOUNT` 控制) |
 | *(NoMount)* | 本仓库无补丁文件, 直接拉上游 `kernel/setup.sh` | 工作流自定义步骤 (受 `VFS_NOMOUNT` 控制) |
 | `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
 
-> 注意: 所有补丁基于内核提交 **`4238ee49a84b`** 生成。工作流会自动 `git checkout 4238ee49a84b`
-> 固定该提交以保证补丁干净应用。若 LineageOS 上游有重大更新导致补丁失败, 请基于新提交重新生成补丁:
+> 说明: 补丁基于生成时 lineage-23.2 最新提交 (当前 `66e230426430`) 生成; 工作流使用**最新**内核源码
+> (不固定 checkout), 常规偏移下 `patch -p1` 自动应用。若 LineageOS 上游更新导致 reject, 请基于新 tip 重新生成:
 > ```bash
 > git diff <新base> -- <susfs相关文件> > Patches/Patch/susfs_patch_to_4.19.patch
 > ```
+>
+> 内联钩子与 Jack 的官方 `susfs_inline_hook_patches.sh` (SUSFS v2.3.00+ 官方内联钩子) 对齐:
+> 7 个钩子均通过 BakaSU `inline_hook_check.mk` 的编译期校验 (static_key 门控)。
+> 因 4.19 的 `__do_execve_file()` 成功路径在 `out_free:` 之前提前返回, `ksu_handle_post_execveat_sucompat`
+> 钩子置于 exec 成功路径 (su fd 必须在 exec 进 ksud 之后安装; 与官方 5.10 `do_execveat_common` 布局语义等价)。
 
 ## VFS 路径重定向后端（三选一）
 
@@ -58,19 +64,16 @@
 上游 Hybrid Mount 的 Kconfig 里就明确写了与 NoMount 的元模块
 *"not compatible with NoMount's metamodule or its tooling"*。
 
-**每个集成 VFS 的 stage 开头都有一步校验**：开启超过一个会立刻 fail，不会产出坏内核。
+构建开头有一步校验：**开启超过一个会立刻 fail**，不会产出一个坏内核。
 
 | 开关 | 后端 | 默认 | 内核侧 |
 |---|---|---|---|
 | `VFS_HYBRIDMOUNT` | Hybrid Mount VFS | `true` | `fs/hybridmount` (本仓库 4.19 内置移植) |
 | `VFS_NOMOUNT` | NoMount VFS | `false` | `fs/nomount` (上游 `setup.sh` 集成) |
-| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | `fs/zeromount` (本仓库自研 4.19 移植, 自带字符设备 + ioctl, SUSFS 感知) |
+| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | `fs/zeromount` (本仓库自研 4.19 移植, SUSFS 感知) |
 
-在 `build-crdroid-op8.yml` 的 `env:` 段修改。本分支的生效范围：
-
-- **Stage1** 仅集成 BakaSU，**不含**任何 VFS 后端，会跳过该校验。
-- **Stage2 / Stage3** 各自独立做一次校验（两份都对应同一组开关）。
-- 共享的 `build-oneplus-8-los23-a16.yml`（LineageOS 内核）同样支持这三个开关。
+在 `build-oneplus-8-los23-a16.yml` 的 `env:` 段修改，或使用工作流暴露的
+`workflow_dispatch` 输入（视具体工作流而定）。
 
 > 三者都必须内置（`=y`）而非 `=m`：4.19 没有匹配的预编译 `.ko`
 > （上游只提供 5.10/5.15/6.1/6.6/6.12 的模块）。
@@ -82,8 +85,8 @@
 > AK3 标题行在构建时按**实际启用**的后端动态拼装，因此标题不会出现内核里其实没有的后端。
 >
 > **ZeroMount 移植说明**：上游 `Enginex0/zeromount` 只提供 5.4 / 5.10 / 5.15 / 6.1 / 6.6 / 6.12
-> 的补丁，non-GKI 4.19 在它的 roadmap 里仍标着 *Planned*。本目录的
-> `0005-zeromount-vfs.patch` 是自研移植（12 个文件、+1962 行），
+> 的补丁，non-GKI 4.19 在它的 roadmap 里仍标着 *Planned*。本仓库的
+> `Patches/Patch/zeromount_patch_to_4.19.patch` 是自研移植（32 个 hunk），
 > 与 ZeroMount 5.4 原版保持 `zeromount.c` / `zeromount.h` **逐字一致**，差异只在
 > 4.19 内核侧的接线：
 >
@@ -91,16 +94,90 @@
 >   自动回落到头文件内置的 `current->journal_info` 重入标记分支；
 > - 4.19 的 `SYSCALL_DEFINE3(getdents64, ...)` 只是 `ksys_getdents64()` 的壳，
 >   真正的 `iterate_dir` 调用在后者里，因此 dents 注入钩子挂在 `ksys_getdents64`；
-> - `vfs_getattr` / `inode_permission` / `kern_path` / `lookup_one_len` 等接口签名
->   与 5.4 完全一致，无需适配。
+> - 四个 `vfs_getattr` / `inode_permission` / `kern_path` / `lookup_one_len` 等
+>   接口签名与 5.4 完全一致，无需适配。
 >
-> 与 HybridMount / NoMount 不同，ZeroMount 走**自己的 `/dev/zeromount` 字符设备 +
-> ioctl 协议**，**不依赖 kernel keyring**。
+> 该补丁的**基线是「SUSFS + BakaSU inline hooks 之后」的树**（不是 pristine 4.19），
+> 因为它与 SUSFS 在 `fs/readdir.c`（SUSFS 重写了 `iterate_dir` 调用点并加 `orig_flow:`
+> 标签）、`fs/proc/task_mmu.c`（两者都要往 `show_map_vma` 插钩子）以及 `fs/stat.c`
+> 上有大量上下文重叠。工作流里 ZeroMount 步骤已排在 SUSFS / BakaSU hooks 之后，
+> **顺序不能调换**。
 >
-> 该补丁的**基线是「SUSFS + HybridMount 之后」的树**（不是 pristine 4.19），因为它与
-> SUSFS 在 `fs/readdir.c`（SUSFS 重写了 `iterate_dir` 调用点并加 `orig_flow:` 标签）
-> 和 `fs/proc/task_mmu.c`（两者都要往 `show_map_vma` 插钩子）上有大量上下文重叠。
-> 工作流里 ZeroMount 步骤已排在 SUSFS / BakaSU hooks / HybridMount 之后，顺序不能调换。
+> **⚠️ 该补丁必须是「纯新增」，绝不能删除任何 SUSFS/KSU 的行。** 早期版本是按
+> *原始上游* 4.19 写的，于是 `fs/stat.c` 的 hunk 把「已被打上钩子的区域」当成
+> 「待替换的旧代码」：**新增 46 行 / 删除 86 行**，把 `ksu_handle_stat`、
+> `ksu_handle_vfs_fstat`、`ksu_is_init_rc_hook_enabled` 和 SUSFS 的
+> `susfs_sus_kstat_spoof_*` 整段抹掉。由于补丁应用时 **`.rej` 为 0**，原有的
+> reject 检查完全挡不住，直到编译期才死在 BakaSU 的 `inline_hook_check.mk`：
+>
+> ```
+> -- You lost ksu_handle_stat hook in your kernel
+> KernelSU/kernel/tools/inline_hook_check.mk:52: *** You should integrate BakaSU in your kernel. . Stop.
+> ```
+>
+> 当前补丁 **32 个 hunk、`ksu_`/`susfs_` 删除数为 0**，`fs/stat.c` 里两套子系统并存
+> （ZeroMount 的 `zeromount_stat_hook()` 先跑，返回 `-ENOENT` 时落回未被改动的
+> SUSFS `filename_lookup` / `orig_flow:` 路径）：
+>
+> ```c
+> #ifdef CONFIG_ZEROMOUNT
+> 	/* ZeroMount: try redirection first for relative paths */
+> 	if (filename) {
+> 		int zm_ret = zeromount_stat_hook(dfd, filename, stat, request_mask, flags);
+> 		if (zm_ret != -ENOENT)
+> 			return zm_ret;
+> 	}
+> #endif
+> retry:
+> #ifdef CONFIG_KSU_SUSFS
+> 	fname = getname_flags(filename, lookup_flags, NULL);
+> 	if (likely(susfs_is_current_proc_no_su()))
+> 		goto orig_flow;
+> 	if (static_branch_likely(&ksu_su_compat_enabled)) {
+> 		if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
+> 			ksu_handle_stat(&dfd, &fname, &flags);
+> 	}
+> orig_flow:
+> 	error = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
+> #else
+> 	error = user_path_at(dfd, filename, lookup_flags, &path);
+> #endif
+> ```
+>
+> **防回归检查**：`.rej` 数量为 0 **不代表**补丁打对了。所有应用 ZeroMount 补丁的
+> 工作流都会在补丁之后**逐符号**确认 SUSFS/KSU 钩子仍然存在
+> （输出 `SUSFS/KSU hooks preserved alongside ZeroMount`），少任何一个就直接失败。
+> 修改该步骤时请保留这段检查 —— 它是「静默删除内核钩子」与「莫名其妙的编译失败」
+> 之间唯一的防线。
+
+## Release tag 机制 (build-release.yml)
+
+`Build and Release Kernel` 会构建内核并发布 GitHub **Release**，tag 精确标识「本次编译
+所用的那个 commit」。
+
+| 项目 | 行为 |
+|---|---|
+| tag 格式 | `<分支名>-v<版本>-<unix 时间戳>`，例如 `master-v35203-1791179734` |
+| 冲突处理 | 该 tag 已存在时追加 `-2`、`-3`… 后缀 |
+| tag 指向 | **实际构建的 commit**，由内核 job 通过 `build_sha` outputs 逐层透传（不是 release job 的 `HEAD`） |
+| 推送方式 | `git push origin refs/tags/$NEW_TAG` —— **只推当前这一个 tag** |
+
+这里有两处是刻意设计，且很容易改错：
+
+> **加分支前缀。** 不加前缀时，同一天在别的分支（或同一分支）再跑一次就会 tag 冲突、
+> release 直接失败。带上分支名后 tag 既能保证唯一，也自带出处信息。
+
+> **只推当前 tag。** 用 `git push --tags` 会把本地历史里**所有** tag 一起推上去。
+> 这些 tag 可能指向「修改过 `.github/workflows/` 的 commit」，GitHub 会以
+> `refusing to allow a GitHub App to create or update workflow ... without workflows
+> permission` 拒绝。只推 `refs/tags/$NEW_TAG` 就不会携带那段历史，也就不需要额外权限。
+>
+> ⚠️ 千万**不要**为了绕过这个拒绝而去 `permissions:` 里加 `workflows: write` ——
+> `workflows` **不是合法的权限作用域**，写了会让 GitHub 把**整个工作流文件**判为
+> `Invalid workflow file`，导致该分支上所有工作流全部失效。合法作用域只有：
+> `actions`、`attestations`、`checks`、`contents`、`deployments`、`discussions`、
+> `id-token`、`issues`、`packages`、`pages`、`pull-requests`、`repository-projects`、
+> `security-events`、`statuses`。
 
 ## 关键配置项 (build-oneplus-8-los23-a16.yml)
 
@@ -113,10 +190,10 @@
 
 ## 与 Jack 原版格式的差异（有意为之）
 
-- `patch-no-kprobe` 步骤/动作已移除: 其 `susfs_inline_hook_patches.sh` 面向 KSU v1.x
-  bool 钩子与旧版 selinux 修改, 与 BakaSU inline 模式不兼容 (seccomp filter_count
-  在 4.19 上由 kernel_compat.mk 条件编译排除, 无需补丁); 其 selinuxfs 静态符号移除
-  部分因本内核 CONFIG_KALLSYMS_ALL=y 而跳过, 无实际作用
+- `patch-no-kprobe` 步骤/动作未采用: 其 `susfs_inline_hook_patches.sh` 即 Jack 的官方内联钩子实现
+  (SUSFS v2.3.00+, 与 BakaSU inline 模式兼容), 本仓库以等价内容固化为
+  `resukisu_inline_hooks.patch` (保持补丁化流程、便于审查与固定应用顺序);
+  该脚本的 selinuxfs 静态符号移除部分因本内核 CONFIG_KALLSYMS_ALL=y 会跳过, 无实际作用
 - 仅保留 4.19 版本的 susfs 补丁 (设备内核版本固定, 无需 4.4/4.9/5.4 等)
 - ReKernel-X 4.19 直接用补丁集成 (内置), 替换原 Re:Kernel v8.5
 - HOOK_METHOD 变量保留但无实际作用: BakaSU inline 钩子由 resukisu_inline_hooks.patch 提供
