@@ -39,9 +39,39 @@ env:
   # 格式: 管理器（分支名） + 集成内容 Built By hotsteel
   # 本分支三段式构建，各 stage 的标题如实反映该 stage 实际集成的组件
   # （本分支未集成 ReKernel-X / Baseband Guard，故不出现在标题里）。
+  #
+  # 标题拆成 PREFIX + [VFS 段] + SUFFIX 三段组装：
+  # VFS 段由各 stage 的 Validate 步骤按**实际启用**的后端动态拼进去，
+  # 这样关了 HybridMount 就不会再出现 "Hybrid Mount VFS"，
+  # 避免标题与实际集成内容不一致。
+  # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
+  # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
+  #
+  # Stage1 不含 VFS（仅 BakaSU），故无 PREFIX/SUFFIX 拆分，标题为固定值。
   AK3_TITLE_STAGE1: "BakaSU (crdroid) Built By hotsteel"
-  AK3_TITLE_STAGE2: "BakaSU (crdroid) + SUSFS v2.3.0 + Hybrid Mount VFS Built By hotsteel"
-  AK3_TITLE_STAGE3: "BakaSU (crdroid) + SUSFS v2.3.0 + Hybrid Mount VFS + DroidSpaces Built By hotsteel"
+  AK3_TITLE_STAGE2_PREFIX: "BakaSU (crdroid) + SUSFS v2.3.0"
+  AK3_TITLE_STAGE2_SUFFIX: "Built By hotsteel"
+  AK3_TITLE_STAGE3_PREFIX: "BakaSU (crdroid) + SUSFS v2.3.0"
+  AK3_TITLE_STAGE3_SUFFIX: "+ DroidSpaces Built By hotsteel"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # VFS 路径重定向后端（三选一，互斥！）
+  # ─────────────────────────────────────────────────────────────────────────
+  # 这三个都工作在同一个内核层（劫持 inode_operations / file_operations /
+  # dentry_operations），并各自使用**独立且不兼容的 keyring 协议**
+  # （HybridMount 用 "hm1" / NoMount 用 "NOMOUNT" / ZeroMount 用自有协议）。
+  # 上游 Hybrid Mount 的 Kconfig 里就明确写了：
+  #   "not compatible with NoMount's metamodule or its tooling"
+  # 同时开启会让两套驱动抢同一层 hook，轻则元模块认不到内核、重则崩溃。
+  # 因此**最多只能开一个**，各 stage 开头有互斥校验，开了多个直接 fail。
+  #
+  # 注意: 本分支 stage1 仅集成 BakaSU，不含任何 VFS 后端，
+  # 因此这三个开关只在 stage2 / stage3 生效（stage1 会跳过校验）。
+  #
+  # 默认: HybridMount 开, 其余关（HybridMount 是本仓库长期验证过的组合）。
+  VFS_HYBRIDMOUNT: "true"  # Hybrid Mount VFS 后端 (fs/hybridmount, 4.19 内置移植)
+  VFS_NOMOUNT: "false"     # NoMount VFS 后端 (fs/nomount, 上游 setup.sh 集成)
+  VFS_ZEROMOUNT: "false"   # ZeroMount VFS 后端 (尚未实现 4.19 移植, 开启会 fail)
 
   # crDroid 内核源 (Android 16 分支)
   KERNEL_SOURCE: "https://github.com/crdroidandroid/android_kernel_oneplus_sm8250.git"
@@ -168,8 +198,10 @@ jobs:
           cd device_kernel
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
           # AK3 标题行: 管理器（分支名） + 集成内容 Built By hotsteel
+          # Stage1 不含 VFS，标题是 env 里的固定值，这里仍用 shell 变量读取
+          # 以与 stage2/stage3 保持一致（后者的 VFS 段是运行时组装的）。
           # sed 替换串里 & 代表"整个匹配"，必须转义。
-          AK3_TITLE_RESOLVED="${{ env.AK3_TITLE_STAGE1 }}"
+          AK3_TITLE_RESOLVED="${AK3_TITLE_STAGE1:-}"
           if [ -z "$AK3_TITLE_RESOLVED" ]; then
             echo "[!] AK3_TITLE_STAGE1 is empty"
             exit 1
@@ -210,6 +242,65 @@ jobs:
     steps:
       - name: ⏰ Checkout workflow repo
         uses: actions/checkout@v4
+
+      - name: 🧭 Validate VFS backend selection (mutually exclusive)
+        run: |
+          # HybridMount / NoMount / ZeroMount 三者互斥：它们都劫持同一层 VFS
+          # (inode_operations / file_operations / dentry_operations)，且各自使用
+          # 独立不兼容的 keyring 协议。同时启用会导致两套驱动抢同一批 hook，
+          # 元模块无法正确握手（认不到内核），严重时直接崩溃。
+          # 这里做前置校验，开了多个就立刻 fail，避免产出一个坏内核。
+          HM="${{ env.VFS_HYBRIDMOUNT }}"
+          NM="${{ env.VFS_NOMOUNT }}"
+          ZM="${{ env.VFS_ZEROMOUNT }}"
+
+          COUNT=0
+          [ "$HM" = "true" ] && COUNT=$((COUNT + 1))
+          [ "$NM" = "true" ] && COUNT=$((COUNT + 1))
+          [ "$ZM" = "true" ] && COUNT=$((COUNT + 1))
+
+          echo "VFS backend selection:"
+          echo "  VFS_HYBRIDMOUNT = $HM"
+          echo "  VFS_NOMOUNT     = $NM"
+          echo "  VFS_ZEROMOUNT   = $ZM"
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo ""
+            echo "[-] ERROR: VFS backends are mutually exclusive, but $COUNT are enabled."
+            echo "[-] HybridMount / NoMount / ZeroMount all hijack the same VFS layer and"
+            echo "[-] use incompatible keyring protocols. Enable at most ONE of them."
+            exit 1
+          fi
+
+          if [ "$ZM" = "true" ]; then
+            echo ""
+            echo "[-] ERROR: ZeroMount is not implemented yet."
+            echo "[-] It ships no kernel integration script; its driver + Rust userspace"
+            echo "[-] protocol still needs a 4.19 port. Set VFS_ZEROMOUNT to false."
+            exit 1
+          fi
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "[i] No VFS backend selected — building without path redirection."
+          else
+            echo "[+] VFS backend check passed."
+          fi
+
+          # 组装 AK3 标题：只在真正启用某个 VFS 后端时才把对应名字写进去，
+          # 保证标题与内核实际集成内容一致。写入 $GITHUB_ENV 供打包步骤读取。
+          VFS_LABEL=""
+          if [ "$HM" = "true" ]; then VFS_LABEL="Hybrid Mount VFS"; fi
+          if [ "$NM" = "true" ]; then VFS_LABEL="NoMount VFS"; fi
+          if [ "$ZM" = "true" ]; then VFS_LABEL="ZeroMount VFS"; fi
+
+          TITLE="${{ env.AK3_TITLE_STAGE2_PREFIX }}"
+          if [ -n "$VFS_LABEL" ]; then
+            TITLE="$TITLE + $VFS_LABEL"
+          fi
+          TITLE="$TITLE ${{ env.AK3_TITLE_STAGE2_SUFFIX }}"
+
+          echo "AK3_TITLE_STAGE2=$TITLE" >> $GITHUB_ENV
+          echo "[+] AK3 title will be: $TITLE"
 
       - name: 💾 Free disk space
         run: |
@@ -265,6 +356,7 @@ jobs:
           grep -q "p->state = 0" fs/namei.c && echo "[+] p->state=0 present (anti-black-screen fix)"
 
       - name: 🧩 Apply Hybrid Mount VFS patch
+        if: env.VFS_HYBRIDMOUNT == 'true'
         run: |
           cd device_kernel
           # Hybrid Mount 的 VFS 后端不是内核通用 VFS, 而是它自己的 hybridmount
@@ -286,6 +378,30 @@ jobs:
           grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
           echo "[+] Hybrid Mount VFS applied (built-in)."
 
+      - name: 🕳️ Apply NoMount VFS patch
+        if: env.VFS_NOMOUNT == 'true'
+        run: |
+          cd device_kernel
+          # NoMount 与 HybridMount 是同源不同家的方案：hybridmount 子系统就是从
+          # NoMount fork 出来的，但**重命名了符号、换了自己的 wire magic**
+          # （HybridMount 用 "HYBRIDMO"），因此两套元模块与工具链互不通用。
+          # 二者只能选一个，stage 开头的互斥校验会拦截同时开启的情况。
+          #
+          # NoMount 官方仓库自带 kernel/setup.sh，做的是通用内核集成
+          # （把 NoMount 源码 symlink 到 fs/nomount，并往 fs/Makefile + fs/Kconfig
+          #  接线），不依赖具体内核版本 —— 上游预编译 .ko 只覆盖 5.10+，
+          # 4.19 这类 legacy 内核必须源码集成，这个脚本正是干这个的。
+          # 集成方式与上游 JackA1ltman/NonGKI_Kernel_Build_2nd 的 patch-nomount 一致。
+          curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
+
+          # setup.sh 的失败不一定反映到管道的退出码（curl | bash 只取 bash 的），
+          # 所以这里做集成结果自检。
+          test -d fs/nomount || { echo "[-] fs/nomount missing (symlink not created)"; exit 1; }
+          test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; exit 1; }
+          grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
+          grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
+          echo "[+] NoMount VFS applied (built-in)."
+
       - name: 🚀 Build kernel (Stage2)
         id: build
         run: |
@@ -296,8 +412,14 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/vendor/oplus.config
-          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
-            ../Patches/crdroid/hybridmount.config
+          if [ "${{ env.VFS_HYBRIDMOUNT }}" = "true" ]; then
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              ../Patches/crdroid/hybridmount.config
+          fi
+          if [ "${{ env.VFS_NOMOUNT }}" = "true" ]; then
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              ../Patches/crdroid/nomount.config
+          fi
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -315,19 +437,30 @@ jobs:
           cd device_kernel
           grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
           grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS version mismatch"; exit 1; }
-          grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
-          grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (hybridmount hard dependency)"; exit 1; }
           nm out/vmlinux | grep -q "susfs" || { echo "[-] susfs symbols missing"; exit 1; }
-          nm out/vmlinux | grep -q "hybridmount" || { echo "[-] hybridmount symbols missing"; exit 1; }
-          echo "[+] Stage2 verified OK (SUSFS v2.3.0 + Hybrid Mount VFS)."
+          # VFS 后端校验：只检查实际启用的那一个
+          if [ "${{ env.VFS_HYBRIDMOUNT }}" = "true" ]; then
+            grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
+            grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (hybridmount hard dependency)"; exit 1; }
+            nm out/vmlinux | grep -q "hybridmount" || { echo "[-] hybridmount symbols missing"; exit 1; }
+          elif [ "${{ env.VFS_NOMOUNT }}" = "true" ]; then
+            grep -q "^CONFIG_NOMOUNT=y" out/.config || { echo "[-] NOMOUNT missing"; exit 1; }
+            grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (nomount hard dependency)"; exit 1; }
+            nm out/vmlinux | grep -q "nomount" || { echo "[-] nomount symbols missing"; exit 1; }
+          else
+            echo "[i] No VFS backend enabled, skipping VFS symbol checks."
+          fi
+          echo "[+] Stage2 verified OK (SUSFS v2.3.0 + VFS backend check done)."
 
       - name: 📦 Package AnyKernel3
         run: |
           cd device_kernel
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
           # AK3 标题行: 管理器（分支名） + 集成内容 Built By hotsteel
+          # VFS 段是按实际启用的后端动态拼的，运行时写进 GITHUB_ENV，
+          # 所以必须用 shell 变量读取（不能用 ${{ env.AK3_TITLE_STAGE2 }}）。
           # sed 替换串里 & 代表"整个匹配"，必须转义。
-          AK3_TITLE_RESOLVED="${{ env.AK3_TITLE_STAGE2 }}"
+          AK3_TITLE_RESOLVED="${AK3_TITLE_STAGE2:-}"
           if [ -z "$AK3_TITLE_RESOLVED" ]; then
             echo "[!] AK3_TITLE_STAGE2 is empty"
             exit 1
@@ -368,6 +501,65 @@ jobs:
     steps:
       - name: ⏰ Checkout workflow repo
         uses: actions/checkout@v4
+
+      - name: 🧭 Validate VFS backend selection (mutually exclusive)
+        run: |
+          # HybridMount / NoMount / ZeroMount 三者互斥：它们都劫持同一层 VFS
+          # (inode_operations / file_operations / dentry_operations)，且各自使用
+          # 独立不兼容的 keyring 协议。同时启用会导致两套驱动抢同一批 hook，
+          # 元模块无法正确握手（认不到内核），严重时直接崩溃。
+          # 这里做前置校验，开了多个就立刻 fail，避免产出一个坏内核。
+          HM="${{ env.VFS_HYBRIDMOUNT }}"
+          NM="${{ env.VFS_NOMOUNT }}"
+          ZM="${{ env.VFS_ZEROMOUNT }}"
+
+          COUNT=0
+          [ "$HM" = "true" ] && COUNT=$((COUNT + 1))
+          [ "$NM" = "true" ] && COUNT=$((COUNT + 1))
+          [ "$ZM" = "true" ] && COUNT=$((COUNT + 1))
+
+          echo "VFS backend selection:"
+          echo "  VFS_HYBRIDMOUNT = $HM"
+          echo "  VFS_NOMOUNT     = $NM"
+          echo "  VFS_ZEROMOUNT   = $ZM"
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo ""
+            echo "[-] ERROR: VFS backends are mutually exclusive, but $COUNT are enabled."
+            echo "[-] HybridMount / NoMount / ZeroMount all hijack the same VFS layer and"
+            echo "[-] use incompatible keyring protocols. Enable at most ONE of them."
+            exit 1
+          fi
+
+          if [ "$ZM" = "true" ]; then
+            echo ""
+            echo "[-] ERROR: ZeroMount is not implemented yet."
+            echo "[-] It ships no kernel integration script; its driver + Rust userspace"
+            echo "[-] protocol still needs a 4.19 port. Set VFS_ZEROMOUNT to false."
+            exit 1
+          fi
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "[i] No VFS backend selected — building without path redirection."
+          else
+            echo "[+] VFS backend check passed."
+          fi
+
+          # 组装 AK3 标题：只在真正启用某个 VFS 后端时才把对应名字写进去，
+          # 保证标题与内核实际集成内容一致。写入 $GITHUB_ENV 供打包步骤读取。
+          VFS_LABEL=""
+          if [ "$HM" = "true" ]; then VFS_LABEL="Hybrid Mount VFS"; fi
+          if [ "$NM" = "true" ]; then VFS_LABEL="NoMount VFS"; fi
+          if [ "$ZM" = "true" ]; then VFS_LABEL="ZeroMount VFS"; fi
+
+          TITLE="${{ env.AK3_TITLE_STAGE3_PREFIX }}"
+          if [ -n "$VFS_LABEL" ]; then
+            TITLE="$TITLE + $VFS_LABEL"
+          fi
+          TITLE="$TITLE ${{ env.AK3_TITLE_STAGE3_SUFFIX }}"
+
+          echo "AK3_TITLE_STAGE3=$TITLE" >> $GITHUB_ENV
+          echo "[+] AK3 title will be: $TITLE"
 
       - name: 💾 Free disk space
         run: |
@@ -419,6 +611,7 @@ jobs:
         run: cd device_kernel && patch -p1 < ../Patches/crdroid/0002-stage2-susfs.patch
 
       - name: 🧩 Apply Hybrid Mount VFS patch
+        if: env.VFS_HYBRIDMOUNT == 'true'
         run: |
           cd device_kernel
           patch -p1 < ../Patches/crdroid/0004-hybridmount-vfs.patch
@@ -432,6 +625,23 @@ jobs:
           grep -qF 'obj-$(CONFIG_HYBRIDMOUNT) += hybridmount/' fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
           grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
           echo "[+] Hybrid Mount VFS applied (built-in)."
+
+      - name: 🕳️ Apply NoMount VFS patch
+        if: env.VFS_NOMOUNT == 'true'
+        run: |
+          cd device_kernel
+          # NoMount 与 HybridMount 是同源不同家的方案：hybridmount 子系统就是从
+          # NoMount fork 出来的，但重命名了符号、换了自己的 wire magic
+          # （HybridMount 用 "HYBRIDMO"），两套元模块与工具链互不通用。
+          # 二者只能选一个，stage 开头的互斥校验会拦截同时开启的情况。
+          # 走官方 kernel/setup.sh 源码集成（4.19 无预编译 .ko），
+          # 与上游 JackA1ltman/NonGKI_Kernel_Build_2nd 的用法一致。
+          curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
+          test -d fs/nomount || { echo "[-] fs/nomount missing (symlink not created)"; exit 1; }
+          test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; exit 1; }
+          grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
+          grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
+          echo "[+] NoMount VFS applied (built-in)."
 
       - name: 💿 Apply Stage3 DroidSpaces (cocci + config)
         run: |
@@ -460,8 +670,14 @@ jobs:
             arch/arm64/configs/vendor/oplus.config
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/droidspaces.config
-          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
-            ../Patches/crdroid/hybridmount.config
+          if [ "${{ env.VFS_HYBRIDMOUNT }}" = "true" ]; then
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              ../Patches/crdroid/hybridmount.config
+          fi
+          if [ "${{ env.VFS_NOMOUNT }}" = "true" ]; then
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              ../Patches/crdroid/nomount.config
+          fi
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -481,18 +697,29 @@ jobs:
           grep -q "^CONFIG_USER_NS=y" out/.config || { echo "[-] USER_NS missing"; exit 1; }
           grep -q "^CONFIG_PID_NS=y" out/.config || { echo "[-] PID_NS missing"; exit 1; }
           grep -q "kernfs_create_link" kernel/cgroup/cgroup.c || { echo "[-] cgroup patch missing"; exit 1; }
-          grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
-          grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (hybridmount hard dependency)"; exit 1; }
-          nm out/vmlinux | grep -q "hybridmount" || { echo "[-] hybridmount symbols missing"; exit 1; }
-          echo "[+] Stage3 verified OK (all three components)."
+          # VFS 后端校验：只检查实际启用的那一个
+          if [ "${{ env.VFS_HYBRIDMOUNT }}" = "true" ]; then
+            grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
+            grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (hybridmount hard dependency)"; exit 1; }
+            nm out/vmlinux | grep -q "hybridmount" || { echo "[-] hybridmount symbols missing"; exit 1; }
+          elif [ "${{ env.VFS_NOMOUNT }}" = "true" ]; then
+            grep -q "^CONFIG_NOMOUNT=y" out/.config || { echo "[-] NOMOUNT missing"; exit 1; }
+            grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (nomount hard dependency)"; exit 1; }
+            nm out/vmlinux | grep -q "nomount" || { echo "[-] nomount symbols missing"; exit 1; }
+          else
+            echo "[i] No VFS backend enabled, skipping VFS symbol checks."
+          fi
+          echo "[+] Stage3 verified OK (SUSFS + DroidSpaces + VFS backend check done)."
 
       - name: 📦 Package AnyKernel3
         run: |
           cd device_kernel
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
           # AK3 标题行: 管理器（分支名） + 集成内容 Built By hotsteel
+          # VFS 段是按实际启用的后端动态拼的，运行时写进 GITHUB_ENV，
+          # 所以必须用 shell 变量读取（不能用 ${{ env.AK3_TITLE_STAGE3 }}）。
           # sed 替换串里 & 代表"整个匹配"，必须转义。
-          AK3_TITLE_RESOLVED="${{ env.AK3_TITLE_STAGE3 }}"
+          AK3_TITLE_RESOLVED="${AK3_TITLE_STAGE3:-}"
           if [ -z "$AK3_TITLE_RESOLVED" ]; then
             echo "[!] AK3_TITLE_STAGE3 is empty"
             exit 1
