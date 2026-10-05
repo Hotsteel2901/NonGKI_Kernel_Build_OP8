@@ -11,7 +11,12 @@ env:
 
   # AK3 刷机包在 recovery 里显示的标题行。
   # 格式: 管理器（分支名） + 集成内容 Built By hotsteel
-  AK3_TITLE: "BakaSU (Luk) + SUSFS v2.3.0 + Hybrid Mount VFS + ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
+  # VFS 段由下方 build 步骤按实际启用的后端动态拼进 AK3_TITLE，
+  # 这里只给静态部分（不含 VFS），避免标题与实际集成内容不一致。
+  # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
+  # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
+  AK3_TITLE_PREFIX: "BakaSU (Luk) + SUSFS v2.3.0"
+  AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
   EXTRA_CMDS : ""
@@ -69,7 +74,22 @@ env:
 
   REKERNEL_ENABLE: "true"
   DROIDSPACES_ENABLE: "true"
-  NOMOUNT_ENABLE: "false"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # VFS 路径重定向后端（三选一，互斥！）
+  # ─────────────────────────────────────────────────────────────────────────
+  # 这三个都工作在同一个内核层（劫持 inode_operations / file_operations /
+  # dentry_operations），并各自使用**独立且不兼容的 keyring 协议**
+  # （HybridMount 用 "hm1" / NoMount 用 "NOMOUNT" / ZeroMount 用自有协议）。
+  # 上游 Hybrid Mount 的 Kconfig 里就明确写了：
+  #   "not compatible with NoMount's metamodule or its tooling"
+  # 同时开启会让两套驱动抢同一层 hook，轻则元模块认不到内核、重则崩溃。
+  # 因此**最多只能开一个**，构建开头有互斥校验，开了多个直接 fail。
+  #
+  # 默认: HybridMount 开, 其余关（HybridMount 是本仓库长期验证过的组合）。
+  VFS_HYBRIDMOUNT: "true"  # Hybrid Mount VFS 后端 (fs/hybridmount, 4.19 内置移植)
+  VFS_NOMOUNT: "false"     # NoMount VFS 后端 (fs/nomount, 上游 setup.sh 集成)
+  VFS_ZEROMOUNT: "false"   # ZeroMount VFS 后端 (尚未实现 4.19 移植, 开启会 fail)
 
   HOOK_METHOD: "syscall" # Manual hook method -> syscall.
 
@@ -113,6 +133,65 @@ jobs:
       - name: ⚙️ Get neccssary tools
         uses: ./.github/workflows/build-ready
 
+      - name: 🧭 Validate VFS backend selection (mutually exclusive)
+        run: |
+          # HybridMount / NoMount / ZeroMount 三者互斥：它们都劫持同一层 VFS
+          # (inode_operations / file_operations / dentry_operations)，且各自使用
+          # 独立不兼容的 keyring 协议。同时启用会导致两套驱动抢同一批 hook，
+          # 元模块无法正确握手（认不到内核），严重时直接崩溃。
+          # 这里做前置校验，开了多个就立刻 fail，避免产出一个坏内核。
+          HM="${{ env.VFS_HYBRIDMOUNT }}"
+          NM="${{ env.VFS_NOMOUNT }}"
+          ZM="${{ env.VFS_ZEROMOUNT }}"
+
+          COUNT=0
+          [ "$HM" = "true" ] && COUNT=$((COUNT + 1))
+          [ "$NM" = "true" ] && COUNT=$((COUNT + 1))
+          [ "$ZM" = "true" ] && COUNT=$((COUNT + 1))
+
+          echo "VFS backend selection:"
+          echo "  VFS_HYBRIDMOUNT = $HM"
+          echo "  VFS_NOMOUNT     = $NM"
+          echo "  VFS_ZEROMOUNT   = $ZM"
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo ""
+            echo "[-] ERROR: VFS backends are mutually exclusive, but $COUNT are enabled."
+            echo "[-] HybridMount / NoMount / ZeroMount all hijack the same VFS layer and"
+            echo "[-] use incompatible keyring protocols. Enable at most ONE of them."
+            exit 1
+          fi
+
+          if [ "$ZM" = "true" ]; then
+            echo ""
+            echo "[-] ERROR: ZeroMount is not implemented yet."
+            echo "[-] It ships no kernel integration script; its driver + Rust userspace"
+            echo "[-] protocol still needs a 4.19 port. Set VFS_ZEROMOUNT to false."
+            exit 1
+          fi
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "[i] No VFS backend selected — building without path redirection."
+          else
+            echo "[+] VFS backend check passed."
+          fi
+
+          # 组装 AK3 标题：只在真正启用某个 VFS 后端时才把对应名字写进去，
+          # 保证标题与内核实际集成内容一致。写入 $GITHUB_ENV 供打包步骤读取。
+          VFS_LABEL=""
+          if [ "$HM" = "true" ]; then VFS_LABEL="Hybrid Mount VFS"; fi
+          if [ "$NM" = "true" ]; then VFS_LABEL="NoMount VFS"; fi
+          if [ "$ZM" = "true" ]; then VFS_LABEL="ZeroMount VFS"; fi
+
+          TITLE="${{ env.AK3_TITLE_PREFIX }}"
+          if [ -n "$VFS_LABEL" ]; then
+            TITLE="$TITLE + $VFS_LABEL"
+          fi
+          TITLE="$TITLE + ${{ env.AK3_TITLE_SUFFIX }}"
+
+          echo "AK3_TITLE=$TITLE" >> $GITHUB_ENV
+          echo "[+] AK3 title will be: $TITLE"
+
       - name: 📌 Use latest kernel source (no pinned checkout)
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
@@ -130,6 +209,102 @@ jobs:
           patch -p1 < resukisu_inline_hooks.patch || true
           rm -f resukisu_inline_hooks.patch
           echo "[+] BakaSU inline hooks patched."
+
+      - name: 🧩 Patch Hybrid Mount VFS Subsystem
+        if: env.VFS_HYBRIDMOUNT == 'true'
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel/
+
+          # Hybrid Mount 的 VFS 后端不是内核通用 VFS，而是它自己的 hybridmount 子系统
+          # （fork 自 NoMount，通过 keyring 驱动）。它只提供 5.10/5.15/6.1/6.6/6.12 的
+          # 预编译 .ko，4.19 一个候选都匹配不到，所以必须 built-in 集成。
+          # 本子系统与 SUSFS / BakaSU 完全解耦（不引用任何 ksu_/susfs_ 符号），
+          # 与 SUSFS 补丁仅在 fs/Makefile 尾部追加处有交集，补丁顺序对结果无影响。
+          cp /tmp/Patches/Patch/hybridmount_patch_to_4.19.patch ./
+          patch -p1 < hybridmount_patch_to_4.19.patch || true
+          rm -f hybridmount_patch_to_4.19.patch
+
+          # patch -p1 加了 || true，若真有 hunk 打不上这里必须报出来
+          if [ -n "$(find . -name '*.rej')" ]; then
+            echo "[-] hybridmount_patch has rejected hunks!"
+            find . -name "*.rej" -exec cat {} \;
+            false
+          fi
+
+          # 集成结果自检
+          test -f fs/hybridmount/hybridmount.c || { echo "[-] fs/hybridmount/hybridmount.c missing"; false; }
+          grep -qF 'obj-$(CONFIG_HYBRIDMOUNT) += hybridmount/' fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
+          grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
+          echo "[+] Hybrid Mount VFS subsystem patched (built-in)."
+
+      - name: ⚙️ Enable Hybrid Mount VFS in DEFCONFIG
+        if: env.VFS_HYBRIDMOUNT == 'true'
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel
+
+          DEFCONFIG_PATH="./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}"
+
+          # CONFIG_KEYS=y 是 hybridmount 的硬依赖（它要 register_key_type）。
+          # 显式写出来，免得将来有人关掉 FS_ENCRYPTION 时把 keyring 一起带走。
+          # 注意：只加 CONFIG_KEYS=y 不够，KEYS 还 select ASSOCIATIVE_ARRAY。
+          sed -i '/^CONFIG_KEYS=/d' "$DEFCONFIG_PATH"
+          sed -i '/^CONFIG_ASSOCIATIVE_ARRAY=/d' "$DEFCONFIG_PATH"
+          echo "CONFIG_KEYS=y" >> "$DEFCONFIG_PATH"
+          echo "CONFIG_ASSOCIATIVE_ARRAY=y" >> "$DEFCONFIG_PATH"
+
+          # =y 而不是 =m：4.19 没有对应的预编译 .ko，内置进内核镜像才生效。
+          sed -i '/^CONFIG_HYBRIDMOUNT=/d' "$DEFCONFIG_PATH"
+          echo "CONFIG_HYBRIDMOUNT=y" >> "$DEFCONFIG_PATH"
+
+          echo "[+] Appended to ${DEFCONFIG_PATH}:"
+          grep -nE "CONFIG_(HYBRIDMOUNT|KEYS|ASSOCIATIVE_ARRAY)=" "$DEFCONFIG_PATH"
+
+      - name: 🕳️ Patch NoMount VFS Subsystem
+        if: env.VFS_NOMOUNT == 'true'
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel/
+
+          # NoMount 与 HybridMount 是同源不同家的方案：HybridMount 的 hybridmount
+          # 子系统就是从 NoMount fork 出来的，但**重命名了符号、换了自己的 wire magic**
+          # （HybridMount 用 "HYBRIDMO"），因此两套元模块与工具链互不通用。
+          # 二者只能选一个，构建开头的互斥校验会拦截同时开启的情况。
+          #
+          # NoMount 官方仓库自带 kernel/setup.sh，做的是通用内核集成
+          # （把 NoMount 源码 symlink 到 fs/nomount，并往 fs/Makefile + fs/Kconfig
+          #  接线），不依赖具体内核版本 —— 上游文档说明 4.19 这类 legacy 内核
+          # 无法用预编译 .ko，必须源码集成，这个脚本正是干这个的。
+          # 集成方式与上游 JackA1ltman/NonGKI_Kernel_Build_2nd 的 patch-nomount 一致。
+          curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
+
+          # setup.sh 的失败不一定反映到管道的退出码（curl | bash 只取 bash 的），
+          # 所以这里做集成结果自检。
+          test -d fs/nomount || { echo "[-] fs/nomount missing (symlink not created)"; false; }
+          test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; false; }
+          grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
+          grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
+          echo "[+] NoMount VFS subsystem patched (built-in)."
+
+      - name: ⚙️ Enable NoMount VFS in DEFCONFIG
+        if: env.VFS_NOMOUNT == 'true'
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel
+
+          DEFCONFIG_PATH="./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}"
+
+          # CONFIG_KEYS / CONFIG_ASSOCIATIVE_ARRAY 同样是 NoMount 的硬依赖：
+          # 它与 userspace 的 nm 二进制之间完全靠 Linux keyring 通信
+          # （add_key），不依赖 /dev 节点与 ioctl。
+          sed -i '/^CONFIG_KEYS=/d' "$DEFCONFIG_PATH"
+          sed -i '/^CONFIG_ASSOCIATIVE_ARRAY=/d' "$DEFCONFIG_PATH"
+          echo "CONFIG_KEYS=y" >> "$DEFCONFIG_PATH"
+          echo "CONFIG_ASSOCIATIVE_ARRAY=y" >> "$DEFCONFIG_PATH"
+
+          # NoMount 是 drop-in 内核子系统，同样必须 =y 内置（4.19 无预编译 .ko）。
+          sed -i '/^CONFIG_NOMOUNT=/d' "$DEFCONFIG_PATH"
+          echo "CONFIG_NOMOUNT=y" >> "$DEFCONFIG_PATH"
+
+          echo "[+] Appended to ${DEFCONFIG_PATH}:"
+          grep -nE "CONFIG_(NOMOUNT|KEYS|ASSOCIATIVE_ARRAY)=" "$DEFCONFIG_PATH"
 
       - name: 🪛 Extra Kernel Options
         run: |

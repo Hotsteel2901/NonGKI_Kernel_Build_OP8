@@ -16,10 +16,12 @@ runs:
 
           if [[ "${{ env.AK3_SOURCE }}" =~ "osm0sis" ]]; then
             # AK3 安装时显示的标题行，由各分支在 build-oneplus-8-los23-a16.yml 里
-            # 通过 AK3_TITLE 定义（格式: 管理器（分支名） + 集成内容 Built By hotsteel）。
-            # 这里只在缺失时兜底，避免某分支忘了定义导致显示成 osm0sis 默认值。
+            # 定义（格式: 管理器（分支名） + 集成内容 Built By hotsteel）。
+            # 其中 VFS 段是按实际启用的后端动态拼的，所以是**运行时**写进
+            # GITHUB_ENV 的；必须用 "$AK3_TITLE" 这种 shell 变量读取，
+            # 不能用 ${{ env.AK3_TITLE }}（那是解析期求值，拿不到运行时值）。
             AK3_TITLE_FALLBACK="Kernel Built By hotsteel"
-            AK3_TITLE_RESOLVED="${{ env.AK3_TITLE }}"
+            AK3_TITLE_RESOLVED="${AK3_TITLE:-}"
             if [ -z "$AK3_TITLE_RESOLVED" ]; then
               echo "[!] AK3_TITLE is empty, falling back to: $AK3_TITLE_FALLBACK"
               AK3_TITLE_RESOLVED="$AK3_TITLE_FALLBACK"
