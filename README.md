@@ -63,7 +63,7 @@ immediately** if more than one backend is enabled.
 |---|---|---|---|
 | `VFS_HYBRIDMOUNT` | Hybrid Mount VFS | `true` | `fs/hybridmount` (in-tree 4.19 port) |
 | `VFS_NOMOUNT` | NoMount VFS | `false` | `fs/nomount` (upstream `setup.sh` integration) |
-| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | **not implemented yet** — enabling fails the build |
+| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | `fs/zeromount` (in-house 4.19 port, own char-dev + ioctl, SUSFS-aware) |
 
 Set them in `build-crdroid-op8.yml`'s `env:` block. Scope on this branch:
 
@@ -82,6 +82,29 @@ Set them in `build-crdroid-op8.yml`'s `env:` block. Scope on this branch:
 >
 > The AK3 title line is assembled at build time from the backend actually enabled, so the
 > title never claims a backend the kernel does not contain.
+>
+> **About the ZeroMount port**: upstream `Enginex0/zeromount` only ships patches for
+> 5.4 / 5.10 / 5.15 / 6.1 / 6.6 / 6.12 — non-GKI 4.19 is still marked *Planned* on its
+> roadmap. `Patches/crdroid/0005-zeromount-vfs.patch` here is an in-house port (12 files,
+> +1962 lines) that keeps `zeromount.c` / `zeromount.h` **byte-identical** to the 5.4
+> original; only the 4.19 kernel-side wiring differs:
+>
+> - 4.19 has no `CONFIG_ANDROID_VENDOR_OEM_DATA` / `current->android_oem_data1`, so the
+>   header's built-in `current->journal_info` re-entrancy fallback is selected automatically;
+> - 4.19's `SYSCALL_DEFINE3(getdents64, ...)` is only a thin wrapper around
+>   `ksys_getdents64()`; the real `iterate_dir` call lives in the latter, so the dents
+>   injection hook is placed in `ksys_getdents64`;
+> - `vfs_getattr` / `inode_permission` / `kern_path` / `lookup_one_len` all have signatures
+>   identical to 5.4, so no adaptation was needed.
+>
+> Unlike HybridMount / NoMount, ZeroMount uses its **own `/dev/zeromount` character device
+> + ioctl protocol** and does **not** depend on the kernel keyring.
+>
+> The patch's **baseline is the post-SUSFS + post-HybridMount tree**, not pristine 4.19:
+> it overlaps SUSFS heavily in `fs/readdir.c` (SUSFS rewrites the `iterate_dir` call sites
+> and adds `orig_flow:` labels) and in `fs/proc/task_mmu.c` (both hook `show_map_vma`).
+> The workflow already orders the ZeroMount step after SUSFS / BakaSU hooks / HybridMount —
+> that order must not be changed.
 
 ## Key settings (build-oneplus-8-los23-a16.yml)
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
