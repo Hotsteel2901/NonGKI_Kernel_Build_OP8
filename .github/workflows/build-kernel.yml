@@ -4,9 +4,63 @@ permissions:
   contents: write
   actions: write
 
+# ============================================================================
+# UI 入口工作流（OnePlus 8 / LineageOS 23.2 A16）
+#
+# 这里是 GitHub Actions 「Run workflow」下拉菜单真正渲染控件的地方。
+# 只有 workflow_dispatch.inputs 才会出现在 UI 上；workflow 级 env: 不会。
+#
+# 本文件有两个入口身份：
+#   - workflow_dispatch : 在 Actions 页面手动触发，UI 显示下面 3 个 VFS 开关
+#   - workflow_call     : 被 build-release.yml 调用，inputs 由对方 with: 传入
+# 两种情况都通过 with: 把开关透传给 build-oneplus-8-los23-a16.yml。
+#
+# 注: 本分支另有独立入口 build-crdroid-op8.yml（crDroid 16.0 三段式构建），
+#     其 VFS 开关同样为 vfs_hybridmount / vfs_nomount / vfs_zeromount。
+# ============================================================================
 on:
   workflow_call:
+    inputs:
+      vfs_hybridmount:
+        description: 'VFS 后端: Hybrid Mount (默认开启)'
+        required: false
+        type: boolean
+        default: true
+      vfs_nomount:
+        description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥)'
+        required: false
+        type: boolean
+        default: false
+      vfs_zeromount:
+        description: 'VFS 后端: ZeroMount (尚未实现 4.19 移植, 开启会 fail)'
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      # ─────────────────────────────────────────────────────────────────────
+      # VFS 路径重定向后端（三选一，互斥！）
+      # ─────────────────────────────────────────────────────────────────────
+      # HybridMount / NoMount / ZeroMount 都劫持同一层 VFS
+      # (inode_operations / file_operations / dentry_operations)，
+      # 且各自使用独立不兼容的 keyring 协议（"hm1" / "NOMOUNT" / 自有）。
+      # 上游 Hybrid Mount 的 Kconfig 明确写了与 NoMount 的元模块
+      # "not compatible"。最多只能开一个，构建开头有互斥校验。
+      vfs_hybridmount:
+        description: 'VFS 后端: Hybrid Mount (默认开启)'
+        required: true
+        type: boolean
+        default: true
+      vfs_nomount:
+        description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥)'
+        required: true
+        type: boolean
+        default: false
+      vfs_zeromount:
+        description: 'VFS 后端: ZeroMount (尚未实现 4.19 移植, 开启会 fail)'
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   # OnePlus 8 (LineageOS 23.2)
@@ -16,3 +70,9 @@ jobs:
       fail-fast: true
     uses: ./.github/workflows/build-oneplus-8-los23-a16.yml
     secrets: inherit
+    with:
+      # 透传 VFS 后端选择。workflow_dispatch 直触发时用 UI 的值；
+      # 被 build-release.yml 调用时用对方 with: 传入的值。
+      vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
+      vfs_nomount: ${{ inputs.vfs_nomount }}
+      vfs_zeromount: ${{ inputs.vfs_zeromount }}

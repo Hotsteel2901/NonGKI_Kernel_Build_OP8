@@ -31,6 +31,29 @@ on:
         type: string
         default: ''
 
+      # ─────────────────────────────────────────────────────────────────────
+      # VFS 路径重定向后端（三选一，互斥！）
+      # ─────────────────────────────────────────────────────────────────────
+      # HybridMount / NoMount / ZeroMount 都劫持同一层 VFS，且各自使用
+      # 独立不兼容的 keyring 协议，最多只能开一个，各 stage 开头有互斥校验。
+      # 注意: stage1 仅集成 BakaSU，不含任何 VFS 后端，这三个开关只在
+      # stage2 / stage3 生效（stage1 会跳过校验）。
+      vfs_hybridmount:
+        description: 'VFS 后端: Hybrid Mount (默认开启; stage2/3 生效)'
+        required: true
+        type: boolean
+        default: true
+      vfs_nomount:
+        description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥; stage2/3 生效)'
+        required: true
+        type: boolean
+        default: false
+      vfs_zeromount:
+        description: 'VFS 后端: ZeroMount (尚未实现 4.19 移植, 开启会 fail)'
+        required: true
+        type: boolean
+        default: false
+
 env:
   DEVICE_NAME: "oneplus_8"
   DEVICE_CODENAME: "instantnoodle"
@@ -68,10 +91,13 @@ env:
   # 注意: 本分支 stage1 仅集成 BakaSU，不含任何 VFS 后端，
   # 因此这三个开关只在 stage2 / stage3 生效（stage1 会跳过校验）。
   #
+  # 开关定义在文件头部的 workflow_dispatch.inputs（UI 控件），
+  # 各 stage 的 Validate 步骤直接读 inputs.vfs_*。
+  # 本文件是 workflow_dispatch 独占入口，inputs 始终存在，无需 env 兜底，
+  # 故这里**故意不定义 VFS_* env** —— 避免出现第二份"看起来像默认值"的
+  # 配置，防止误改 env 却毫无效果（这正是上一轮 UI 不显示问题的成因）。
+  #
   # 默认: HybridMount 开, 其余关（HybridMount 是本仓库长期验证过的组合）。
-  VFS_HYBRIDMOUNT: "true"  # Hybrid Mount VFS 后端 (fs/hybridmount, 4.19 内置移植)
-  VFS_NOMOUNT: "false"     # NoMount VFS 后端 (fs/nomount, 上游 setup.sh 集成)
-  VFS_ZEROMOUNT: "false"   # ZeroMount VFS 后端 (尚未实现 4.19 移植, 开启会 fail)
 
   # crDroid 内核源 (Android 16 分支)
   KERNEL_SOURCE: "https://github.com/crdroidandroid/android_kernel_oneplus_sm8250.git"
@@ -250,9 +276,9 @@ jobs:
           # 独立不兼容的 keyring 协议。同时启用会导致两套驱动抢同一批 hook，
           # 元模块无法正确握手（认不到内核），严重时直接崩溃。
           # 这里做前置校验，开了多个就立刻 fail，避免产出一个坏内核。
-          HM="${{ env.VFS_HYBRIDMOUNT }}"
-          NM="${{ env.VFS_NOMOUNT }}"
-          ZM="${{ env.VFS_ZEROMOUNT }}"
+          HM="${{ inputs.vfs_hybridmount }}"
+          NM="${{ inputs.vfs_nomount }}"
+          ZM="${{ inputs.vfs_zeromount }}"
 
           COUNT=0
           [ "$HM" = "true" ] && COUNT=$((COUNT + 1))
@@ -356,7 +382,7 @@ jobs:
           grep -q "p->state = 0" fs/namei.c && echo "[+] p->state=0 present (anti-black-screen fix)"
 
       - name: 🧩 Apply Hybrid Mount VFS patch
-        if: env.VFS_HYBRIDMOUNT == 'true'
+        if: inputs.vfs_hybridmount == true
         run: |
           cd device_kernel
           # Hybrid Mount 的 VFS 后端不是内核通用 VFS, 而是它自己的 hybridmount
@@ -379,7 +405,7 @@ jobs:
           echo "[+] Hybrid Mount VFS applied (built-in)."
 
       - name: 🕳️ Apply NoMount VFS patch
-        if: env.VFS_NOMOUNT == 'true'
+        if: inputs.vfs_nomount == true
         run: |
           cd device_kernel
           # NoMount 与 HybridMount 是同源不同家的方案：hybridmount 子系统就是从
@@ -412,11 +438,11 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/vendor/oplus.config
-          if [ "${{ env.VFS_HYBRIDMOUNT }}" = "true" ]; then
+          if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               ../Patches/crdroid/hybridmount.config
           fi
-          if [ "${{ env.VFS_NOMOUNT }}" = "true" ]; then
+          if [ "${{ inputs.vfs_nomount }}" = "true" ]; then
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               ../Patches/crdroid/nomount.config
           fi
@@ -439,11 +465,11 @@ jobs:
           grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS version mismatch"; exit 1; }
           nm out/vmlinux | grep -q "susfs" || { echo "[-] susfs symbols missing"; exit 1; }
           # VFS 后端校验：只检查实际启用的那一个
-          if [ "${{ env.VFS_HYBRIDMOUNT }}" = "true" ]; then
+          if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
             grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
             grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (hybridmount hard dependency)"; exit 1; }
             nm out/vmlinux | grep -q "hybridmount" || { echo "[-] hybridmount symbols missing"; exit 1; }
-          elif [ "${{ env.VFS_NOMOUNT }}" = "true" ]; then
+          elif [ "${{ inputs.vfs_nomount }}" = "true" ]; then
             grep -q "^CONFIG_NOMOUNT=y" out/.config || { echo "[-] NOMOUNT missing"; exit 1; }
             grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (nomount hard dependency)"; exit 1; }
             nm out/vmlinux | grep -q "nomount" || { echo "[-] nomount symbols missing"; exit 1; }
@@ -509,9 +535,9 @@ jobs:
           # 独立不兼容的 keyring 协议。同时启用会导致两套驱动抢同一批 hook，
           # 元模块无法正确握手（认不到内核），严重时直接崩溃。
           # 这里做前置校验，开了多个就立刻 fail，避免产出一个坏内核。
-          HM="${{ env.VFS_HYBRIDMOUNT }}"
-          NM="${{ env.VFS_NOMOUNT }}"
-          ZM="${{ env.VFS_ZEROMOUNT }}"
+          HM="${{ inputs.vfs_hybridmount }}"
+          NM="${{ inputs.vfs_nomount }}"
+          ZM="${{ inputs.vfs_zeromount }}"
 
           COUNT=0
           [ "$HM" = "true" ] && COUNT=$((COUNT + 1))
@@ -611,7 +637,7 @@ jobs:
         run: cd device_kernel && patch -p1 < ../Patches/crdroid/0002-stage2-susfs.patch
 
       - name: 🧩 Apply Hybrid Mount VFS patch
-        if: env.VFS_HYBRIDMOUNT == 'true'
+        if: inputs.vfs_hybridmount == true
         run: |
           cd device_kernel
           patch -p1 < ../Patches/crdroid/0004-hybridmount-vfs.patch
@@ -627,7 +653,7 @@ jobs:
           echo "[+] Hybrid Mount VFS applied (built-in)."
 
       - name: 🕳️ Apply NoMount VFS patch
-        if: env.VFS_NOMOUNT == 'true'
+        if: inputs.vfs_nomount == true
         run: |
           cd device_kernel
           # NoMount 与 HybridMount 是同源不同家的方案：hybridmount 子系统就是从
@@ -670,11 +696,11 @@ jobs:
             arch/arm64/configs/vendor/oplus.config
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/droidspaces.config
-          if [ "${{ env.VFS_HYBRIDMOUNT }}" = "true" ]; then
+          if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               ../Patches/crdroid/hybridmount.config
           fi
-          if [ "${{ env.VFS_NOMOUNT }}" = "true" ]; then
+          if [ "${{ inputs.vfs_nomount }}" = "true" ]; then
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               ../Patches/crdroid/nomount.config
           fi
@@ -698,11 +724,11 @@ jobs:
           grep -q "^CONFIG_PID_NS=y" out/.config || { echo "[-] PID_NS missing"; exit 1; }
           grep -q "kernfs_create_link" kernel/cgroup/cgroup.c || { echo "[-] cgroup patch missing"; exit 1; }
           # VFS 后端校验：只检查实际启用的那一个
-          if [ "${{ env.VFS_HYBRIDMOUNT }}" = "true" ]; then
+          if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
             grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
             grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (hybridmount hard dependency)"; exit 1; }
             nm out/vmlinux | grep -q "hybridmount" || { echo "[-] hybridmount symbols missing"; exit 1; }
-          elif [ "${{ env.VFS_NOMOUNT }}" = "true" ]; then
+          elif [ "${{ inputs.vfs_nomount }}" = "true" ]; then
             grep -q "^CONFIG_NOMOUNT=y" out/.config || { echo "[-] NOMOUNT missing"; exit 1; }
             grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (nomount hard dependency)"; exit 1; }
             nm out/vmlinux | grep -q "nomount" || { echo "[-] nomount symbols missing"; exit 1; }
