@@ -122,6 +122,7 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 | `0004-hybridmount-vfs.patch` | Hybrid Mount 的 VFS 后端子系统 (`fs/hybridmount/`, fork 自 NoMount, 通过 keyring 驱动) built-in 集成; 7 文件: `fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}` | 3102 |
 | `susfs.config` | KSU + SUSFS 编译开关 (merge_config 片段); 同时负责关闭 `CONFIG_MODULE_SIG_FORCE` 以保证 OOS 原厂模块可加载 | 40 |
 | `hybridmount.config` | Hybrid Mount 编译开关 (`CONFIG_HYBRIDMOUNT=y` + 显式 `CONFIG_KEYS=y` / `CONFIG_ASSOCIATIVE_ARRAY=y`) | 34 |
+| `nomount.config` | NoMount 编译开关 (`CONFIG_NOMOUNT=y` + 显式 `CONFIG_KEYS=y` / `CONFIG_ASSOCIATIVE_ARRAY=y`); 受 `VFS_NOMOUNT` / `vfs_nomount` 控制 | 40 |
 | `droidspaces.config` | DroidSpaces Non-GKI 配置 (USER_NS / PID_NS / netns 等), 工作流可选启用 | 98 |
 | `fix_restore_cgroup_file_prefix_handling.cocci` | cgroup.c 补 `kernfs_create_link` 前缀链接 (DroidSpaces 用) | 16 |
 
@@ -138,6 +139,21 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 > `0004-hybridmount-vfs.patch` 与 master / KSU 分支的
 > `Patches/Patch/hybridmount_patch_to_4.19.patch` 是**同一份内容**
 > (md5 `43debcca69d6dbb6320fc30c1964b997`), 仅文件名按本目录的编号约定重命名。
+
+## VFS 后端三选一（互斥）
+
+HybridMount / NoMount / ZeroMount 三者都劫持同一层 VFS 且 keyring 协议互不兼容，
+**同期最多只能开一个**，工作流开头的校验步骤会在开启多个时直接 fail。
+
+| 后端 | 开关（LOS 工作流 / luk-op8 工作流） | 默认 | 本目录文件 |
+|---|---|---|---|
+| Hybrid Mount VFS | `VFS_HYBRIDMOUNT` / `vfs_hybridmount` | 开 | `0004-hybridmount-vfs.patch` + `hybridmount.config` |
+| NoMount VFS | `VFS_NOMOUNT` / `vfs_nomount` | 关 | 无本地补丁（走上游 `kernel/setup.sh`）+ `nomount.config` |
+| ZeroMount VFS | `VFS_ZEROMOUNT` / `vfs_zeromount` | 关 | 尚未实现 4.19 移植，开启会 fail |
+
+> 注意: `build-oneplus-8-los23-a16.yml`（共享 LOS 工作流）用 `Patches/Patch/`
+> 下的 `hybridmount_patch_to_4.19.patch`，`build-luk-op8.yml` 用本目录的
+> `0004-hybridmount-vfs.patch`；两者内容一致，因此本目录同时保留有该补丁。
 
 ## 为什么需要单独适配 (与 LineageOS 树的差异)
 
