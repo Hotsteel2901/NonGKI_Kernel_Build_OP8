@@ -26,6 +26,13 @@ on:
         required: false
         type: boolean
         default: false
+    # 把「实际参与编译的内核 commit」向上暴露给 build-kernel / build-release，
+    # 让 release tag 能精确打在这个 commit 上，而不是 release job 自己
+    # checkout 出来的 HEAD（两者的 commit 在并发/后续提交场景下可能不同）。
+    outputs:
+      build_sha:
+        description: '本次内核实际构建所用的 commit SHA'
+        value: ${{ jobs.build-kernel.outputs.build_sha }}
   workflow_dispatch:
     inputs:
       vfs_hybridmount:
@@ -163,6 +170,8 @@ jobs:
   build-kernel:
     name: Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
     runs-on: ubuntu-latest
+    outputs:
+      build_sha: ${{ steps.build_sha.outputs.build_sha }}
     env:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
@@ -238,10 +247,14 @@ jobs:
           echo "[+] AK3 title will be: $TITLE"
 
       - name: 📌 Use latest kernel source (no pinned checkout)
+        id: build_sha
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
           grep -q "kernelsu" drivers/Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
           grep -q "source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
+          # 记录本次实际参与编译的内核 commit，向上透传给 release 的 tag 步骤。
+          echo "build_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "[+] Build SHA: $(git rev-parse HEAD)"
           echo "-g$(git rev-parse --short HEAD)-hotsteel" > .scmversion
 
       - name: 🪝 Patch Kernel of SUSFS
@@ -375,13 +388,38 @@ jobs:
           patch -p1 < zeromount_patch_to_4.19.patch || true
           rm -f zeromount_patch_to_4.19.patch
 
-          # patch -p1 加了 || true：真有 hunk 打不上必须立刻报出来，
-          # 否则会出现「内核少了一半钩子却照样编译过」的静默失败。
+          # patch -p1 加了 || true：真有 hunk 打不上必须立刻报出来。
           if [ -n "$(find . -name '*.rej')" ]; then
             echo "[-] zeromount_patch has rejected hunks!"
             find . -name "*.rej" -exec sh -c 'echo "--- {} ---"; cat {}' \;
             false
           fi
+
+          # ⚠️ 光看 .rej 不够：旧的 zeromount 补丁是把 SUSFS/KSU 的整段上下文
+          # 当成「要替换掉的旧代码」写的（86 删 / 46 增），应用时 0 reject
+          # 却把 ksu_handle_stat 等钩子静默删掉了，最后死在 BakaSU 的
+          # inline_hook_check.mk（"You lost ksu_handle_stat hook"）。
+          # 所以这里必须逐符号核对「补丁后仍存在」，任何 SUSFS/KSU 钩子丢失即失败。
+          for chk in \
+            "fs/stat.c:ksu_handle_stat" \
+            "fs/stat.c:ksu_handle_vfs_fstat" \
+            "fs/stat.c:ksu_is_init_rc_hook_enabled" \
+            "fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr" \
+            "fs/stat.c:zeromount_stat_hook" \
+            "fs/exec.c:ksu_handle_execveat" \
+            "fs/open.c:ksu_handle_faccessat" \
+            "fs/read_write.c:ksu_handle_sys_read" \
+            "kernel/sys.c:ksu_handle_setresuid" \
+          ; do
+            chk_file="${chk%%:*}"
+            chk_sym="${chk##*:}"
+            if ! grep -q "$chk_sym" "$chk_file"; then
+              echo "[-] $chk_sym missing from $chk_file after ZeroMount patch!"
+              echo "[-] (ZeroMount 补丁必须与 SUSFS/KSU 钩子共存，不能覆盖它们)"
+              false
+            fi
+          done
+          echo "[+] SUSFS/KSU hooks preserved alongside ZeroMount."
 
           # 集成结果自检
           test -f fs/zeromount.c || { echo "[-] fs/zeromount.c missing"; false; }

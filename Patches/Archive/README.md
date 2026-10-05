@@ -96,6 +96,74 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
         git apply --check 与 patch -p1 --dry-run 干净通过; 注意工作流当前不 pin
         内核提交, 上游若再漂移需重新生成
 
+  - 2026-10-05: 【ZeroMount 4.19 自研移植 + 两个致命缺陷修复】
+    新增第三个 VFS 后端 ZeroMount（`fs/zeromount`，`/dev/zeromount` 字符设备 + 自定义
+    ioctl，不依赖 keyring），并修复移植过程中引入的两个问题：
+
+    缺陷 1 — **补丁按 pristine 4.19 写，静默删掉 SUSFS/KSU 钩子**。
+      `Patches/Patch/zeromount_patch_to_4.19.patch` 最初是照着原始上游 4.19 生成的，
+      但实际内核里 `fs/stat.c` 早已被 SUSFS + BakaSU inline hooks 改过。补丁的 hunks
+      把「已被打上钩子的区域」当作待替换的旧代码：
+        fs/stat.c: +46 行 / -86 行
+      结果 `ksu_handle_stat`、`ksu_handle_vfs_fstat`、`ksu_is_init_rc_hook_enabled`、
+      SUSFS `susfs_sus_kstat_spoof_generic_fillattr` / `susfs_is_inode_sus_kstat`
+      全被抹掉。**补丁应用时 0 个 .rej**，所以工作流里原有的 reject 检查完全没拦住，
+      直到编译期才死在 BakaSU 的 inline_hook_check.mk：
+        -- You lost ksu_handle_stat hook in your kernel
+        KernelSU/kernel/tools/inline_hook_check.mk:52: *** You should integrate BakaSU
+        in your kernel. . Stop.
+        make[2]: *** [../scripts/Makefile.modbuiltin:55: drivers/kernelsu] Error 2
+      修复: 以「SUSFS + inline hooks 之后」的真实树为基线重新生成补丁。核对每个文件
+      的增删行数，确认**唯一**的破坏性文件就是 fs/stat.c（其余 9 个纯新增）；
+      把 fs/stat.c 的 7 个破坏性 hunk 重写为 3 个纯新增 hunk，让两套子系统并存：
+      ZeroMount 的 zeromount_stat_hook() 先跑，返回 -ENOENT 时落回未被改动的
+      SUSFS filename_lookup / orig_flow: 路径。
+      结果: 36 hunk -> 32 hunk，ksu_/susfs_ 删除行数 86 -> 0，四个分支统一
+      md5 478e8abe69a47b9e0b5715a375ce3a74。
+
+    缺陷 2 — **`CONFIG_ZEROMOUNT` 没有进 .config，头文件 stub 与实现冲突**。
+      必须在 fs/Kconfig 的「最后一个 endmenu」之前注入 config 块，并在 fs/Makefile
+      尾部追加 obj-$(CONFIG_ZEROMOUNT) += zeromount.o。这两个文件**不放进补丁**：
+      它们的双后端上下文锚点无法同时兼容「有 HybridMount」与「没有 HybridMount」
+      两种树（patch 的 fuzz 匹配会静默插错位置），改由工作流做文本注入。
+      注意 fs/Kconfig 的文本注入必须用 `tail -1` 取**最后一个** endmenu。
+
+    防回归 — 加了逐符号守卫。教训是 **`0 reject` 不等于打对了**，所以在
+      build-oneplus-8-los23-a16.yml、build-luk-op8.yml、build-crdroid-op8.yml
+      三个工作流（crdroid 有两处）的 ZeroMount 步骤里，补丁之后逐个核对 9 个符号
+      （fs/stat.c 的 ksu_handle_stat / ksu_handle_vfs_fstat / ksu_is_init_rc_hook_enabled
+      / susfs_sus_kstat_spoof_generic_fillattr / zeromount_stat_hook，fs/exec.c 的
+      ksu_handle_execveat，fs/open.c 的 ksu_handle_faccessat，fs/read_write.c 的
+      ksu_handle_sys_read，kernel/sys.c 的 ksu_handle_setresuid），少任何一个即 fail。
+      已做对照实验验证：旧补丁 0 reject 但守卫立刻报错拦截。
+
+    验证: 本地按 CI 真实顺序（SUSFS -> 清 rej/orig -> BakaSU inline hooks ->
+      ZeroMount -> Kconfig/Makefile 注入）跑端到端，rej=0、9/9 钩子齐全、
+      CONFIG_ZEROMOUNT=y、编译 0 错误 0 警告。另做对照实验（注入探针符号后确认其
+      出现在预处理输出中）证明 CONFIG_KSU_SUSFS 分支确实被编译，排除「分支没激活
+      所以看起来能过」的假阳性。
+      CI 实测 run 37294291263（ZeroMount 模式）: 14m43s success，日志中 7 个
+      BakaSU/susfs_inline 钩子全部 found（含 ksu_handle_stat），产出
+      Kernel-instantnoodle-lineage23.2_a16-*.zip（24 MB）。
+
+  - 2026-10-05: 【Release tag 机制修正】
+    build-release.yml 原先的 tag 设计有多个缺陷，导致「一天只能发一次 release」：
+      - tag 命名改为带分支前缀 `<branch>-v<version>-<unix-ts>`，冲突时追加 -2/-3
+      - 推送方式由 `git push --tags` 改为 `git push origin refs/tags/$NEW_TAG`，
+        只推当前 tag。原方式会连带推送指向「含 .github/workflows/ 变更的 commit」的
+        历史 tag，被 GitHub 以 "refusing to allow a GitHub App to create or update
+        workflow ... without workflows permission" 拒绝
+      - tag 目标改为实际构建的 commit（通过 build_sha outputs 从内核 job 逐层透传），
+        不再指向 release job 的 HEAD
+      - 补 fetch-depth: 0；删除从未被使用的死代码 LATEST_TAG
+    踩坑记录: 曾试图用 `permissions: workflows: write` 绕过上面那个拒绝 —— **这是错的**。
+      `workflows` 根本不是合法作用域，写入后 GitHub 把整个工作流文件判为
+      `Invalid workflow file`，导致四个分支上**所有**工作流全部失效。
+      合法作用域仅: actions / attestations / checks / contents / deployments /
+      discussions / id-token / issues / packages / pages / pull-requests /
+      repository-projects / security-events / statuses。
+      离线复现方法: actionlint v1.7.7，`actionlint -oneline .github/workflows/*.yml`。
+
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 
 ## 0. 先解包源码（patch 外的外部依赖）
@@ -160,7 +228,37 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
    CONFIG_KSU=y + CONFIG_KSU_SUSFS=y (全部 SUSFS 子选项), CONFIG_REKERNEL=y (NETWORK=n),
    Non-GKI DroidSpaces 配置, CONFIG_BBG=y, CONFIG_LSM="...,bpf,baseband_guard"
 
-## 6. 全量参考
+## 6. 可选 VFS 后端（三选一，见仓库主 README 的 "VFS backends" 一节）
+   以下三个后端都劫持同一层 VFS + 使用互不兼容的 keyring/ioctl 协议，**同时只能开一个**:
+
+   - Hybrid Mount:  Patches/Patch/hybridmount_patch_to_4.19.patch   (默认开)
+   - NoMount:       本仓库无补丁, 走上游 kernel/setup.sh
+   - ZeroMount:     Patches/Patch/zeromount_patch_to_4.19.patch     (默认关, 32 hunk)
+
+   ⚠️ 顺序要求: ZeroMount 必须排在 SUSFS + BakaSU inline hooks **之后**。
+      它的基线是「SUSFS + inline hooks 之后」的树，与 SUSFS 在 fs/readdir.c /
+      fs/proc/task_mmu.c / fs/stat.c 上有上下文重叠。
+      该补丁必须**纯新增**: `ksu_`/`susfs_` 删除行数必须为 0。校验方法:
+        grep -cE '^-.*(ksu_|susfs_)' Patches/Patch/zeromount_patch_to_4.19.patch   # 必须为 0
+      工作流里另有一道逐符号守卫兜底（见本节末尾）。
+
+   ZeroMount 的 fs/Kconfig + fs/Makefile 改动**不在补丁里**，由工作流文本注入完成
+   （原因: 这两个文件的双后端上下文锚点无法同时兼容「有/无 HybridMount」两种树，
+   patch 的 fuzz 匹配会静默插错位置）。注入要点:
+     - fs/Kconfig: 在**最后一个** endmenu 之前插入 `config ZEROMOUNT` 块
+       （必须 `grep -n '^endmenu' fs/Kconfig | tail -1`，不能取第一个）
+     - fs/Makefile: 尾部追加 `obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o`
+
+   ⚠️ **`0 reject` 不等于打对了。** 曾出现过补丁 0 .rej 却静默删掉 ksu_handle_stat
+      的情况，直到编译期才死在 inline_hook_check.mk。因此在补丁之后必须逐符号核对
+      SUSFS/KSU 钩子仍在（3 个工作流共 4 处守卫: build-oneplus-8 x1、
+      build-luk-op8 x1、build-crdroid-op8 x2）:
+        fs/stat.c:ksu_handle_stat / ksu_handle_vfs_fstat / ksu_is_init_rc_hook_enabled
+                  / susfs_sus_kstat_spoof_generic_fillattr / zeromount_stat_hook
+        fs/exec.c:ksu_handle_execveat        fs/open.c:ksu_handle_faccessat
+        fs/read_write.c:ksu_handle_sys_read  kernel/sys.c:ksu_handle_setresuid
+
+## 7. 全量参考
    0000-full-all-changes.patch: 全部改动合集 (排除 *.bak 备份文件), 适用于整体重放/对照
 
 ## 构建命令 (重放后)

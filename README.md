@@ -4,33 +4,21 @@ Automated kernel build for **OnePlus 8 (instantnoodle, 4.19.325-cip132-st16)** w
 Formatted after [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) (sample branch).
 Chinese docs: [README_cn.md](README_cn.md)
 
-## Branches
-
-| Branch | Kernel source | Root implementation | Workflow |
-|---|---|---|---|
-| `master` | LineageOS `lineage-23.2` | BakaSU (SUSFS inline hooks) | `Build Kernel` |
-| `KSU` | LineageOS `lineage-23.2` | KernelSU (backslashxx, manual hooks + SUSFS bridge) | `Build Kernel` |
-| `ReSuki_Luk` | luk1337 `luk` | BakaSU (SUSFS inline hooks) | `Build luk Kernel` |
-
-> **`ReSuki_Luk`**: based on [luk1337/android_kernel_oneplus_sm8250](https://github.com/luk1337/android_kernel_oneplus_sm8250)
-> branch `luk` (4.19.325). That kernel ships the full OPLUS/OOS configuration (`vendor/oplus.config`), so
-> **one artifact works on both custom ROMs (LineageOS / crDroid, ...) and OOS**.
-> The branch has its own `Patches/luk/` set and `build-luk-op8.yml` workflow - see [Patches/luk/README.md](Patches/luk/README.md).
-
 ## Integrations
 | Component | Note |
 |---|---|
-| BakaSU | KernelSU fork, CONFIG_KSU_SUSFS (inline hook) mode |
+| BakaSU | KernelSU fork (formerly ReSukiSU), CONFIG_KSU_SUSFS (inline hook) mode |
 | SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
 | NoMount VFS | `fs/nomount` built-in via upstream `kernel/setup.sh` (keyring magic `"NOMOUNT"`), off by default |
+| ZeroMount VFS | `fs/zeromount` in-house 4.19 port (`/dev/zeromount` char device + custom ioctl, no keyring), off by default |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
 | Baseband Guard | partition write protection LSM |
 
 ## Usage
 1. Fork this repo, enable **Actions** with `Read and write permissions`.
-2. Choose the workflow for your branch — `Build Kernel` (master / KSU) or `Build luk Kernel` (`ReSuki_Luk`) — then run it (or push to trigger).
+2. Run the `Build Kernel` workflow (or push to trigger).
 3. Download the `*.zip` artifact and flash it via recovery — this is an **AnyKernel3** package:
    - Reboot to **Recovery** (TWRP / Lineage Recovery / crDroid Recovery)
    - **Apply update** → **Apply from ADB**, then `adb sideload NonGKI_Kernel_<codename>_<build>.zip`
@@ -49,6 +37,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 | `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
 | `Patch/resukisu_inline_hooks.patch` | BakaSU SUSFS inline hooks: exec / open / read_write / stat / input / reboot / setresuid (+ SUS_KSTAT / SPOOF_UNAME bits) | custom workflow step |
 | `Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS subsystem (`fs/hybridmount`, keyring magic `"hm1"`) | custom workflow step (gated by `VFS_HYBRIDMOUNT`) |
+| `Patch/zeromount_patch_to_4.19.patch` | ZeroMount VFS subsystem (`fs/zeromount`, `/dev/zeromount` + ioctl) | custom workflow step (gated by `VFS_ZEROMOUNT`) |
 | *(NoMount)* | no in-repo patch — pulled from upstream `kernel/setup.sh` | custom workflow step (gated by `VFS_NOMOUNT`) |
 | `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
@@ -80,16 +69,12 @@ backend is enabled.
 
 | Switch | Backend | Default | Kernel side |
 |---|---|---|---|
-| `VFS_HYBRIDMOUNT` / `vfs_hybridmount` | Hybrid Mount VFS | `true` | `fs/hybridmount` (in-tree 4.19 port) |
-| `VFS_NOMOUNT` / `vfs_nomount` | NoMount VFS | `false` | `fs/nomount` (upstream `setup.sh` integration) |
-| `VFS_ZEROMOUNT` / `vfs_zeromount` | ZeroMount VFS | `false` | `fs/zeromount` (in-house 4.19 port, own char-dev + ioctl, SUSFS-aware) |
+| `VFS_HYBRIDMOUNT` | Hybrid Mount VFS | `true` | `fs/hybridmount` (in-tree 4.19 port) |
+| `VFS_NOMOUNT` | NoMount VFS | `false` | `fs/nomount` (upstream `setup.sh` integration) |
+| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | `fs/zeromount` (in-house 4.19 port, SUSFS-aware) |
 
-Where to set them on this branch (two independent build paths):
-
-- **`build-oneplus-8-los23-a16.yml`** (shared LOS kernel, LineageOS `lineage-23.2`) —
-  workflow-level `env:`: `VFS_HYBRIDMOUNT` / `VFS_NOMOUNT` / `VFS_ZEROMOUNT`
-- **`build-luk-op8.yml`** (luk1337 `luk` kernel, `workflow_dispatch`) —
-  run-time inputs: `vfs_hybridmount` / `vfs_nomount` / `vfs_zeromount`
+Set them in the workflow's `env:` block (`build-oneplus-8-los23-a16.yml`) or via the
+`workflow_dispatch` inputs where the workflow exposes them.
 
 > All three must be built-in (`=y`), never `=m`: 4.19 has no matching prebuilt `.ko`
 > (upstream only ships 5.10/5.15/6.1/6.6/6.12 modules).
@@ -99,11 +84,14 @@ Where to set them on this branch (two independent build paths):
 > so metamodules and tooling are **not** interchangeable. Pick the one your userspace
 > manager supports.
 >
+> The AK3 title line is assembled at build time from the backend actually enabled, so the
+> title never claims a backend the kernel does not contain.
+>
 > **About the ZeroMount port**: upstream `Enginex0/zeromount` only ships patches for
 > 5.4 / 5.10 / 5.15 / 6.1 / 6.6 / 6.12 — non-GKI 4.19 is still marked *Planned* on its
-> roadmap. `Patches/luk/0005-zeromount-vfs.patch` here is an in-house port (12 files,
-> +1962 lines) that keeps `zeromount.c` / `zeromount.h` **byte-identical** to the 5.4
-> original; only the 4.19 kernel-side wiring differs:
+> roadmap. `Patches/Patch/zeromount_patch_to_4.19.patch` here is an in-house port
+> (12 files, +1962 lines) that keeps `zeromount.c` / `zeromount.h` **byte-identical** to
+> the 5.4 original; only the 4.19 kernel-side wiring differs:
 >
 > - 4.19 has no `CONFIG_ANDROID_VENDOR_OEM_DATA` / `current->android_oem_data1`, so the
 >   header's built-in `current->journal_info` re-entrancy fallback is selected automatically;
@@ -113,17 +101,91 @@ Where to set them on this branch (two independent build paths):
 > - `vfs_getattr` / `inode_permission` / `kern_path` / `lookup_one_len` all have signatures
 >   identical to 5.4, so no adaptation was needed.
 >
-> Unlike HybridMount / NoMount, ZeroMount uses its **own `/dev/zeromount` character device
-> + ioctl protocol** and does **not** depend on the kernel keyring.
+> The patch's **baseline is the post-SUSFS + post-BakaSU-inline-hooks tree**, not pristine
+> 4.19: it overlaps SUSFS heavily in `fs/readdir.c` (SUSFS rewrites the `iterate_dir` call
+> sites and adds `orig_flow:` labels), in `fs/proc/task_mmu.c` (both hook `show_map_vma`) and
+> above all in `fs/stat.c`. The workflow orders the ZeroMount step after SUSFS / BakaSU hooks
+> — **that order must not be changed**.
 >
-> The patch's **baseline is the post-SUSFS + post-HybridMount tree**, not pristine 4.19:
-> it overlaps SUSFS heavily in `fs/readdir.c` (SUSFS rewrites the `iterate_dir` call sites
-> and adds `orig_flow:` labels) and in `fs/proc/task_mmu.c` (both hook `show_map_vma`).
-> The workflow already orders the ZeroMount step after SUSFS / BakaSU hooks / HybridMount —
-> that order must not be changed.
+> **⚠️ The patch must be purely additive — it must never delete SUSFS/KSU lines.** An earlier
+> revision was authored against *raw upstream* 4.19, so its `fs/stat.c` hunks treated the
+> already-hooked regions as "old code to replace": **46 lines added vs 86 deleted**, wiping
+> `ksu_handle_stat`, `ksu_handle_vfs_fstat`, `ksu_is_init_rc_hook_enabled` and the SUSFS
+> `susfs_sus_kstat_spoof_*` block. Because the patch applied with **zero `.rej` files**, the
+> existing reject-guard passed and the loss only surfaced at compile time inside BakaSU's
+> `inline_hook_check.mk`:
 >
-> The AK3 title line is assembled at build time from the backend actually enabled, so the
-> title never claims a backend the kernel does not contain.
+> ```
+> -- You lost ksu_handle_stat hook in your kernel
+> KernelSU/kernel/tools/inline_hook_check.mk:52: *** You should integrate BakaSU in your kernel. . Stop.
+> ```
+>
+> The current patch is **32 hunks, 0 `ksu_`/`susfs_` deletions**, and `fs/stat.c` keeps both
+> subsystems side by side (ZeroMount's `zeromount_stat_hook()` runs first and falls through via
+> `-ENOENT` to the untouched SUSFS `filename_lookup` / `orig_flow:` path):
+>
+> ```c
+> #ifdef CONFIG_ZEROMOUNT
+> 	/* ZeroMount: try redirection first for relative paths */
+> 	if (filename) {
+> 		int zm_ret = zeromount_stat_hook(dfd, filename, stat, request_mask, flags);
+> 		if (zm_ret != -ENOENT)
+> 			return zm_ret;
+> 	}
+> #endif
+> retry:
+> #ifdef CONFIG_KSU_SUSFS
+> 	fname = getname_flags(filename, lookup_flags, NULL);
+> 	if (likely(susfs_is_current_proc_no_su()))
+> 		goto orig_flow;
+> 	if (static_branch_likely(&ksu_su_compat_enabled)) {
+> 		if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
+> 			ksu_handle_stat(&dfd, &fname, &flags);
+> 	}
+> orig_flow:
+> 	error = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
+> #else
+> 	error = user_path_at(dfd, filename, lookup_flags, &path);
+> #endif
+> ```
+>
+> **Regression guard:** a resolved `.rej` count of 0 does **not** mean the patch applied
+> correctly. Every workflow that applies the ZeroMount patch therefore also asserts, per
+> symbol, that the SUSFS/KSU hooks still exist afterwards (`SUSFS/KSU hooks preserved
+> alongside ZeroMount`) and fails the build if any is missing. Keep that check when editing
+> the step — it is the only thing standing between a silent hook deletion and a confusing
+> compile failure.
+
+## Release tags (build-release.yml)
+
+`Build and Release Kernel` builds the kernel and publishes a GitHub **Release** whose tag
+identifies exactly which commit was compiled.
+
+| Aspect | Behavior |
+|---|---|
+| Tag format | `<branch>-v<version>-<unix-ts>`, e.g. `master-v35203-1791179734` |
+| Collision | if that exact tag already exists, a `-2`, `-3`, … suffix is appended |
+| Tag target | the **actual build commit**, passed up from the kernel job via `build_sha` outputs (not the release job's `HEAD`) |
+| Push | `git push origin refs/tags/$NEW_TAG` — **only the current tag** |
+
+Two things here are deliberate and easy to get wrong:
+
+> **Branch prefix.** Without it, a same-day run on a different branch (or the same branch)
+> produces a colliding tag and the release fails. The branch name makes tags unique per
+> branch and self-describing.
+
+> **Push only the current tag.** Using `git push --tags` also pushes every *other* tag in the
+> local history. Since these tags can point at commits that modify `.github/workflows/`,
+> GitHub rejects the push with `refusing to allow a GitHub App to create or update workflow
+> ... without workflows permission`. Pushing just `refs/tags/$NEW_TAG` never carries that
+> history, so no extra permission is needed.
+>
+> ⚠️ Do **not** try to "fix" that rejection by adding `workflows: write` to the workflow's
+> `permissions:` block — `workflows` is **not a valid permission scope**, and including it
+> makes GitHub mark the **entire workflow file** as `Invalid workflow file`, breaking every
+> workflow on the branch. Valid scopes are only: `actions`, `attestations`, `checks`,
+> `contents`, `deployments`, `discussions`, `id-token`, `issues`, `packages`, `pages`,
+> `pull-requests`, `repository-projects`, `security-events`, `statuses`.
 
 ## Key settings (build-oneplus-8-los23-a16.yml)
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`

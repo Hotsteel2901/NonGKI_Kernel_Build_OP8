@@ -1,31 +1,5 @@
-diff --git a/fs/Kconfig b/fs/Kconfig
-index f7060710f..4d9960c41 100644
---- a/fs/Kconfig
-+++ b/fs/Kconfig
-@@ -329,4 +329,12 @@ source "fs/dlm/Kconfig"
- source "fs/unicode/Kconfig"
- 
- source "fs/hybridmount/Kconfig"
-+
-+config ZEROMOUNT
-+	bool "ZeroMount Path Redirection Subsystem"
-+	default y
-+	help
-+	  ZeroMount allows path redirection and virtual file injection
-+	  without mounting filesystems. Useful for systemless modifications.
-+
- endmenu
-diff --git a/fs/Makefile b/fs/Makefile
-index a1d855223..3175399ff 100644
---- a/fs/Makefile
-+++ b/fs/Makefile
-@@ -139,3 +139,4 @@ obj-$(CONFIG_EFIVAR_FS)		+= efivarfs/
- obj-$(CONFIG_EROFS_FS)		+= erofs/
- 
- obj-$(CONFIG_HYBRIDMOUNT) += hybridmount/
-+obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o
 diff --git a/fs/d_path.c b/fs/d_path.c
-index 3af92cc4b..c868b263d 100644
+index 3af92cc..c868b26 100644
 --- a/fs/d_path.c
 +++ b/fs/d_path.c
 @@ -8,6 +8,10 @@
@@ -67,7 +41,7 @@ index 3af92cc4b..c868b263d 100644
  	 * We have various synthetic filesystems that never get mounted.  On
  	 * these filesystems dentries are never used for lookup purposes, and
 diff --git a/fs/namei.c b/fs/namei.c
-index 914dd4dac..187a88217 100644
+index 914dd4d..187a882 100644
 --- a/fs/namei.c
 +++ b/fs/namei.c
 @@ -47,6 +47,10 @@
@@ -134,7 +108,7 @@ index 914dd4dac..187a88217 100644
  	if (retval)
  		return retval;
 diff --git a/fs/proc/base.c b/fs/proc/base.c
-index 47e427cd1..cc4d5fff3 100644
+index 47e427c..cc4d5ff 100644
 --- a/fs/proc/base.c
 +++ b/fs/proc/base.c
 @@ -100,6 +100,9 @@
@@ -175,7 +149,7 @@ index 47e427cd1..cc4d5fff3 100644
  	len = PTR_ERR(pathname);
  	if (IS_ERR(pathname))
 diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
-index 6d1f6ab42..d5f4af08a 100644
+index 6d1f6ab..d5f4af0 100644
 --- a/fs/proc/task_mmu.c
 +++ b/fs/proc/task_mmu.c
 @@ -24,6 +24,9 @@
@@ -199,7 +173,7 @@ index 6d1f6ab42..d5f4af08a 100644
  #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
  		susfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);
 diff --git a/fs/readdir.c b/fs/readdir.c
-index 76b25d1c7..737459e70 100644
+index 76b25d1..737459e 100644
 --- a/fs/readdir.c
 +++ b/fs/readdir.c
 @@ -28,6 +28,9 @@ extern bool susfs_is_inode_sus_path(struct inode *inode);
@@ -236,7 +210,7 @@ index 76b25d1c7..737459e70 100644
  #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	if (f.file->f_inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
  		path_err = susfs_get_data_path(&path);
-@@ -350,6 +363,16 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
+@@ -350,6 +363,16 @@ orig_flow:
  	error = iterate_dir(f.file, &buf.ctx);
  	if (error >= 0)
  		error = buf.error;
@@ -253,7 +227,7 @@ index 76b25d1c7..737459e70 100644
  	lastdirent = buf.previous;
  	if (lastdirent) {
  		if (put_user(buf.ctx.pos, &lastdirent->d_off))
-@@ -357,6 +380,9 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
+@@ -357,6 +380,9 @@ orig_flow:
  		else
  			error = count - buf.count;
  	}
@@ -287,7 +261,7 @@ index 76b25d1c7..737459e70 100644
  #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	if (f.file->f_inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
  		path_err = susfs_get_data_path(&path);
-@@ -474,6 +510,16 @@ int ksys_getdents64(unsigned int fd, struct linux_dirent64 __user *dirent,
+@@ -474,6 +510,16 @@ orig_flow:
  	error = iterate_dir(f.file, &buf.ctx);
  	if (error >= 0)
  		error = buf.error;
@@ -304,7 +278,7 @@ index 76b25d1c7..737459e70 100644
  	lastdirent = buf.previous;
  	if (lastdirent) {
  		typeof(lastdirent->d_off) d_off = buf.ctx.pos;
-@@ -482,6 +528,9 @@ int ksys_getdents64(unsigned int fd, struct linux_dirent64 __user *dirent,
+@@ -482,6 +528,9 @@ orig_flow:
  		else
  			error = count - buf.count;
  	}
@@ -337,7 +311,7 @@ index 76b25d1c7..737459e70 100644
  
  #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	if (f.file->f_inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
-@@ -726,6 +784,16 @@ COMPAT_SYSCALL_DEFINE3(getdents, unsigned int, fd,
+@@ -726,6 +784,16 @@ orig_flow:
  	error = iterate_dir(f.file, &buf.ctx);
  	if (error >= 0)
  		error = buf.error;
@@ -354,7 +328,7 @@ index 76b25d1c7..737459e70 100644
  	lastdirent = buf.previous;
  	if (lastdirent) {
  		if (put_user(buf.ctx.pos, &lastdirent->d_off))
-@@ -733,6 +801,9 @@ COMPAT_SYSCALL_DEFINE3(getdents, unsigned int, fd,
+@@ -733,6 +801,9 @@ orig_flow:
  		else
  			error = count - buf.count;
  	}
@@ -365,197 +339,96 @@ index 76b25d1c7..737459e70 100644
  #ifdef CONFIG_KSU_SUSFS_SUS_PATH
  	if (!path_err)
 diff --git a/fs/stat.c b/fs/stat.c
-index aafaec209..b41652058 100644
+index aafaec2..29e59b7 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
-@@ -19,18 +19,11 @@
- #include <linux/compat.h>
- 
+@@ -21,6 +21,10 @@
  #include <linux/uaccess.h>
+ #include <asm/unistd.h>
+ 
 +#ifdef CONFIG_ZEROMOUNT
 +#include <linux/zeromount.h>
 +#endif
- #include <asm/unistd.h>
- 
--#ifdef CONFIG_KSU_SUSFS
--#include <linux/susfs_def.h>
--#include "internal.h"
--
--#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
--extern bool susfs_is_inode_sus_kstat(struct inode *inode, bool *out_is_fuse);
--extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat, u32 result_mask);
--#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
--#endif // #ifdef CONFIG_KSU_SUSFS
--
- /**
-  * generic_fillattr - Fill in the basic attributes from the inode struct
-  * @inode: Inode to use as the source
-@@ -85,54 +78,9 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
- 	stat->result_mask |= STATX_BASIC_STATS;
- 	request_mask &= STATX_ALL;
- 	query_flags &= KSTAT_QUERY_FLAGS;
--
--#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
--	if (susfs_is_current_app_uid()) {
--		bool is_fuse = false;
--		if (susfs_is_inode_sus_kstat(d_backing_inode(path->dentry), &is_fuse)) {
--			if (!is_fuse) {
--				// stat->mnt_id = real_mount(path->mnt)->mnt_id;
--				// only for 5.10 kernel
--				stat->result_mask |= STATX_SUS_KSTAT;
--			}
--			// stat->mnt_id = real_mount(path->mnt)->mnt_id;
--			// only for 5.10 kernel
--			stat->result_mask |= STATX_SUS_KSTAT_FUSE;
--		}
--	}
--#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
--
- 	if (inode->i_op->getattr)
--#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
--	{
--		int err = inode->i_op->getattr(path, stat, request_mask,
--			query_flags);
--		if (!err) {
--			if (stat->result_mask & STATX_SUS_KSTAT) {
--				susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT);
--				return err;
--			}
--			if (stat->result_mask & STATX_SUS_KSTAT_FUSE) {
--				susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT_FUSE);
--				return err;
--			}
--		}
--		return err;
--	}
--	if (stat->result_mask & STATX_SUS_KSTAT) {
--		generic_fillattr(inode, stat);
--		susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT);
--		return 0;
--	}
--	if (stat->result_mask & STATX_SUS_KSTAT_FUSE) {
--		generic_fillattr(inode, stat);
--		susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT_FUSE);
--		return 0;
--	}
--#else
- 		return inode->i_op->getattr(path, stat, request_mask,
--			query_flags);
--#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+					    query_flags);
- 
- 	generic_fillattr(inode, stat);
- 	return 0;
-@@ -184,10 +132,6 @@ EXPORT_SYMBOL(vfs_getattr);
-  *
-  * 0 will be returned on success, and a -ve error code if unsuccessful.
++
+ #ifdef CONFIG_KSU_SUSFS
+ #include <linux/susfs_def.h>
+ #include "internal.h"
+@@ -40,6 +44,57 @@ extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct k
+  * found on the VFS inode structure.  This is the default if no getattr inode
+  * operation is supplied.
   */
--#ifdef CONFIG_KSU_SUSFS
--extern struct static_key_true ksu_is_init_rc_hook_enabled;
--extern void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr);
--#endif
- int vfs_statx_fd(unsigned int fd, struct kstat *stat,
- 		 u32 request_mask, unsigned int query_flags)
- {
-@@ -201,10 +145,6 @@ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
- 	if (f.file) {
- 		error = vfs_getattr(&f.file->f_path, stat,
- 				    request_mask, query_flags);
--#ifdef CONFIG_KSU_SUSFS
--		if (static_branch_unlikely(&ksu_is_init_rc_hook_enabled))
--			ksu_handle_vfs_fstat(fd, &stat->size);
--#endif
- 		fdput(f);
- 	}
- 	return error;
-@@ -226,10 +166,40 @@ EXPORT_SYMBOL(vfs_statx_fd);
-  *
-  * 0 will be returned on success, and a -ve error code if unsuccessful.
-  */
--#ifdef CONFIG_KSU_SUSFS
--extern struct static_key_true ksu_su_compat_enabled;
--extern bool __ksu_is_allow_uid_for_current(uid_t uid);
--extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
-+#ifdef CONFIG_ZEROMOUNT
-+static inline int zeromount_stat_hook(int dfd, const char __user *filename,
-+                                      struct kstat *stat, unsigned int request_mask,
-+                                      int flags) {
-+    if (zm_is_recursive() || IS_ERR_OR_NULL(filename)) return -ENOENT;
-+    if (filename) {
-+        char kname[NAME_MAX + 1];
-+        long copied = strncpy_from_user(kname, filename, sizeof(kname));
-+        if (copied > 0 && kname[0] != '/') {
-+            char *abs_path = zeromount_build_absolute_path(dfd, kname);
-+            if (abs_path) {
-+                char *resolved = zeromount_resolve_path(abs_path);
-+                if (resolved) {
-+                    struct path zm_path;
-+                    int zm_ret;
-+                    zm_enter();
-+                    zm_ret = kern_path(resolved, (flags & AT_SYMLINK_NOFOLLOW) ? 0 : LOOKUP_FOLLOW, &zm_path);
-+                    zm_exit();
-+                    kfree(resolved);
-+                    kfree(abs_path);
-+                    if (zm_ret == 0) {
-+                        zm_ret = vfs_getattr(&zm_path, stat, request_mask,
-+                                             (flags & AT_SYMLINK_NOFOLLOW) ? AT_SYMLINK_NOFOLLOW : 0);
-+                        path_put(&zm_path);
-+                        return zm_ret;
-+                    }
-+                } else {
-+                    kfree(abs_path);
-+                }
-+            }
-+        }
-+    }
-+    return -ENOENT;
-+}
- #endif
- int vfs_statx(int dfd, const char __user *filename, int flags,
- 	      struct kstat *stat, u32 request_mask)
-@@ -237,8 +207,14 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
- 	struct path path;
- 	int error = -EINVAL;
- 	unsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
--#ifdef CONFIG_KSU_SUSFS
--	struct filename *fname = NULL;
 +
 +#ifdef CONFIG_ZEROMOUNT
-+	/* Try ZeroMount hook for relative paths */
++/*
++ * ZeroMount stat() redirection for relative paths.
++ * Returns 0 / -errno when ZeroMount handled the lookup, -ENOENT to fall
++ * through to the normal VFS path.
++ */
++static int zeromount_stat_hook(int dfd, const char __user *filename,
++			       struct kstat *stat, unsigned int request_mask,
++			       int flags)
++{
++	if (zm_is_recursive() || IS_ERR_OR_NULL(filename))
++		return -ENOENT;
++	if (filename) {
++		char kname[NAME_MAX + 1];
++		long copied = strncpy_from_user(kname, filename, sizeof(kname));
++
++		if (copied > 0 && kname[0] != '/') {
++			char *abs_path = zeromount_build_absolute_path(dfd, kname);
++
++			if (abs_path) {
++				char *resolved = zeromount_resolve_path(abs_path);
++
++				if (resolved) {
++					struct path zm_path;
++					int zm_ret;
++
++					zm_enter();
++					zm_ret = kern_path(resolved,
++						(flags & AT_SYMLINK_NOFOLLOW) ? 0 : LOOKUP_FOLLOW,
++						&zm_path);
++					zm_exit();
++					kfree(resolved);
++					kfree(abs_path);
++					if (zm_ret == 0) {
++						zm_ret = vfs_getattr(&zm_path, stat, request_mask,
++							(flags & AT_SYMLINK_NOFOLLOW) ?
++								AT_SYMLINK_NOFOLLOW : 0);
++						path_put(&zm_path);
++						return zm_ret;
++					}
++				} else {
++					kfree(abs_path);
++				}
++			}
++		}
++	}
++	return -ENOENT;
++}
++#endif /* CONFIG_ZEROMOUNT */
++
+ void generic_fillattr(struct inode *inode, struct kstat *stat)
+ {
+ 	stat->dev = inode->i_sb->s_dev;
+@@ -252,6 +307,15 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
+ 	if (flags & AT_EMPTY_PATH)
+ 		lookup_flags |= LOOKUP_EMPTY;
+ 
++#ifdef CONFIG_ZEROMOUNT
++	/* ZeroMount: try redirection first for relative paths */
 +	if (filename) {
 +		int zm_ret = zeromount_stat_hook(dfd, filename, stat, request_mask, flags);
++
 +		if (zm_ret != -ENOENT)
 +			return zm_ret;
 +	}
- #endif
- 
- 	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
-@@ -253,23 +229,7 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
- 		lookup_flags |= LOOKUP_EMPTY;
- 
++#endif
  retry:
--#ifdef CONFIG_KSU_SUSFS
--	fname = getname_flags(filename, lookup_flags, NULL);
--
--	if (likely(susfs_is_current_proc_no_su()))
--		goto orig_flow;
--
--	if (static_branch_likely(&ksu_su_compat_enabled)) {
--		if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
--			ksu_handle_stat(&dfd, &fname, &flags);
--	}
--
--orig_flow:
--	error = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
--	/* no putname(fname) here as filename_lookup() has it done for us already */
--#else
- 	error = user_path_at(dfd, filename, lookup_flags, &path);
--#endif
- 	if (error)
- 		goto out;
- 
+ #ifdef CONFIG_KSU_SUSFS
+ 	fname = getname_flags(filename, lookup_flags, NULL);
 diff --git a/fs/statfs.c b/fs/statfs.c
-index 6f829e19d..4817e68a7 100644
+index 6f829e1..4817e68 100644
 --- a/fs/statfs.c
 +++ b/fs/statfs.c
 @@ -14,6 +14,9 @@
@@ -584,7 +457,7 @@ index 6f829e19d..4817e68a7 100644
  		if (retry_estale(error, lookup_flags)) {
  			lookup_flags |= LOOKUP_REVAL;
 diff --git a/fs/xattr.c b/fs/xattr.c
-index df321397f..36f25c8fb 100644
+index df32139..36f25c8 100644
 --- a/fs/xattr.c
 +++ b/fs/xattr.c
 @@ -23,6 +23,9 @@
