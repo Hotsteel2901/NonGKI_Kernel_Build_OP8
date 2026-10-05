@@ -9,6 +9,8 @@ Chinese docs: [README_cn.md](README_cn.md)
 |---|---|
 | KernelSU (backslashxx) | KernelSU fork (`xxksu`), manual hooks per [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5) (v2.3, exec via do_execveat_common); no SUSFS-version detection in manager. Manager is **backslashxx's own KernelSU Manager**, not BakaSU Manager |
 | SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
+| Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
+| NoMount VFS | `fs/nomount` built-in via upstream `kernel/setup.sh` (keyring magic `"NOMOUNT"`), off by default |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
 | Baseband Guard | partition write protection LSM |
@@ -25,6 +27,8 @@ Chinese docs: [README_cn.md](README_cn.md)
 | `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
 | `Patch/backslashxx_manual_hooks.patch` | KernelSU manual hooks (do_execveat_common execve / faccessat / newfstatat / newfstat-ret / sys_reboot, #5 v2.3) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | custom workflow step |
 | `Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU bridge into backslashxx source (SUSFS command dispatch, `susfs_init`, sdcard monitor, umount flag). Aligned to master @ `1f47db46` (32657) | custom workflow step |
+| `Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS subsystem (`fs/hybridmount`, keyring magic `"hm1"`) | custom workflow step (gated by `VFS_HYBRIDMOUNT`) |
+| *(NoMount)* | no in-repo patch — pulled from upstream `kernel/setup.sh` | custom workflow step (gated by `VFS_NOMOUNT`) |
 | `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
 
@@ -34,9 +38,42 @@ Chinese docs: [README_cn.md](README_cn.md)
 > git diff <new-base> -- <susfs-files> > Patches/Patch/susfs_patch_to_4.19.patch
 > ```
 
+## VFS backends (pick at most ONE)
+
+Three path-redirection backends are supported. They all hijack **the same VFS layer**
+(`inode_operations` / `file_operations` / `dentry_operations`) and each speaks its own
+**incompatible keyring protocol**, so **exactly one may be enabled at a time**. Enabling
+two makes the drivers fight over the same hooks: the userspace metamodule cannot handshake
+(it reports "kernel not supported"), and it can crash outright. Upstream Hybrid Mount's own
+Kconfig states it is *"not compatible with NoMount's metamodule or its tooling"*.
+
+A validation step runs at the start of the build and **fails immediately** if more than one
+backend is enabled.
+
+| Switch | Backend | Default | Kernel side |
+|---|---|---|---|
+| `VFS_HYBRIDMOUNT` | Hybrid Mount VFS | `true` | `fs/hybridmount` (in-tree 4.19 port) |
+| `VFS_NOMOUNT` | NoMount VFS | `false` | `fs/nomount` (upstream `setup.sh` integration) |
+| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | **not implemented yet** — enabling fails the build |
+
+Set them in the workflow's `env:` block (`build-oneplus-8-los23-a16.yml`) or via the
+`workflow_dispatch` inputs where the workflow exposes them.
+
+> All three must be built-in (`=y`), never `=m`: 4.19 has no matching prebuilt `.ko`
+> (upstream only ships 5.10/5.15/6.1/6.6/6.12 modules).
+>
+> Hybrid Mount and NoMount are **same-root, different vendors**: `fs/hybridmount` was forked
+> from NoMount but renamed its symbols and changed its wire magic (`"HYBRIDMO"` vs `"NOMOUNT"`),
+> so metamodules and tooling are **not** interchangeable. Pick the one your userspace
+> manager supports.
+>
+> The AK3 title line is assembled at build time from the backend actually enabled, so the
+> title never claims a backend the kernel does not contain.
+
 ## Key settings (build-oneplus-8-los23-a16.yml)
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **required** (schgm-flash.c needs CONFIG_OPLUS_SM8250_CHARGER)
+- `VFS_HYBRIDMOUNT / VFS_NOMOUNT / VFS_ZEROMOUNT` — mutually exclusive, see the section above
 - KernelSU (backslashxx) stays **latest** (setup.sh git pull each run)
 - Patch alignment baseline: backslashxx/KernelSU master @ `1f47db46` (**KSU_VERSION=32657**). The build
   pulls master HEAD rather than pinning this SHA; the value records the upstream state the patches were

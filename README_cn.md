@@ -9,6 +9,8 @@
 |---|---|
 | KernelSU (backslashxx) | KernelSU 分支 (`xxksu`), 手动钩子参照 [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5) (v2.3, exec 经 do_execveat_common); 管理器不带 SUSFS 版本检测。管理器为 **backslashxx 自有的 KernelSU Manager**（非 BakaSU Manager） |
 | SUSFS v2.3.0 | 官方 gki v2.3.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
+| Hybrid Mount VFS | `fs/hybridmount` 4.19 内置移植 (keyring 魔数 `"hm1"`), **默认开启** |
+| NoMount VFS | `fs/nomount` 内置集成, 走上游 `kernel/setup.sh` (keyring 魔数 `"NOMOUNT"`), 默认关闭 |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup 前缀隐藏 + Non-GKI 配置 (含 USER_NS) |
 | Baseband Guard | 分区写保护 LSM |
@@ -31,6 +33,8 @@
 | `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
 | `Patches/Patch/backslashxx_manual_hooks.patch` | KernelSU 手动钩子 (do_execveat_common execve/faccessat/newfstatat/newfstat-ret/sys_reboot + 32-bit, #5 v2.3) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | 工作流自定义步骤 |
 | `Patches/Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU 桥接 (命令分发 / `susfs_init` / sdcard 监控 / umount 标记)。已对齐 master @ `1f47db46` (32657) | 工作流自定义步骤 |
+| `Patches/Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS 子系统 (`fs/hybridmount`, keyring 魔数 `"hm1"`) | 工作流自定义步骤 (受 `VFS_HYBRIDMOUNT` 控制) |
+| *(NoMount)* | 本仓库无补丁文件, 直接拉上游 `kernel/setup.sh` | 工作流自定义步骤 (受 `VFS_NOMOUNT` 控制) |
 | `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
 
@@ -40,10 +44,40 @@
 > git diff <新base> -- <susfs相关文件> > Patches/Patch/susfs_patch_to_4.19.patch
 > ```
 
+## VFS 路径重定向后端（三选一）
+
+本仓库支持三种路径重定向后端。它们全部工作在**同一个 VFS 层**
+（劫持 `inode_operations` / `file_operations` / `dentry_operations`），且各自使用
+**互不兼容的 keyring 协议**，因此**同一时间最多只能开启一个**。同时开启会让两套驱动
+争抢同一批 hook：userspace 元模块无法握手（会提示"内核不支持"），严重时直接崩溃。
+上游 Hybrid Mount 的 Kconfig 里就明确写了与 NoMount 的元模块
+*"not compatible with NoMount's metamodule or its tooling"*。
+
+构建开头有一步校验：**开启超过一个会立刻 fail**，不会产出一个坏内核。
+
+| 开关 | 后端 | 默认 | 内核侧 |
+|---|---|---|---|
+| `VFS_HYBRIDMOUNT` | Hybrid Mount VFS | `true` | `fs/hybridmount` (本仓库 4.19 内置移植) |
+| `VFS_NOMOUNT` | NoMount VFS | `false` | `fs/nomount` (上游 `setup.sh` 集成) |
+| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | **尚未实现** —— 开启会导致构建失败 |
+
+在 `build-oneplus-8-los23-a16.yml` 的 `env:` 段修改，或使用工作流暴露的
+`workflow_dispatch` 输入（视具体工作流而定）。
+
+> 三者都必须内置（`=y`）而非 `=m`：4.19 没有匹配的预编译 `.ko`
+> （上游只提供 5.10/5.15/6.1/6.6/6.12 的模块）。
+>
+> Hybrid Mount 与 NoMount 是**同源不同家**：`fs/hybridmount` 是从 NoMount fork 出来的，
+> 但重命名了符号、换了自己的 wire magic（`"HYBRIDMO"` vs `"NOMOUNT"`），
+> 两者元模块与工具链**互不通用**。按你的 userspace 管理器支持哪套来选。
+>
+> AK3 标题行在构建时按**实际启用**的后端动态拼装，因此标题不会出现内核里其实没有的后端。
+
 ## 关键配置项 (build-oneplus-8-los23-a16.yml)
 
 - `KERNEL_SOURCE/Branch`: LineageOS 官方仓库 `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **必须保留** (schgm-flash.c 需要 CONFIG_OPLUS_SM8250_CHARGER)
+- `VFS_HYBRIDMOUNT / VFS_NOMOUNT / VFS_ZEROMOUNT` — 互斥, 详见上一节
 - `KERNELSU_AUTO_FORK: xxksu` — 自动获取最新 backslashxx KernelSU (master 分支)
 - 补丁对齐基准: backslashxx/KernelSU master @ `1f47db46` (**KSU_VERSION=32657**)。构建时取的是
   master 最新提交而非固定该 SHA; 该值仅记录补丁最后一次对齐到的上游状态。若上游再次改动钩子接口,
