@@ -1,7 +1,7 @@
 # crdroid 分支 — OnePlus 8 crDroid 内核定制
 
 本分支为 **crDroid OnePlus 8 内核**（`crdroidandroid/android_kernel_oneplus_sm8250` @ `16.0`）
-提供 ReSukiSU / SUSFS / DroidSpaces 集成补丁与独占构建工作流。
+提供 BakaSU（原 ReSukiSU）/ SUSFS / DroidSpaces 集成补丁与独占构建工作流。
 
 > **隔离声明**：本分支只新增文件，不改动 `master` / `KSU` / `KSU_update` 三个分支的任何内容。
 > 原有 LineageOS 工作流与 10 个 composite action 保持原样。
@@ -25,7 +25,7 @@
 
 | Stage | 组件 | 本地验证结果 |
 |---|---|---|
-| `stage1` | ReSukiSU（manual hook 模式） | ✅ Image **54,820,880 B**，0 错误，30 个 ksu 符号 |
+| `stage1` | BakaSU（manual hook 模式） | ✅ Image **54,820,880 B**，0 错误，30 个 ksu 符号 |
 | `stage2` | + SUSFS v2.3.0 | ✅ Image **54,824,976 B**，0 错误，64 个 susfs 符号 |
 | `stage3` | + DroidSpaces | ✅ Image **54,845,456 B**，0 错误，dtb.img **1,428,199 B** |
 
@@ -35,7 +35,7 @@
 
 | 文件 | 内容 | 行数 |
 |---|---|---|
-| `0001-stage1-resukisu.patch` | ReSukiSU inline hooks（8 文件）+ defconfig + Makefile/Kconfig 接线 | 433 |
+| `0001-stage1-resukisu.patch` | BakaSU inline hooks（8 文件）+ defconfig + Makefile/Kconfig 接线 | 433 |
 | `0002-stage2-susfs.patch` | SUSFS v2.3.0 全部内核侧代码（17 文件） | 2066 |
 | `0003-stage3-droidspaces.patch` | cgroup 前缀隐藏 + droidspaces.config | 16 |
 | `droidspaces.config` | DroidSpaces Non-GKI 内核配置（含 USER_NS 等） | 98 |
@@ -43,19 +43,19 @@
 
 ## 本地验证过程中修复的三个关键问题
 
-这三个问题在参考项目（LineageOS）中不存在，是本分支针对 **当前 ReSukiSU main** 新增的适配：
+这三个问题在参考项目（LineageOS）中不存在，是本分支针对 **当前 BakaSU main** 新增的适配：
 
 ### 1. TP hooks 与 Non-GKI 不兼容
 ```
 drivers/kernelsu/Kbuild:171: *** TP hooks are incompatible with Non-GKI/GKI 1.0 kernels.
 ```
-ReSukiSU 有三种钩子模式，默认落到 `CONFIG_KSU_TRACEPOINT_HOOK`（仅支持 GKI 2.0）。
+BakaSU 有三种钩子模式，默认落到 `CONFIG_KSU_TRACEPOINT_HOOK`（仅支持 GKI 2.0）。
 Non-GKI 必须显式启用 manual hook：
 - Stage1：加 `CONFIG_KSU_MANUAL_HOOK=y`
 - Stage2/3：走 `CONFIG_KSU_SUSFS=y` 的 inline hook 分支
 
 ### 2. 门禁新增 `ksu_handle_newfstat_ret` / `ksu_handle_fstat64_ret` 要求
-当前 ReSukiSU 的 `tools/manual_hook_check.mk` 额外要求这两个钩子出现在 `fs/stat.c`，
+当前 BakaSU 的 `tools/manual_hook_check.mk` 额外要求这两个钩子出现在 `fs/stat.c`，
 而参考项目的补丁基于旧版（当时无此检查）。已在 `SYSCALL_DEFINE2(newfstat)` 与
 `SYSCALL_DEFINE2(fstat64)` 返回前补上钩子调用。
 
@@ -109,16 +109,17 @@ make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=a
 
 - SUSFS v2.3.0 的 `OPEN_REDIRECT` 实际重定向在 4.19 上不生效（架构限制，与官方一致）
 - SUSFS 与 DroidSpaces 共存时上游有兼容性警告，本分支 stage3 已验证可正常编译
-- ReSukiSU 固定提交 `fa1da13`。若需升级，务必重新核对符号契约与门禁要求
+- BakaSU（原 ReSukiSU，Baka-SU/BakaSU）固定提交 `fa1da13`（迁移后历史完整保留，SHA 仍有效）。
+  若需升级，务必重新核对符号契约与门禁要求
 - 工作流 `kernel_ref` 留空则用 `16.0` 分支最新提交；上游漂移可能导致补丁 `.rej`
 
 ## 触发方式
 
-Actions → **Build crDroid OnePlus 8 Kernel (ReSukiSU + SUSFS + DroidSpaces)** → Run workflow
+Actions → **Build crDroid OnePlus 8 Kernel (BakaSU + SUSFS + DroidSpaces)** → Run workflow
 
 选择 `stage`：
-- `stage1` = 仅 ReSukiSU
-- `stage2` = ReSukiSU + SUSFS
+- `stage1` = 仅 BakaSU
+- `stage2` = BakaSU + SUSFS
 - `stage3` = 全部三个组件（推荐）
 
 产物为 AnyKernel3 刷机包，按名称区分 stage。
