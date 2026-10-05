@@ -44,55 +44,125 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
     错写成 `if (unlikely(!static_branch_unlikely(&susfs_is_sdcard_android_data_not_decrypted)))`
     (not_decrypted 默认 true → 恒假) -> ksu_handle_execveat 永不执行 -> KernelSU 核心
     exec 处理 (授权/ksud/escape_to_root) 全死。构建 #10 修复为官方 v2.2.0 分支:
-     `if (static_branch_unlikely(&not_decrypted)) ksu_handle_execveat; else sucompat;`
-     教训: 布尔→静态键替换时注意极性反转 (decrypted=false 与 not_decrypted=true 语义等价,
-     不能机械加 !)。
-  - 2026-09-05: 【KSU 分支】SUSFS v2.2.0 -> v2.3.0 (对齐 Jack sample 12e1465 / simonpunk
-    fb16b41a)。此线为 backslashxx (xxksu) + manual hooks, 有意保留 simonpunk 原版
-    susfs_def.h (180 行, 无 ReSukiSU 的 no_su/zygote_next TIF 34/35) 与经典 KSU 语义,
-    因此只升 `include/linux/susfs.h` 的 SUSFS_VERSION 宏; 不移植 master 的 zygote_next
-    __lookup_mnt 隐藏块 (经典 KSU 无 flag setter, 且 34/35 位存在冲突风险)。
-    基于 pin 基线 4238ee49a84b。
-  - 2026-09-05: 【KSU 分支】manual hooks 对齐 backslashxx/KernelSU#5 v2.3 (2026-09 修订,
-    "move execve hooks to do_execveat_common")。execve 钩子由旧 do_execve/compat_do_execve
-    两处迁至 do_execveat_common 单点 (native/compat execve+execveat 全收口, A17 QPR2 用
-    execveat), 避免重复挂钩; faccessat / newfstatat(+fstatat64) / newfstat-ret(+fstat64-ret)
-    / sys_reboot 与 #5 v2.3 一致 (newfstat-ret 与 sys_reboot 带 KPROBES_KSUD 防重守卫)。
-    README 集成说明同步标注 v2.3。
-  - 2026-09-24: 【KSU 分支】susfs_patch_to_4.19.patch + manual hooks 跟进 Jack 最新 4.19 补丁
-    (JackA1ltman/NonGKI_Kernel_Build_2nd @ f15603b, 2026-09-17; 上一版基线为 84af385,
-    2026-09-04 v2.3.0 首版, 中间 13 个 commit)。上游改动 (按文件):
-      - fs/susfs.c: SUS_KSTAT 项新增 spoofed_kstatfs / spoofed_mnt_id 缓存 + statfs 缓存
-        重取; 新增 susfs_sus_kstat_spoof_vfs_statfs / _proc_fd_seq_show / _inotify_fdinfo;
-        open_redirect 目标项同样缓存 kstatfs+mnt_id; SUS_KSTAT_HLIST 桶数 10 -> 14
-      - fs/statfs.c: statfs 伪装改走 sus_kstat (新增 susfs_statfs_by_dentry() 与
-        susfs_is_current_app_uid() 门控), 原 open_redirect statfs 伪装分支移除
-      - fs/stat.c: generic_fillattr 不再直接伪装; vfs_getattr_nosec 改为打
-        STATX_SUS_KSTAT / STATX_SUS_KSTAT_FUSE 标记后在返回前伪装
-        (需要 #include <linux/susfs_def.h>, 上游由 hook 脚本 sed 注入 -> 本仓在
-        manual hooks 补丁里注入, 同时保留本树 KSU stat 钩子)
-      - fs/namei.c: OPEN_REDIRECT 改用 filename_lookup() (fake_filename 生命周期修正,
-        do_o_path 恢复 nd->name); is_fuse 提前求值 (修上游 96998e0 "misplaced is_fuse
-        causing kernel panic")
-      - fs/namespace.c: susfs_get_non_sus_mnt_id/vfsmnt_from_mnt 对非 sus mnt_id 直接返回
-        ("needn't real_mount"), 守卫 CONFIG_KSU_SUSFS_SUS_MOUNT -> CONFIG_KSU_SUSFS
-      - fs/super.c (新增 section): get_anon_bdev() 对 ksu 域分配隐藏 minor dev
-        (DEFAULT_KSU_MNT_MINOR_DEV, 配合 STATX/sus_kstat 的 sdev 伪装)
-      - fs/proc/fd.c, fs/notify/fdinfo.c: fd/fdinfo 伪装改走 sus_kstat, 只对 app uid
-        (susfs_is_current_app_uid) 生效, 用 d_backing_inode()
-      - fs/proc_namespace.c: static_branch_unlikely -> likely; include/linux/susfs.h /
-        susfs_def.h 结构体成员顺序与宏同步 (DEFAULT_KSU_MNT_MINOR_DEV,
-        STATX_SUS_KSTAT(_FUSE), susfs_is_current_app_uid)
-    本线保留的差异 (有意, 非漏搬): 不加 zygote_next 的 __lookup_mnt 隐藏块 (经典 KSU
-    无 flag setter, 见 09-05 条目); susfs_def.h 跟随上游 (含 TIF_PROC_NO_SU 34 /
-    UMOUNTED_FOR_ZYGOTE_NEXT 35 定义, 本树无调用方, 惰性无害; backslashxx KSU 用的是
-    60-63 位, 不冲突); clone_mnt 的 VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT 仍按本地
-    is_mnt_ksu_unshared 置位 (上游改成重判静态键, 但静态键可能在分配后被翻转);
-    namespace.c 继续用本树的 fs_context 版 vfs_create_mount 适配。
-    验证: pin 基线 4238ee49a84b + backslashxx/KernelSU master (bb0be92) 全流程重放
-    (susfs -> manual hooks -> bridge) 0 .rej 且 verify greps 通过; 23 个受影响文件与
-    上游参考树逐一比对 (差异仅上述有意项); 全部涉及文件 (fs/*, kernel/stat 等 20 个 +
-    drivers/kernelsu/) 经 clang 17 目标编译通过 (含 fs/stat.c 的 susfs_def.h 注入修正)。
+    `if (static_branch_unlikely(&not_decrypted)) ksu_handle_execveat; else sucompat;`
+    教训: 布尔→静态键替换时注意极性反转 (decrypted=false 与 not_decrypted=true 语义等价,
+    不能机械加 !)。
+  - 2026-08-27: 【ReSukiSU 03b60f2 更新破坏构建 → 跟随 Jack 上游修复】ReSukiSU commit
+    03b60f2 "kernel: sync with latest susfs" (2026-08-23, AlexLiuDev233 + simonpunk) 起,
+    CONFIG_KSU_SUSFS 模式下改用新 SUSFS API, 导致 GitHub Actions 链接阶段失败:
+      - undefined reference to `susfs_is_current_proc_no_su` / `susfs_set_current_proc_no_su`
+        / `susfs_clear_current_proc_no_su` / `susfs_set_current_proc_umounted_for_zygote_next`
+        (来自 ReSukiSU kernel/feature/sucompat.c + kernel/hook/setuid_hook.c)
+      - ksu_handle_stat / ksu_handle_faccessat 签名由 `const char __user **` 改为
+        `struct filename **` (GKI 6.6 风格); 若只补函数修好链接, 旧 inline hook 传
+        `const char __user **` 会被新 handler 解引用 `(*filename)->name` 造成运行崩溃
+    修复 (对齐 JackA1ltman/NonGKI_Kernel_Build_2nd mainline+sample 分支当日 23:06 提交):
+      - Patches/Patch/susfs_patch_to_4.19.patch: include/linux/susfs_def.h 新增
+        `TIF_PROC_NO_SU 34` / `TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT 35` 及
+        susfs_clear_current_proc_umounted / zygote_next 三件套 / no_su 三件套 内联函数
+        (与 Jack 逐字一致, 行数 180 -> 210)
+      - Patches/Patch/resukisu_inline_hooks.patch: fs/exec.c guard 改用
+        susfs_is_current_proc_no_su(); fs/open.c do_faccessat 与 fs/stat.c vfs_statx
+        改用 `getname_flags() -> ksu_handle_*(&dfd,&fname,...) -> filename_lookup()` 流程
+        (4.19 filename_lookup 非 static 可直接调用; fs/open.c 已含 "internal.h";
+        fs/stat.c 补 `#include "internal.h"`); 原 newfstatat 旧签名 hook 移除,
+        SUS_KSTAT spoofing 保留; input/read_write/reboot/sys 四节未动
+    其他组件排查 (均非失败原因): DroidSpaces cocci 与上游一致; Re:Kernel 静态
+    rekernel_extra.patch 与 myflavor/ReKernel-X Integrate v8.5 一致 (仅 cfg->static 与
+    jobctl.h 两处既有适配); Baseband-guard 实时下载但编译通过。
+  - 2026-09-05: 【ReSukiSU inline 钩子对齐最新上游】对照 ReSukiSU main (HEAD 3c18828,
+    2026-09-05) 与 Jack sample (HEAD a2cf40a, 2026-09-04):
+      - 符号契约核对: resukisu_inline_hooks.patch 引用的全部符号/签名仍匹配当前
+        ReSukiSU main (sucompat.c/ksud_integration.c/allowlist.c/supercall.c/setuid_hook.c),
+        可过 CONFIG_KSU_SUSFS 编译门禁 tools/inline_hook_check.mk
+      - 对齐 Jack 新增: fs/stat.c vfs_statx_fd 处补 ksu_handle_vfs_fstat(fd,&stat->size)
+        init.rc fstat 大小注入 (extern ksu_is_init_rc_hook_enabled 守卫, ReSukiSU main
+        在 CONFIG_KSU_SUSFS 下导出该函数); kernel/reboot.c 的 ksu_handle_sys_reboot
+        加 `if (system_state == SYSTEM_RUNNING)` 守卫
+      - 不采纳: Jack 脚本 read_write.c 仍用旧 1 参 ksu_handle_sys_read(fd), 与当前
+        ReSukiSU main 的 3 参导出不符, 我们保留 3 参新式
+  - 2026-09-05: 【SUSFS v2.2.0 -> v2.3.0 + 优化】对照 Jack sample 12e1465 (2026-09-04,
+    "susfs version code upgrade to v2.3.0", 引用 simonpunk fb16b41a) 与本仓库内容级比对:
+      - include/linux/susfs.h: SUSFS_VERSION "v2.2.0" -> "v2.3.0"
+      - fs/namespace.c: __lookup_mnt 补 zygote_next 进程的 sus mount 隐藏块
+        (susfs_is_current_proc_umounted_for_zygote_next() 时仅返回非 sus mount,
+         TIF 35 / DEFAULT_KSU_MNT_ID 此前已具备)
+      - 内核源码不同注意: 我们用的 LineageOS sm8250 4.19 是 fs_context 版
+        (namespace.c 钩 vfs_create_mount, 参数 fc), Jack 通用 CAF 4.19 钩
+        vfs_kern_mount(name) —— fc->source vs name 差异属内核结构, 不照抄;
+        namei.c 的 __lookup_hash #ifdef/#else 化仅风格差异无功能变化, 亦不采纳
+      - 其余 15 文件与 Jack 逐字节一致 (fs/susfs.c 1491 行 / susfs_def.h 210 行等)
+      - 补丁已基于 lineage-23.2 最新提交 d504087 (2026-09-05 tip) 重新生成并验证
+        git apply --check 与 patch -p1 --dry-run 干净通过; 注意工作流当前不 pin
+        内核提交, 上游若再漂移需重新生成
+
+  - 2026-10-05: 【ZeroMount 4.19 自研移植 + 两个致命缺陷修复】
+    新增第三个 VFS 后端 ZeroMount（`fs/zeromount`，`/dev/zeromount` 字符设备 + 自定义
+    ioctl，不依赖 keyring），并修复移植过程中引入的两个问题：
+
+    缺陷 1 — **补丁按 pristine 4.19 写，静默删掉 SUSFS/KSU 钩子**。
+      `Patches/Patch/zeromount_patch_to_4.19.patch` 最初是照着原始上游 4.19 生成的，
+      但实际内核里 `fs/stat.c` 早已被 SUSFS + BakaSU inline hooks 改过。补丁的 hunks
+      把「已被打上钩子的区域」当作待替换的旧代码：
+        fs/stat.c: +46 行 / -86 行
+      结果 `ksu_handle_stat`、`ksu_handle_vfs_fstat`、`ksu_is_init_rc_hook_enabled`、
+      SUSFS `susfs_sus_kstat_spoof_generic_fillattr` / `susfs_is_inode_sus_kstat`
+      全被抹掉。**补丁应用时 0 个 .rej**，所以工作流里原有的 reject 检查完全没拦住，
+      直到编译期才死在 BakaSU 的 inline_hook_check.mk：
+        -- You lost ksu_handle_stat hook in your kernel
+        KernelSU/kernel/tools/inline_hook_check.mk:52: *** You should integrate BakaSU
+        in your kernel. . Stop.
+        make[2]: *** [../scripts/Makefile.modbuiltin:55: drivers/kernelsu] Error 2
+      修复: 以「SUSFS + inline hooks 之后」的真实树为基线重新生成补丁。核对每个文件
+      的增删行数，确认**唯一**的破坏性文件就是 fs/stat.c（其余 9 个纯新增）；
+      把 fs/stat.c 的 7 个破坏性 hunk 重写为 3 个纯新增 hunk，让两套子系统并存：
+      ZeroMount 的 zeromount_stat_hook() 先跑，返回 -ENOENT 时落回未被改动的
+      SUSFS filename_lookup / orig_flow: 路径。
+      结果: 36 hunk -> 32 hunk，ksu_/susfs_ 删除行数 86 -> 0，四个分支统一
+      md5 478e8abe69a47b9e0b5715a375ce3a74。
+
+    缺陷 2 — **`CONFIG_ZEROMOUNT` 没有进 .config，头文件 stub 与实现冲突**。
+      必须在 fs/Kconfig 的「最后一个 endmenu」之前注入 config 块，并在 fs/Makefile
+      尾部追加 obj-$(CONFIG_ZEROMOUNT) += zeromount.o。这两个文件**不放进补丁**：
+      它们的双后端上下文锚点无法同时兼容「有 HybridMount」与「没有 HybridMount」
+      两种树（patch 的 fuzz 匹配会静默插错位置），改由工作流做文本注入。
+      注意 fs/Kconfig 的文本注入必须用 `tail -1` 取**最后一个** endmenu。
+
+    防回归 — 加了逐符号守卫。教训是 **`0 reject` 不等于打对了**，所以在
+      build-oneplus-8-los23-a16.yml、build-luk-op8.yml、build-crdroid-op8.yml
+      三个工作流（crdroid 有两处）的 ZeroMount 步骤里，补丁之后逐个核对 9 个符号
+      （fs/stat.c 的 ksu_handle_stat / ksu_handle_vfs_fstat / ksu_is_init_rc_hook_enabled
+      / susfs_sus_kstat_spoof_generic_fillattr / zeromount_stat_hook，fs/exec.c 的
+      ksu_handle_execveat，fs/open.c 的 ksu_handle_faccessat，fs/read_write.c 的
+      ksu_handle_sys_read，kernel/sys.c 的 ksu_handle_setresuid），少任何一个即 fail。
+      已做对照实验验证：旧补丁 0 reject 但守卫立刻报错拦截。
+
+    验证: 本地按 CI 真实顺序（SUSFS -> 清 rej/orig -> BakaSU inline hooks ->
+      ZeroMount -> Kconfig/Makefile 注入）跑端到端，rej=0、9/9 钩子齐全、
+      CONFIG_ZEROMOUNT=y、编译 0 错误 0 警告。另做对照实验（注入探针符号后确认其
+      出现在预处理输出中）证明 CONFIG_KSU_SUSFS 分支确实被编译，排除「分支没激活
+      所以看起来能过」的假阳性。
+      CI 实测 run 37294291263（ZeroMount 模式）: 14m43s success，日志中 7 个
+      BakaSU/susfs_inline 钩子全部 found（含 ksu_handle_stat），产出
+      Kernel-instantnoodle-lineage23.2_a16-*.zip（24 MB）。
+
+  - 2026-10-05: 【Release tag 机制修正】
+    build-release.yml 原先的 tag 设计有多个缺陷，导致「一天只能发一次 release」：
+      - tag 命名改为带分支前缀 `<branch>-v<version>-<unix-ts>`，冲突时追加 -2/-3
+      - 推送方式由 `git push --tags` 改为 `git push origin refs/tags/$NEW_TAG`，
+        只推当前 tag。原方式会连带推送指向「含 .github/workflows/ 变更的 commit」的
+        历史 tag，被 GitHub 以 "refusing to allow a GitHub App to create or update
+        workflow ... without workflows permission" 拒绝
+      - tag 目标改为实际构建的 commit（通过 build_sha outputs 从内核 job 逐层透传），
+        不再指向 release job 的 HEAD
+      - 补 fetch-depth: 0；删除从未被使用的死代码 LATEST_TAG
+    踩坑记录: 曾试图用 `permissions: workflows: write` 绕过上面那个拒绝 —— **这是错的**。
+      `workflows` 根本不是合法作用域，写入后 GitHub 把整个工作流文件判为
+      `Invalid workflow file`，导致四个分支上**所有**工作流全部失效。
+      合法作用域仅: actions / attestations / checks / contents / deployments /
+      discussions / id-token / issues / packages / pages / pull-requests /
+      repository-projects / security-events / statuses。
+      离线复现方法: actionlint v1.7.7，`actionlint -oneline .github/workflows/*.yml`。
 
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 
@@ -158,7 +228,37 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
    CONFIG_KSU=y + CONFIG_KSU_SUSFS=y (全部 SUSFS 子选项), CONFIG_REKERNEL=y (NETWORK=n),
    Non-GKI DroidSpaces 配置, CONFIG_BBG=y, CONFIG_LSM="...,bpf,baseband_guard"
 
-## 6. 全量参考
+## 6. 可选 VFS 后端（三选一，见仓库主 README 的 "VFS backends" 一节）
+   以下三个后端都劫持同一层 VFS + 使用互不兼容的 keyring/ioctl 协议，**同时只能开一个**:
+
+   - Hybrid Mount:  Patches/Patch/hybridmount_patch_to_4.19.patch   (默认开)
+   - NoMount:       本仓库无补丁, 走上游 kernel/setup.sh
+   - ZeroMount:     Patches/Patch/zeromount_patch_to_4.19.patch     (默认关, 32 hunk)
+
+   ⚠️ 顺序要求: ZeroMount 必须排在 SUSFS + BakaSU inline hooks **之后**。
+      它的基线是「SUSFS + inline hooks 之后」的树，与 SUSFS 在 fs/readdir.c /
+      fs/proc/task_mmu.c / fs/stat.c 上有上下文重叠。
+      该补丁必须**纯新增**: `ksu_`/`susfs_` 删除行数必须为 0。校验方法:
+        grep -cE '^-.*(ksu_|susfs_)' Patches/Patch/zeromount_patch_to_4.19.patch   # 必须为 0
+      工作流里另有一道逐符号守卫兜底（见本节末尾）。
+
+   ZeroMount 的 fs/Kconfig + fs/Makefile 改动**不在补丁里**，由工作流文本注入完成
+   （原因: 这两个文件的双后端上下文锚点无法同时兼容「有/无 HybridMount」两种树，
+   patch 的 fuzz 匹配会静默插错位置）。注入要点:
+     - fs/Kconfig: 在**最后一个** endmenu 之前插入 `config ZEROMOUNT` 块
+       （必须 `grep -n '^endmenu' fs/Kconfig | tail -1`，不能取第一个）
+     - fs/Makefile: 尾部追加 `obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o`
+
+   ⚠️ **`0 reject` 不等于打对了。** 曾出现过补丁 0 .rej 却静默删掉 ksu_handle_stat
+      的情况，直到编译期才死在 inline_hook_check.mk。因此在补丁之后必须逐符号核对
+      SUSFS/KSU 钩子仍在（3 个工作流共 4 处守卫: build-oneplus-8 x1、
+      build-luk-op8 x1、build-crdroid-op8 x2）:
+        fs/stat.c:ksu_handle_stat / ksu_handle_vfs_fstat / ksu_is_init_rc_hook_enabled
+                  / susfs_sus_kstat_spoof_generic_fillattr / zeromount_stat_hook
+        fs/exec.c:ksu_handle_execveat        fs/open.c:ksu_handle_faccessat
+        fs/read_write.c:ksu_handle_sys_read  kernel/sys.c:ksu_handle_setresuid
+
+## 7. 全量参考
    0000-full-all-changes.patch: 全部改动合集 (排除 *.bak 备份文件), 适用于整体重放/对照
 
 ## 构建命令 (重放后)

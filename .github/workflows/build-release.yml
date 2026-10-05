@@ -3,6 +3,13 @@ name: Build and Release Kernel
 permissions:
   contents: write
   actions: write
+  # 说明：tag 会指向「含 .github/workflows/ 变更」的 commit。
+  # 早期实现用 `git push --tags` 推整条 tag 历史，GitHub 会以
+  # "refusing to allow ... without workflows permission" 拒绝。
+  # 正确修法是「只推当前 tag」：git push origin refs/tags/$NEW_TAG
+  # —— 这样不携带 workflow 文件历史，无需 workflows 权限域。
+  # 注意：`workflows` 不是合法的 permissions 作用域，写上会让整个
+  # 工作流文件被判为 Invalid workflow file，切勿再加回来。
 
 on:
   workflow_dispatch:
@@ -64,6 +71,8 @@ jobs:
       REPO_OWNER: Hotsteel2901
       REPO_NAME: NonGKI_Kernel_Build_OP8
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 构建 job 实际编译的 commit；拿不到时回退到本 job 的 checkout HEAD。
+      BUILD_SHA: ${{ needs.build-kernel.outputs.build_sha }}
       # Release 标题格式：管理器（分支名） + 时间，例如 "KernelSU (KSU) 2026-10-05 10:47"。
       # 本分支内置的是 backslashxx 的 KernelSU，管理器名称即 KernelSU。
       # 时间由 ${TIME} 在运行时拼接，这里只写前缀部分。
@@ -133,8 +142,11 @@ jobs:
 
     steps:
       # Checkout the code
+      # fetch-depth: 0 —— 需要完整历史才能按 SHA 建 tag（部分克隆取不到旧 commit）。
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       # Download Artifacts for A12 (Only if A12 Build is successful or input is true or empty)
       - name: Download Artifacts
@@ -145,11 +157,8 @@ jobs:
       # Get the Latest Tag from GitHub
       - name: Generate and Create New Tag
         run: |
-          # Fetch the latest tag from GitHub (this is the latest tag based on the GitHub API)
-          LATEST_TAG=$(gh api repos/$REPO_OWNER/$REPO_NAME/tags --jq '.[0].name')
-          if [ -z "$LATEST_TAG" ]; then
-            LATEST_TAG="0000000001" # if have no any releases.
-          fi
+          # 注意：原实现在此拉取 LATEST_TAG，但后续从未使用（死代码），
+          # 去重逻辑已改到下面基于 git ls-remote 的冲突递增里，故删除。
 
           TIME=$(date +"%Y-%m-%d %H:%M")
           echo "TIME=$TIME" >> $GITHUB_ENV
@@ -185,19 +194,47 @@ jobs:
           # 本分支实际内置的 root 实现是 backslashxx 的 KernelSU，tag 里的语义化版本号取它。
           ROOT_VERSION=$KSU_XXKSU_VERSION
 
-          # Tag 格式：v<管理器版本>-<Unix 时间戳>，例如 v32657-1759601234。
-          # 版本号读不到时（兜底 unknown）退回到纯时间戳，避免产出 vunknown-... 这种废 tag。
+          # ---- tag 命名 ----
+          # 格式：<分支>-v<管理器版本>-<Unix 时间戳>[ -N ]
+          #   例：KSU-v32657-1759601234、...-1759601235-2
+          # 旧格式 v<版本>-<时间戳> 有两个问题：
+          #   1. 秒级粒度，同一天/同一秒重复触发会撞名；
+          #   2. 四个分支共用命名空间，分支间也可能撞名。
+          # 加分支前缀解决 2；撞名时递增 -2 / -3 解决 1。
+          # 版本号读不到时（兜底 unknown）退成 0，避免产出 vunknown-... 这种废 tag。
           if [ -z "$ROOT_VERSION" ] || [ "$ROOT_VERSION" = "unknown" ]; then
-            echo "[!] Root version unavailable, falling back to timestamp-only tag"
-            NEW_TAG="$(date +%s)"
-          else
-            NEW_TAG="v${ROOT_VERSION}-$(date +%s)"
+            echo "[!] Root version unavailable, using 0 as placehold"
+            ROOT_VERSION=0
           fi
-          echo "New tag: $NEW_TAG"
+          BRANCH="${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD)}"
+          BASE_TAG="${BRANCH}-v${ROOT_VERSION}-$(date +%s)"
+          NEW_TAG="$BASE_TAG"
+          n=1
+          while git ls-remote --exit-code --tags origin "refs/tags/$NEW_TAG" >/dev/null 2>&1; do
+            n=$((n + 1))
+            NEW_TAG="${BASE_TAG}-${n}"
+            echo "[!] tag 已存在，尝试: $NEW_TAG"
+          done
+          echo "[+] New tag: $NEW_TAG"
           echo "NEW_TAG=${NEW_TAG}" >> $GITHUB_ENV
 
-          git tag $NEW_TAG
-          git push --tags
+          # ---- tag 目标 ----
+          # 优先指向「本次真正编译的 commit」（build job 透传上来的 SHA），
+          # 拿不到才退回当前 checkout HEAD。
+          TAG_TARGET="${BUILD_SHA:-$(git rev-parse HEAD)}"
+          if ! git cat-file -e "${TAG_TARGET}^{commit}" 2>/dev/null; then
+            echo "[!] BUILD_SHA=$TAG_TARGET 本地不存在，回退到 HEAD"
+            TAG_TARGET="$(git rev-parse HEAD)"
+          fi
+          echo "[+] Tag target: $TAG_TARGET"
+
+          git tag "$NEW_TAG" "$TAG_TARGET"
+
+          # ---- 只推当前 tag ----
+          # 旧写法 git push --tags 会把本地所有 tag（连同其引用历史）一起推，
+          # 一旦其中某个 tag 指向改动过 .github/workflows/ 的 commit，
+          # 整个 push 都会被 GitHub 拒绝（workflows 权限校验），release 因此整体失败。
+          git push origin "refs/tags/$NEW_TAG"
 
           # Input release note
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
