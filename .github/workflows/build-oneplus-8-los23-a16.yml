@@ -38,6 +38,9 @@ env:
 
   # 保持 latest: 每次构建都会通过 BakaSU setup.sh (git pull) 拉取最新 main 分支
   KERNELSU_AUTO_GET : "true" # if u want easy setting kernelsu, u can true.
+  # 注意: "resukisu" 只是内部标识符(下游有多处分支判断, 改动无收益), 实际仓库指向
+  # Baka-SU/BakaSU, 拼出的 setup.sh 地址为:
+  #   https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/main/kernel/setup.sh
   KERNELSU_AUTO_FORK : "resukisu" # xxksu, rsuntk, next, resukisu and sukisu
 
   SUSFS_ENABLE : true

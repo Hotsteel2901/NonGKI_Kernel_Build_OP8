@@ -167,8 +167,9 @@ runs:
                 fi
 
             elif [[ "${{ env.KERNELSU_AUTO_FORK }}" == "resukisu" ]]; then
-                # 2026-10: 上游 ReSukiSU/ReSukiSU 已迁移为 Baka-SU/BakaSU（原组织归档，
-                # GitHub 保留永久重定向，旧地址仍可用）。这里直接指向新地址，去除对重定向的依赖。
+                # 2026-10: 上游 ReSukiSU/ReSukiSU 已迁移完成 -> Baka-SU/BakaSU（原组织已归档）。
+                # 官方公告: 旧链接不受影响, 请求会自动重定向到新地址; 仓库已迁至新址。
+                # 这里直接指向新地址, 去除对重定向的依赖。
                 # 注意：KERNELSU_AUTO_FORK 的值 "resukisu" 是内部标识符，下游有 3+ 处分支判断，
                 # 改它没有收益，故保持不变。
                 KERNELSU_AUTHOR="Baka-SU"
@@ -197,6 +198,10 @@ runs:
             fi
 
             if [[ "${{ env.KERNELSU_METHOD }}" == "shell" ]]; then
+                # 官方安装命令 (BakaSU 迁移后的新地址):
+                #   curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
+                # 下方 URL 由 KERNELSU_AUTHOR/KERNELSU_NAME/KERNELSU_ORIGIN_BRANCH 拼出,
+                # 对 resukisu 分支即上述地址 (refs/heads/main 与 main 等价)。
                 curl -sSL "https://raw.githubusercontent.com/${KERNELSU_AUTHOR}/${KERNELSU_NAME}/refs/heads/${KERNELSU_ORIGIN_BRANCH}/kernel/setup.sh" | bash -s "$KERNELSU_BRANCH"
 
             elif [[ "${{ env.KERNELSU_METHOD }}" == "manual" ]]; then
