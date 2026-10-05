@@ -38,7 +38,10 @@ jobs:
       REPO_OWNER: Hotsteel2901
       REPO_NAME: NonGKI_Kernel_Build_OP8
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      RELEASE_NAME: "Pre-built"
+      # Release 标题格式：管理器（分支名） + 时间，例如 "KernelSU (KSU) 2026-10-05 10:47"。
+      # 本分支内置的是 backslashxx 的 KernelSU，管理器名称即 KernelSU。
+      # 时间由 ${TIME} 在运行时拼接，这里只写前缀部分。
+      RELEASE_NAME: "KernelSU (KSU)"
       RELEASE_NOTES: |
         ### English
 
@@ -122,19 +125,11 @@ jobs:
             LATEST_TAG="0000000001" # if have no any releases.
           fi
 
-          NEW_TAG=$(date +%s)
-
-          # Output the new tag to be used
-          echo "New tag: $NEW_TAG"
-
-          # Set the new tag as an environment variable to be used in later steps
           TIME=$(date +"%Y-%m-%d %H:%M")
           echo "TIME=$TIME" >> $GITHUB_ENV
-          echo "NEW_TAG=${NEW_TAG}" >> $GITHUB_ENV
 
           # Create the tag in the repository
-          git tag $NEW_TAG
-          git push --tags
+          # （tag 的创建推迟到下面拿到 backslashxx 版本号之后）
 
           # Get KernelSU version
           # backslashxx/KernelSU 在 kernel/Makefile 里硬编码 KSU_VERSION (当前 32657)，
@@ -155,6 +150,23 @@ jobs:
           KSU_NEXT_VERSION=$(cd KernelSU-Next && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
           git clone -b main https://github.com/ReSukiSU/ReSukiSU.git KernelSU-ReSukiSU
           KSU_RESUKISU_VERSION=$(cd KernelSU-ReSukiSU && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+
+          # 本分支实际内置的 root 实现是 backslashxx 的 KernelSU，tag 里的语义化版本号取它。
+          ROOT_VERSION=$KSU_XXKSU_VERSION
+
+          # Tag 格式：v<管理器版本>-<Unix 时间戳>，例如 v32657-1759601234。
+          # 版本号读不到时（兜底 unknown）退回到纯时间戳，避免产出 vunknown-... 这种废 tag。
+          if [ -z "$ROOT_VERSION" ] || [ "$ROOT_VERSION" = "unknown" ]; then
+            echo "[!] Root version unavailable, falling back to timestamp-only tag"
+            NEW_TAG="$(date +%s)"
+          else
+            NEW_TAG="v${ROOT_VERSION}-$(date +%s)"
+          fi
+          echo "New tag: $NEW_TAG"
+          echo "NEW_TAG=${NEW_TAG}" >> $GITHUB_ENV
+
+          git tag $NEW_TAG
+          git push --tags
 
           # Input release note
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
