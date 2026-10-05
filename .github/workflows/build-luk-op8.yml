@@ -1,4 +1,4 @@
-name: Build OnePlus 8 luk Kernel (ReSukiSU + SUSFS + DroidSpaces)
+name: Build OnePlus 8 luk Kernel (BakaSU + SUSFS + DroidSpaces)
 
 # ============================================================================
 # luk 内核独占工作流 (ReSuki_Luk 分支)
@@ -10,7 +10,7 @@ name: Build OnePlus 8 luk Kernel (ReSukiSU + SUSFS + DroidSpaces)
 #   - 因此本工作流固定使用 luk 自带的 vendor/kona-perf_defconfig,
 #     并合并 vendor/oplus.config, 不做任何 AOSP-only 裁剪。
 #
-# 集成组件: ReSukiSU (root 实现, SUSFS inline hook 模式)
+# 集成组件: BakaSU (原 ReSukiSU; root 实现, SUSFS inline hook 模式)
 #           -> SUSFS v2.3.0 (JackA1ltman 4.19 实证版)
 #           -> DroidSpaces (可选, cgroup 前缀 + USER_NS 配置)
 #
@@ -27,7 +27,7 @@ on:
         type: string
         default: ''
       ksu_ref:
-        description: 'ReSukiSU 提交/标签 (留空=main 最新)'
+        description: 'BakaSU 提交/标签 (留空=main 最新)'
         required: false
         type: string
         default: ''
@@ -48,11 +48,13 @@ env:
   DEFCONFIG_NAME: "vendor/kona-perf_defconfig"
   ROM_TEXT: "luk"
 
-  KSU_REPO: "https://github.com/ReSukiSU/ReSukiSU.git"
+  # 2026-10: 上游 ReSukiSU/ReSukiSU 已迁移/更名为 Baka-SU/BakaSU（原组织归档，
+  # GitHub 保留永久重定向，旧地址仍可用）。此处直接指向新地址，去除对重定向的依赖。
+  KSU_REPO: "https://github.com/Baka-SU/BakaSU.git"
 
 jobs:
   build-kernel:
-    name: "OnePlus 8 luk (ReSukiSU + SUSFS v2.3.0)"
+    name: "OnePlus 8 luk (BakaSU + SUSFS v2.3.0)"
     runs-on: ubuntu-latest
     steps:
       - name: ⏰ Checkout workflow repo
@@ -91,7 +93,7 @@ jobs:
           git log --oneline -1
           echo "-g$(git rev-parse --short HEAD)-luk" > .scmversion
 
-      - name: 📥 Setup ReSukiSU
+      - name: 📥 Setup BakaSU
         run: |
           cd device_kernel
           git clone "$KSU_REPO" KernelSU
@@ -106,13 +108,13 @@ jobs:
             printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
           grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
             sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
-          echo "[+] ReSukiSU wired."
+          echo "[+] BakaSU wired."
 
-      - name: 🪝 Apply ReSukiSU inline hooks patch
+      - name: 🪝 Apply BakaSU inline hooks patch
         run: |
           cd device_kernel
           patch -p1 < ../Patches/luk/0001-resukisu-inline-hooks.patch
-          echo "[+] ReSukiSU inline hooks applied."
+          echo "[+] BakaSU inline hooks applied."
 
       - name: 🪝 Apply SUSFS v2.3.0 patch
         run: |
@@ -128,7 +130,7 @@ jobs:
           # Hybrid Mount 的 VFS 后端不是内核通用 VFS, 而是它自己的 hybridmount
           # 子系统 (fork 自 NoMount, 通过 keyring 驱动)。上游只提供 5.10+ 的
           # 预编译 .ko, 4.19 无匹配候选, 故 built-in 集成。
-          # 与 SUSFS / ReSukiSU 完全解耦: hybridmount.c 不引用任何 ksu_/susfs_ 符号,
+          # 与 SUSFS / BakaSU 完全解耦: hybridmount.c 不引用任何 ksu_/susfs_ 符号,
           # 与 SUSFS 补丁仅在 fs/Makefile 尾部追加处有交集 (offset +2, 无冲突)。
           patch -p1 < ../Patches/luk/0004-hybridmount-vfs.patch
           # patch(1) 成功时也会留 .orig 备份, 清掉
@@ -287,7 +289,7 @@ jobs:
         run: |
           cd device_kernel
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
-          sed -i 's/ExampleKernel by osm0sis @ xda-developers/OnePlus 8 luk NonGKI Kernel (ReSukiSU+SUSFS) by Hotsteel2901 - CustomROM+OOS/g' Anykernel3/anykernel.sh
+          sed -i 's/ExampleKernel by osm0sis @ xda-developers/OnePlus 8 luk NonGKI Kernel (BakaSU+SUSFS) by Hotsteel2901 - CustomROM+OOS/g' Anykernel3/anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
           sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
           sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
