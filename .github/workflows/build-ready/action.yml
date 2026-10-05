@@ -166,8 +166,10 @@ runs:
                 fi
 
             elif [[ "${{ env.KERNELSU_AUTO_FORK }}" == "resukisu" ]]; then
-                KERNELSU_AUTHOR="ReSukiSU"
-                KERNELSU_NAME="ReSukiSU"
+                # 2026-10: 上游 ReSukiSU/ReSukiSU 已迁移完成 -> Baka-SU/BakaSU（原组织已归档）。
+                # 本分支实际使用 xxksu, 此分支为保留的可选项, 一并同步到新地址。
+                KERNELSU_AUTHOR="Baka-SU"
+                KERNELSU_NAME="BakaSU"
                 KERNELSU_ORIGIN_BRANCH="main"
                 if [[ "${{ env.SUSFS_ENABLE }}" == "true" ]]; then
                     KERNELSU_BRANCH="main"

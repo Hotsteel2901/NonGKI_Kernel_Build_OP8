@@ -148,8 +148,13 @@ jobs:
           KSU_SUKISU_ULTRA_VERSION=$(cd KernelSU-SukiSU-Ultra && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
           git clone -b legacy https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
           KSU_NEXT_VERSION=$(cd KernelSU-Next && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
-          git clone -b main https://github.com/ReSukiSU/ReSukiSU.git KernelSU-ReSukiSU
-          KSU_RESUKISU_VERSION=$(cd KernelSU-ReSukiSU && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+          # BakaSU（原 ReSukiSU，Baka-SU/BakaSU，原组织已归档）：
+          # kernel/Kbuild 的版本公式为 KSU_VERSION = 30000 + KSU_LOCAL_VERSION + 700，
+          # 即 base = 30000 + 700 = 30700。
+          # 注意：旧写法 base=10200 对应的是 ReSukiSU 时代的 +289 体系，迁移后已失效，切勿沿用。
+          # 这一项仅供 release 正文展示（本分支实际内置 xxksu），但仍按新地址与新公式取值。
+          git clone -b main https://github.com/Baka-SU/BakaSU.git KernelSU-BakaSU
+          KSU_BAKASU_VERSION=$(cd KernelSU-BakaSU && expr $(/usr/bin/git rev-list --count HEAD) + 30700)
 
           # 本分支实际内置的 root 实现是 backslashxx 的 KernelSU，tag 里的语义化版本号取它。
           ROOT_VERSION=$KSU_XXKSU_VERSION
@@ -175,8 +180,8 @@ jobs:
           echo "[KernelSU-rsuntk](https://github.com/rsuntk/KernelSU) Version: $KSU_RSUNTK_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-SukiSU-Ultra](https://github.com/ShirkNeko/SukiSU-Ultra) Version: $KSU_SUKISU_ULTRA_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) Version: $KSU_NEXT_VERSION  " >> $GITHUB_ENV
-          echo "[KernelSU-ReSukiSU](https://github.com/ReSukiSU/ReSukiSU) Version: $KSU_RESUKISU_VERSION  " >> $GITHUB_ENV
-          echo "[KernelSU-ReSukiSU-CI](https://github.com/cctv18/ReSukiSU_CI) Version: $KSU_RESUKISU_VERSION  " >> $GITHUB_ENV
+          echo "[BakaSU](https://github.com/Baka-SU/BakaSU) Version: $KSU_BAKASU_VERSION  " >> $GITHUB_ENV
+          echo "[BakaSU-CI](https://github.com/cctv18/ReSukiSU_CI) Version: $KSU_BAKASU_VERSION  " >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
       # Create GitHub Release and upload files if make_release is true

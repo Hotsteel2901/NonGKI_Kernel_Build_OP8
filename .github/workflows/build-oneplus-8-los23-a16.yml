@@ -1,4 +1,4 @@
-name: Build Oneplus 8 (LineageOS 23.2 A16) (ReSukiSU+SUSFS Kernel)
+name: Build Oneplus 8 (LineageOS 23.2 A16) (KernelSU-xxksu+SUSFS Kernel)
 
 on:
   workflow_call:
@@ -100,7 +100,7 @@ env:
 
 jobs:
   build-kernel:
-    name: Oneplus 8 (LineageOS 23.2 A16) (ReSukiSU+SUSFS Kernel)
+    name: Oneplus 8 (LineageOS 23.2 A16) (KernelSU-xxksu+SUSFS Kernel)
     runs-on: ubuntu-latest
     env:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
