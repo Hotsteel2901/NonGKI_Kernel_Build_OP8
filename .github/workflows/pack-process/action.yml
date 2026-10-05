@@ -15,7 +15,21 @@ runs:
           mkdir -p tmp
 
           if [[ "${{ env.AK3_SOURCE }}" =~ "osm0sis" ]]; then
-            sed -i 's/ExampleKernel by osm0sis @ xda-developers/NonGKI Kernel Build by JackAltman and Hotsteel2901 @ Github/g' Anykernel3/anykernel.sh
+            # AK3 安装时显示的标题行，由各分支在 build-oneplus-8-los23-a16.yml 里
+            # 通过 AK3_TITLE 定义（格式: 管理器（分支名） + 集成内容 Built By hotsteel）。
+            # 这里只在缺失时兜底，避免某分支忘了定义导致显示成 osm0sis 默认值。
+            AK3_TITLE_FALLBACK="Kernel Built By hotsteel"
+            AK3_TITLE_RESOLVED="${{ env.AK3_TITLE }}"
+            if [ -z "$AK3_TITLE_RESOLVED" ]; then
+              echo "[!] AK3_TITLE is empty, falling back to: $AK3_TITLE_FALLBACK"
+              AK3_TITLE_RESOLVED="$AK3_TITLE_FALLBACK"
+            fi
+
+            # sed 替换串里 & 代表"整个匹配"，必须转义，否则标题里的 & 会被吃掉
+            AK3_TITLE_ESCAPED=$(printf '%s' "$AK3_TITLE_RESOLVED" | sed 's/[&\\]/\\&/g')
+
+            sed -i "s/ExampleKernel by osm0sis @ xda-developers/$AK3_TITLE_ESCAPED/g" Anykernel3/anykernel.sh
+            echo "[+] AK3 title set to: $AK3_TITLE_RESOLVED"
             sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
             sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
             sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh

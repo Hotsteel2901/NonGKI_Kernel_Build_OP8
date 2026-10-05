@@ -41,6 +41,10 @@ env:
   DEVICE_NAME: "oneplus_8"
   DEVICE_CODENAME: "instantnoodle"
 
+  # AK3 刷机包在 recovery 里显示的标题行。
+  # 格式: 管理器（分支名） + 集成内容 Built By hotsteel
+  AK3_TITLE: "BakaSU (Luk) + SUSFS v2.3.0 + Hybrid Mount VFS + ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
+
   KERNEL_SOURCE: "https://github.com/luk1337/android_kernel_oneplus_sm8250.git"
   KERNEL_BRANCH: "luk"
 
@@ -289,7 +293,16 @@ jobs:
         run: |
           cd device_kernel
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
-          sed -i 's/ExampleKernel by osm0sis @ xda-developers/OnePlus 8 luk NonGKI Kernel (BakaSU+SUSFS) by Hotsteel2901 - CustomROM+OOS/g' Anykernel3/anykernel.sh
+          # AK3 标题行: 管理器（分支名） + 集成内容 Built By hotsteel
+          # sed 替换串里 & 代表"整个匹配"，必须转义，否则标题里的 & 会被吃掉。
+          AK3_TITLE_RESOLVED="${{ env.AK3_TITLE }}"
+          if [ -z "$AK3_TITLE_RESOLVED" ]; then
+            echo "[!] AK3_TITLE is empty"
+            false
+          fi
+          AK3_TITLE_ESCAPED=$(printf '%s' "$AK3_TITLE_RESOLVED" | sed 's/[&\\]/\\&/g')
+          sed -i "s/ExampleKernel by osm0sis @ xda-developers/$AK3_TITLE_ESCAPED/g" Anykernel3/anykernel.sh
+          echo "[+] AK3 title set to: $AK3_TITLE_RESOLVED"
           sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
           sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
           sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
