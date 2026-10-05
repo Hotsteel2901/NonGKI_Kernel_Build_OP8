@@ -54,6 +54,8 @@ env:
 
   # BakaSU（原 ReSukiSU，Baka-SU/BakaSU，原组织已归档）固定提交，避免 main 漂移破坏符号契约。
   # 迁移后 git 历史完整保留，fa1da13 在新仓库中依然有效（已核实）。
+  # 官方公告: 旧链接不受影响, 请求会自动重定向到新地址; 此处直接用新地址。
+  # 安装命令 (迁移后新址): curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
   KSU_REPO: "https://github.com/Baka-SU/BakaSU.git"
   KSU_COMMIT: "fa1da13"
 
@@ -64,6 +66,9 @@ jobs:
   # --------------------------------------------------------------------------
   # Stage 1: 仅 BakaSU
   # --------------------------------------------------------------------------
+  # 注意: job id "stage1-resukisu" 沿用旧拼写 —— 它与补丁文件名
+  # Patches/crdroid/0001-stage1-resukisu.patch 以及下游 4 处引用耦合,
+  # 改名收益不大而风险不小, 故保持不动。显示名 (name:) 已是 BakaSU。
   stage1-resukisu:
     name: "Stage1: BakaSU"
     runs-on: ubuntu-latest
