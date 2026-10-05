@@ -1,8 +1,48 @@
 name: Build Oneplus 8 (LineageOS 23.2 A16) (KernelSU-xxksu+SUSFS Kernel)
 
+# ============================================================================
+# 可复用构建工作流（OnePlus 8 / LineageOS 23.2 A16）
+#
+# 由 build-kernel.yml 通过 workflow_call 调用，3 个 VFS 后端开关以
+# inputs.* 传入（UI 控件定义在 build-kernel.yml / build-release.yml）。
+# 这里同时声明 workflow_dispatch 直触发时所需的同默认值，保证两种入口
+# 行为一致；真正生效的读取在下方 Validate 步骤里（inputs.* 优先）。
+# ============================================================================
 on:
   workflow_call:
+    inputs:
+      vfs_hybridmount:
+        description: 'VFS 后端: Hybrid Mount (默认开启)'
+        required: false
+        type: boolean
+        default: true
+      vfs_nomount:
+        description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥)'
+        required: false
+        type: boolean
+        default: false
+      vfs_zeromount:
+        description: 'VFS 后端: ZeroMount (尚未实现 4.19 移植, 开启会 fail)'
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      vfs_hybridmount:
+        description: 'VFS 后端: Hybrid Mount (默认开启)'
+        required: true
+        type: boolean
+        default: true
+      vfs_nomount:
+        description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥)'
+        required: true
+        type: boolean
+        default: false
+      vfs_zeromount:
+        description: 'VFS 后端: ZeroMount (尚未实现 4.19 移植, 开启会 fail)'
+        required: true
+        type: boolean
+        default: false
 
 env:
   # Device env
@@ -92,6 +132,11 @@ env:
   # 同时开启会让两套驱动抢同一层 hook，轻则元模块认不到内核、重则崩溃。
   # 因此**最多只能开一个**，构建开头有互斥校验，开了多个直接 fail。
   #
+  # 默认值仅作 workflow_call 未传参时的兜底：真正生效的值来自
+  # inputs.vfs_*（UI 定义在 build-kernel.yml / build-release.yml）。
+  # Validate 步骤用 ${VFS_HYBRIDMOUNT:-true} 这种 shell 默认值兜底，
+  # 因此这里保留同名 env 是安全的（不会被当默认来源误用）。
+  #
   # 默认: HybridMount 开, 其余关（HybridMount 是本仓库长期验证过的组合）。
   VFS_HYBRIDMOUNT: "true"  # Hybrid Mount VFS 后端 (fs/hybridmount, 4.19 内置移植)
   VFS_NOMOUNT: "false"     # NoMount VFS 后端 (fs/nomount, 上游 setup.sh 集成)
@@ -146,9 +191,17 @@ jobs:
           # 独立不兼容的 keyring 协议。同时启用会导致两套驱动抢同一批 hook，
           # 元模块无法正确握手（认不到内核），严重时直接崩溃。
           # 这里做前置校验，开了多个就立刻 fail，避免产出一个坏内核。
-          HM="${{ env.VFS_HYBRIDMOUNT }}"
-          NM="${{ env.VFS_NOMOUNT }}"
-          ZM="${{ env.VFS_ZEROMOUNT }}"
+          #
+          # 开关来源: inputs.vfs_*（UI 定义在 build-kernel.yml /
+          # build-release.yml，这里只负责接收与校验）。
+          # 用 ${VAR:-默认值} 兜底，防止 workflow_call 未传参时变量为空
+          # 而被当成 "false" 处理。
+          HM="${{ inputs.vfs_hybridmount }}"
+          NM="${{ inputs.vfs_nomount }}"
+          ZM="${{ inputs.vfs_zeromount }}"
+          HM="${HM:-true}"
+          NM="${NM:-false}"
+          ZM="${ZM:-false}"
 
           COUNT=0
           [ "$HM" = "true" ] && COUNT=$((COUNT + 1))
@@ -334,7 +387,7 @@ jobs:
           echo "[+] SUSFS bridge verified in source tree."
 
       - name: 🧩 Patch Hybrid Mount VFS Subsystem
-        if: env.VFS_HYBRIDMOUNT == 'true'
+        if: inputs.vfs_hybridmount == true
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
 
@@ -364,7 +417,7 @@ jobs:
           echo "[+] Hybrid Mount VFS subsystem patched (built-in)."
 
       - name: ⚙️ Enable Hybrid Mount VFS in DEFCONFIG
-        if: env.VFS_HYBRIDMOUNT == 'true'
+        if: inputs.vfs_hybridmount == true
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
 
@@ -389,7 +442,7 @@ jobs:
           grep -nE "CONFIG_(HYBRIDMOUNT|KEYS|ASSOCIATIVE_ARRAY)=" "$DEFCONFIG_PATH"
 
       - name: 🕳️ Patch NoMount VFS Subsystem
-        if: env.VFS_NOMOUNT == 'true'
+        if: inputs.vfs_nomount == true
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
 
@@ -414,7 +467,7 @@ jobs:
           echo "[+] NoMount VFS subsystem patched (built-in)."
 
       - name: ⚙️ Enable NoMount VFS in DEFCONFIG
-        if: env.VFS_NOMOUNT == 'true'
+        if: inputs.vfs_nomount == true
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
 
