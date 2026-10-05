@@ -33,6 +33,9 @@ env:
   KERNELSU_BRANCH : ""
 
   # 保持 latest: 每次构建都会通过 backslashxx/KernelSU setup.sh (git pull) 拉取最新 master 分支
+  # 补丁对齐基准: backslashxx/KernelSU master @ 1f47db46 (KSU_VERSION=32657, 2026-10 核对)
+  #   注: 构建时取的是 master 最新而非固定该 SHA; 该值仅记录"补丁最后一次对齐到的上游状态",
+  #       上游若再改动 hook 接口, 请重新生成 backslashxx_susfs_bridge.patch。
   KERNELSU_AUTO_GET : "true" # if u want easy setting kernelsu, u can true.
   KERNELSU_AUTO_FORK : "xxksu" # xxksu, rsuntk, next, resukisu and sukisu
 
@@ -205,9 +208,14 @@ jobs:
       - name: 🔗 Patch KernelSU SUSFS Bridge (backslashxx)
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
-          # Port ReSukiSU's SUSFS bridge into backslashxx's kernel source
-          # (master branch uses ReSukiSU which has this built-in; backslashxx
+          # Port SUSFS bridge into backslashxx's kernel source
+          # (the BakaSU/ReSukiSU branches have this built-in; backslashxx
           # has none, so SUSFS tool commands used to go nowhere).
+          # 对齐基准: backslashxx/KernelSU master @ 1f47db46 (KSU_VERSION=32657)
+          # 上一次对齐是 b694933 (32628)。b694933..1f47db46 共 26 个提交，属大规模
+          # 重构（kernel_compat.h / kernel_includes.h / lsm_hooks_list.c 等），
+          # 但本补丁依赖的符号全部保留（ksu_handle_sys_reboot / toolkit_handle_sys_reboot），
+          # 仅上下文行号漂移，故已按新 tip 重新锚定，确保 0 offset / 0 fuzz / 0 reject。
           # Adds:
           #  - ksu_handle_susfs_cmd() dispatch (supercall/dispatch.c)
           #  - SUSFS_MAGIC routing in ksu_handle_sys_reboot() (supercall/supercall.c)

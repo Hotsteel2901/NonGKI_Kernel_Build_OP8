@@ -7,7 +7,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Integrations
 | Component | Note |
 |---|---|
-| KernelSU (backslashxx) | KernelSU fork (`xxksu`), manual hooks per [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5) (v2.3, exec via do_execveat_common); no SUSFS-version detection in manager |
+| KernelSU (backslashxx) | KernelSU fork (`xxksu`), manual hooks per [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5) (v2.3, exec via do_execveat_common); no SUSFS-version detection in manager. Manager is **backslashxx's own KernelSU Manager**, not BakaSU Manager |
 | SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
@@ -24,7 +24,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 |---|---|---|
 | `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
 | `Patch/backslashxx_manual_hooks.patch` | KernelSU manual hooks (do_execveat_common execve / faccessat / newfstatat / newfstat-ret / sys_reboot, #5 v2.3) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | custom workflow step |
-| `Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU bridge into backslashxx source (SUSFS command dispatch, `susfs_init`, sdcard monitor, umount flag) | custom workflow step |
+| `Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU bridge into backslashxx source (SUSFS command dispatch, `susfs_init`, sdcard monitor, umount flag). Aligned to master @ `1f47db46` (32657) | custom workflow step |
 | `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
 
@@ -38,6 +38,9 @@ Chinese docs: [README_cn.md](README_cn.md)
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **required** (schgm-flash.c needs CONFIG_OPLUS_SM8250_CHARGER)
 - KernelSU (backslashxx) stays **latest** (setup.sh git pull each run)
+- Patch alignment baseline: backslashxx/KernelSU master @ `1f47db46` (**KSU_VERSION=32657**). The build
+  pulls master HEAD rather than pinning this SHA; the value records the upstream state the patches were
+  last aligned to. If upstream changes the hook interface again, regenerate `backslashxx_susfs_bridge.patch`.
 - dtb: custom step concatenates `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img`; dtbo not packed (stock partition used)
 
 ## Deviations from Jack's original (intentional)

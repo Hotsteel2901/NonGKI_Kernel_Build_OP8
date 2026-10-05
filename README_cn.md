@@ -7,7 +7,7 @@
 
 | 组件 | 说明 |
 |---|---|
-| KernelSU (backslashxx) | KernelSU 分支 (`xxksu`), 手动钩子参照 [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5) (v2.3, exec 经 do_execveat_common); 管理器不带 SUSFS 版本检测 |
+| KernelSU (backslashxx) | KernelSU 分支 (`xxksu`), 手动钩子参照 [backslashxx/KernelSU#5](https://github.com/backslashxx/KernelSU/issues/5) (v2.3, exec 经 do_execveat_common); 管理器不带 SUSFS 版本检测。管理器为 **backslashxx 自有的 KernelSU Manager**（非 BakaSU Manager） |
 | SUSFS v2.3.0 | 官方 gki v2.3.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup 前缀隐藏 + Non-GKI 配置 (含 USER_NS) |
@@ -30,7 +30,7 @@
 |---|---|---|
 | `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
 | `Patches/Patch/backslashxx_manual_hooks.patch` | KernelSU 手动钩子 (do_execveat_common execve/faccessat/newfstatat/newfstat-ret/sys_reboot + 32-bit, #5 v2.3) + SUSFS stat/uname spoof + `susfs_is_current_ksu_domain()` | 工作流自定义步骤 |
-| `Patches/Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU 桥接 (命令分发 / `susfs_init` / sdcard 监控 / umount 标记) | 工作流自定义步骤 |
+| `Patches/Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU 桥接 (命令分发 / `susfs_init` / sdcard 监控 / umount 标记)。已对齐 master @ `1f47db46` (32657) | 工作流自定义步骤 |
 | `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
 
@@ -45,6 +45,9 @@
 - `KERNEL_SOURCE/Branch`: LineageOS 官方仓库 `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **必须保留** (schgm-flash.c 需要 CONFIG_OPLUS_SM8250_CHARGER)
 - `KERNELSU_AUTO_FORK: xxksu` — 自动获取最新 backslashxx KernelSU (master 分支)
+- 补丁对齐基准: backslashxx/KernelSU master @ `1f47db46` (**KSU_VERSION=32657**)。构建时取的是
+  master 最新提交而非固定该 SHA; 该值仅记录补丁最后一次对齐到的上游状态。若上游再次改动钩子接口,
+  请重新生成 `backslashxx_susfs_bridge.patch`。
 - dtb: 构建后自定义步骤拼接 `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img` (与官方 DTB_SZ 一致)
 - dtbo: 不打包 (NEED_DTBO=false, 沿用系统分区的 dtbo)
 
@@ -93,4 +96,4 @@
 ## 鸣谢
 
 - [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) — 项目格式与 4.19 移植方法
-- [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) / [ReSukiSU](https://github.com/ReSukiSU/ReSukiSU) (本分支参考其 SUSFS 集成) / [SuSFS](https://gitlab.com/simonpunk/susfs4ksu) / [Re:Kernel](https://github.com/Sakion-Team/Re-Kernel) / [Droidspaces](https://github.com/ravindu644/Droidspaces-OSS) / [Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)
+- [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) / [BakaSU](https://github.com/Baka-SU/BakaSU) (原 ReSukiSU; 本分支参考其 SUSFS 集成) / [SuSFS](https://gitlab.com/simonpunk/susfs4ksu) / [Re:Kernel](https://github.com/Sakion-Team/Re-Kernel) / [Droidspaces](https://github.com/ravindu644/Droidspaces-OSS) / [Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)
