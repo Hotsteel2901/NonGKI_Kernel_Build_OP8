@@ -35,6 +35,7 @@
 | `Patches/Patch/backslashxx_susfs_bridge.patch` | SUSFS↔KernelSU 桥接 (命令分发 / `susfs_init` / sdcard 监控 / umount 标记)。已对齐 master @ `1f47db46` (32657) | 工作流自定义步骤 |
 | `Patches/Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS 子系统 (`fs/hybridmount`, keyring 魔数 `"hm1"`) | 工作流自定义步骤 (受 `VFS_HYBRIDMOUNT` 控制) |
 | *(NoMount)* | 本仓库无补丁文件, 直接拉上游 `kernel/setup.sh` | 工作流自定义步骤 (受 `VFS_NOMOUNT` 控制) |
+| `Patches/Patch/zeromount_patch_to_4.19.patch` | ZeroMount VFS 子系统 (`fs/zeromount`, 自带字符设备 + ioctl 协议) | 工作流自定义步骤 (受 `VFS_ZEROMOUNT` 控制), 必须排在 SUSFS + HybridMount 之后 |
 | `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
 
@@ -59,7 +60,7 @@
 |---|---|---|---|
 | `VFS_HYBRIDMOUNT` | Hybrid Mount VFS | `true` | `fs/hybridmount` (本仓库 4.19 内置移植) |
 | `VFS_NOMOUNT` | NoMount VFS | `false` | `fs/nomount` (上游 `setup.sh` 集成) |
-| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | **尚未实现** —— 开启会导致构建失败 |
+| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | `fs/zeromount` (本仓库自研 4.19 移植, SUSFS 感知) |
 
 在 `build-oneplus-8-los23-a16.yml` 的 `env:` 段修改，或使用工作流暴露的
 `workflow_dispatch` 输入（视具体工作流而定）。
@@ -72,6 +73,24 @@
 > 两者元模块与工具链**互不通用**。按你的 userspace 管理器支持哪套来选。
 >
 > AK3 标题行在构建时按**实际启用**的后端动态拼装，因此标题不会出现内核里其实没有的后端。
+>
+> **ZeroMount 移植说明**：上游 `Enginex0/zeromount` 只提供 5.4 / 5.10 / 5.15 / 6.1 / 6.6 / 6.12
+> 的补丁，non-GKI 4.19 在它的 roadmap 里仍标着 *Planned*。本仓库的
+> `Patches/Patch/zeromount_patch_to_4.19.patch` 是自研移植（12 个文件、+1962 行），
+> 与 ZeroMount 5.4 原版保持 `zeromount.c` / `zeromount.h` **逐字一致**，差异只在
+> 4.19 内核侧的接线：
+>
+> - 4.19 没有 `CONFIG_ANDROID_VENDOR_OEM_DATA` / `current->android_oem_data1`，
+>   自动回落到头文件内置的 `current->journal_info` 重入标记分支；
+> - 4.19 的 `SYSCALL_DEFINE3(getdents64, ...)` 只是 `ksys_getdents64()` 的壳，
+>   真正的 `iterate_dir` 调用在后者里，因此 dents 注入钩子挂在 `ksys_getdents64`；
+> - `vfs_getattr` / `inode_permission` / `kern_path` / `lookup_one_len` 等接口签名
+>   与 5.4 完全一致，无需适配。
+>
+> 该补丁的**基线是「SUSFS + HybridMount 之后」的树**（不是 pristine 4.19），因为它与
+> SUSFS 在 `fs/readdir.c`（SUSFS 重写了 `iterate_dir` 调用点并加 `orig_flow:` 标签）
+> 和 `fs/proc/task_mmu.c`（两者都要往 `show_map_vma` 插钩子）上有大量上下文重叠。
+> 工作流里 ZeroMount 步骤已排在 SUSFS / BakaSU hooks / HybridMount 之后，顺序不能调换。
 
 ## 关键配置项 (build-oneplus-8-los23-a16.yml)
 
