@@ -119,7 +119,7 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 | `0001-resukisu-inline-hooks.patch` | ReSukiSU SUSFS inline 模式官方 7 个内联钩子 (exec / open / read_write / stat / input / reboot / setresuid) + fs/stat.c 的 SUS_KSTAT 片段 + kernel/sys.c uname 伪装片段 | 401 |
 | `0002-susfs-v2.3.0.patch` | SUSFS v2.3.0 全部内核侧代码 (18 个文件: `fs/susfs.c`、`include/linux/susfs.h`、`susfs_def.h`、namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | 4184 |
 | `0003-netprio-cgroup-css-id.patch` | 修复 luk 树 `net_prio` 使用 `css->cgroup->id` (该树 `struct cgroup` 无 `id` 成员) → `css->id`, 5 处; 仅当 DroidSpaces 打开 `CONFIG_CGROUP_NET_PRIO` 时需要 | 54 |
-| `0004-hybridmount-vfs.patch` | Hybrid Mount 的 VFS 后端子系统 (`fs/hybridmount/`, fork 自 NoMount, 通过 keyring 驱动) built-in 集成; 7 文件: `fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}` | 3102 |
+| `0004-hybridmount-vfs.patch` | Hybrid Mount 的 VFS 后端子系统 (`fs/hybridmount/`, fork 自 NoMount, 通过 keyring 驱动) built-in 集成; 7 文件: `fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}` | 3155 |
 | `susfs.config` | KSU + SUSFS 编译开关 (merge_config 片段); 同时负责关闭 `CONFIG_MODULE_SIG_FORCE` 以保证 OOS 原厂模块可加载 | 40 |
 | `hybridmount.config` | Hybrid Mount 编译开关 (`CONFIG_HYBRIDMOUNT=y` + 显式 `CONFIG_KEYS=y` / `CONFIG_ASSOCIATIVE_ARRAY=y`) | 34 |
 | `nomount.config` | NoMount 编译开关 (`CONFIG_NOMOUNT=y` + 显式 `CONFIG_KEYS=y` / `CONFIG_ASSOCIATIVE_ARRAY=y`); 受 `VFS_NOMOUNT` / `vfs_nomount` 控制 | 40 |
@@ -138,7 +138,13 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 >
 > `0004-hybridmount-vfs.patch` 与 master / KSU 分支的
 > `Patches/Patch/hybridmount_patch_to_4.19.patch` 是**同一份内容**
-> (md5 `43debcca69d6dbb6320fc30c1964b997`), 仅文件名按本目录的编号约定重命名。
+> (md5 `fefe83d6fc4e0b8c36f6f2455c0e9314`), 仅文件名按本目录的编号约定重命名。
+>
+> 已同步上游 `Hybrid-Mount/meta-hybrid_mount` **`dev`** 分支 (v6.2.3-rc.3) 的内核侧
+> `module/vfs/src/hybridmount.{c,h}`：包含 `parent_path` 生命周期固定（防止被劫持 inode
+> 被回收的 UAF）、inode 发布/回收竞态重构、UID 快速路径等修复；并**保留**本仓库 4.19 专属的
+> `struct name_snapshot` 兼容 shim（`hm_snapshot_qstr()`，4.19 的 `name_snapshot.name` 是裸指针，
+> 而非 ≥5.2 的 `struct qstr`）。
 >
 > `0005-zeromount-vfs.patch` 与 master / KSU 分支的
 > `Patches/Patch/zeromount_patch_to_4.19.patch` 是**同一份内容**，
