@@ -36,7 +36,7 @@
 | 文件 | 内容 | 行数 |
 |---|---|---|
 | `0001-stage1-resukisu.patch` | BakaSU inline hooks（8 文件）+ defconfig + Makefile/Kconfig 接线 | 433 |
-| `0002-stage2-susfs.patch` | SUSFS v2.3.0 全部内核侧代码（17 文件） | 2066 |
+| `0002-stage2-susfs.patch` | SUSFS v2.3.0 全部内核侧代码（17 文件；含 `fs/susfs.c`、`include/linux/susfs.h`、`susfs_def.h` 三个核心文件） | 4026 |
 | `0003-stage3-droidspaces.patch` | cgroup 前缀隐藏 + droidspaces.config | 16 |
 | `0004-hybridmount-vfs.patch` | Hybrid Mount VFS 后端子系统（`fs/hybridmount/`，fork 自 NoMount，keyring 驱动）built-in 集成（7 文件：`fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}`） | 3102 |
 | `0005-zeromount-vfs.patch` | ZeroMount VFS 后端子系统（`fs/zeromount.c` + `include/linux/zeromount.h`，自带 `/dev/zeromount` 字符设备 + ioctl 协议，不依赖 keyring）built-in 自研 4.19 移植（12 文件） | 2357 |
@@ -96,6 +96,20 @@ Non-GKI 必须显式启用 manual hook：
 
 > 构建时若看到 `WARNING: Detected KSU_MANUAL_HOOK guard in ../fs/stat.c` 属**预期正常**，
 > 这是 SUSFS inline 模式门禁认出我们的守卫，不影响构建。
+
+### 4. `0002` 漏打核心文件 + stage2/3 未切换到 SUSFS（构建期修复）
+
+- **`0002-stage2-susfs.patch` 原先只有 14 个文件**：`git diff` 生成时漏掉了三个**新增文件**
+  （`fs/susfs.c`、`include/linux/susfs.h`、`include/linux/susfs_def.h`），导致
+  `CONFIG_KSU_SUSFS=y` 时 `susfs_*` 符号全部未定义。现补齐为 17 文件（与共享
+  `Patches/Patch/susfs_patch_to_4.19.patch` 逐字节一致）。
+- **BakaSU 的钩子方式是三选一 `choice`**（`KSU_TRACEPOINT_HOOK` / `KSU_MANUAL_HOOK` /
+  `KSU_SUSFS`，`default KSU_TRACEPOINT_HOOK`，且 `KSU_SUSFS` **无默认值**）。`0001` 写死
+  `CONFIG_KSU_MANUAL_HOOK=y`，因此 stage2/3 若不显式改用 `CONFIG_KSU_SUSFS=y`，
+  SUSFS 根本不会生效（Verify 会失败）。工作流现在按阶段显式设定：
+  - stage1：`KSU_MANUAL_HOOK=y` + `KSU_SUSFS=n`
+  - stage2/3 且 SUSFS 开：移除 `MANUAL_HOOK`，写 `KSU_SUSFS=y`
+  - stage2/3 且 SUSFS 关：`KSU_MANUAL_HOOK=y` + `KSU_SUSFS=n`
 
 ## 环境依赖（本地验证实测）
 

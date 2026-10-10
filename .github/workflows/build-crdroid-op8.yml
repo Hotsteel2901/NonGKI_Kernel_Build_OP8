@@ -202,12 +202,12 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/vendor/oplus.config
-          if [ "${{ inputs.susfs_enable }}" != "true" ]; then
-            # SUSFS 关闭：显式关掉（BakaSU 的 Kconfig 默认可能为 y），
-            # 否则会残留 SUSFS 代码却没有对应的内核补丁。
-            sed -i '/^CONFIG_KSU_SUSFS=/d' arch/arm64/configs/$DEFCONFIG_NAME
-            echo "CONFIG_KSU_SUSFS=n" >> arch/arm64/configs/$DEFCONFIG_NAME
-          fi
+          # Stage1 = 仅 BakaSU（手动钩子）。BakaSU 钩子方式是三选一 choice
+          # (TRACEPOINT/MANUAL/SUSFS)，0001 已写 MANUAL_HOOK=y；这里确定 manual=y、SUSFS=n。
+          sed -i '/^CONFIG_KSU_MANUAL_HOOK=/d' out/.config
+          sed -i '/^CONFIG_KSU_SUSFS=/d' out/.config
+          echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS=n" >> out/.config
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -545,11 +545,15 @@ jobs:
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               ../Patches/crdroid/zeromount.config
           fi
-          if [ "${{ inputs.susfs_enable }}" != "true" ]; then
-            # SUSFS 关闭：显式关掉（BakaSU 的 Kconfig 默认可能为 y），
-            # 否则会残留 SUSFS 代码却没有对应的内核补丁。
-            sed -i '/^CONFIG_KSU_SUSFS=/d' arch/arm64/configs/$DEFCONFIG_NAME
-            echo "CONFIG_KSU_SUSFS=n" >> arch/arm64/configs/$DEFCONFIG_NAME
+          # Stage2/3 钩子方式（choice 三选一）：SUSFS 开启→切到 SUSFS inline，
+          # 因与 MANUAL_HOOK 互斥必须移除它；关闭→保持手动钩子。
+          sed -i '/^CONFIG_KSU_MANUAL_HOOK=/d' out/.config
+          sed -i '/^CONFIG_KSU_SUSFS=/d' out/.config
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            echo "CONFIG_KSU_SUSFS=y" >> out/.config
+          else
+            echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS=n" >> out/.config
           fi
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
@@ -886,11 +890,15 @@ jobs:
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               ../Patches/crdroid/zeromount.config
           fi
-          if [ "${{ inputs.susfs_enable }}" != "true" ]; then
-            # SUSFS 关闭：显式关掉（BakaSU 的 Kconfig 默认可能为 y），
-            # 否则会残留 SUSFS 代码却没有对应的内核补丁。
-            sed -i '/^CONFIG_KSU_SUSFS=/d' arch/arm64/configs/$DEFCONFIG_NAME
-            echo "CONFIG_KSU_SUSFS=n" >> arch/arm64/configs/$DEFCONFIG_NAME
+          # Stage2/3 钩子方式（choice 三选一）：SUSFS 开启→切到 SUSFS inline，
+          # 因与 MANUAL_HOOK 互斥必须移除它；关闭→保持手动钩子。
+          sed -i '/^CONFIG_KSU_MANUAL_HOOK=/d' out/.config
+          sed -i '/^CONFIG_KSU_SUSFS=/d' out/.config
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            echo "CONFIG_KSU_SUSFS=y" >> out/.config
+          else
+            echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS=n" >> out/.config
           fi
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
