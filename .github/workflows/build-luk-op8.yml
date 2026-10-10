@@ -37,6 +37,12 @@ on:
         type: boolean
         default: true
 
+      susfs_enable:
+        description: '集成 SUSFS (默认开启; 关闭则改用 syscall 手动钩子 + BakaSU 手动模式)'
+        required: true
+        type: boolean
+        default: true
+
       # ───────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（三选一，互斥！）
       # ───────────────────────────────────────────────────────────────────
@@ -194,13 +200,20 @@ jobs:
             sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
           echo "[+] BakaSU wired."
 
-      - name: 🪝 Apply BakaSU inline hooks patch
+      - name: 🪝 Apply KernelSU hooks (SUSFS inline / syscall fallback)
         run: |
           cd device_kernel
-          patch -p1 < ../Patches/luk/0001-resukisu-inline-hooks.patch
-          echo "[+] BakaSU inline hooks applied."
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            patch -p1 < ../Patches/luk/0001-resukisu-inline-hooks.patch
+            echo "[+] BakaSU SUSFS inline hooks applied."
+          else
+            # SUSFS 关闭：改用 syscall（手动）钩子回退
+            bash ../Patches/syscall_hook_patches.sh ./
+            echo "[+] KernelSU syscall hooks applied (SUSFS disabled)."
+          fi
 
       - name: 🪝 Apply SUSFS v2.3.0 patch
+        if: inputs.susfs_enable
         run: |
           cd device_kernel
           patch -p1 < ../Patches/luk/0002-susfs-v2.3.0.patch
@@ -286,17 +299,24 @@ jobs:
           # 思路写成（86 删 / 46 增），应用时 0 reject 却把 ksu_handle_stat 静默删掉，
           # 最终死在 BakaSU 的 inline_hook_check.mk（"You lost ksu_handle_stat hook"）。
           # 因此必须逐符号确认补丁后钩子仍在，任何 SUSFS/KSU 钩子丢失即判定失败。
-          for chk in \
-            "fs/stat.c:ksu_handle_stat" \
-            "fs/stat.c:ksu_handle_vfs_fstat" \
-            "fs/stat.c:ksu_is_init_rc_hook_enabled" \
-            "fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr" \
-            "fs/stat.c:zeromount_stat_hook" \
-            "fs/exec.c:ksu_handle_execveat" \
-            "fs/open.c:ksu_handle_faccessat" \
-            "fs/read_write.c:ksu_handle_sys_read" \
-            "kernel/sys.c:ksu_handle_setresuid" \
-          ; do
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
+              fs/stat.c:ksu_handle_vfs_fstat \
+              fs/stat.c:ksu_is_init_rc_hook_enabled \
+              fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr \
+              fs/stat.c:zeromount_stat_hook \
+              fs/exec.c:ksu_handle_execveat \
+              fs/open.c:ksu_handle_faccessat \
+              fs/read_write.c:ksu_handle_sys_read \
+              kernel/sys.c:ksu_handle_setresuid"
+          else
+            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
+              fs/stat.c:zeromount_stat_hook \
+              fs/exec.c:ksu_handle_execveat \
+              fs/open.c:ksu_handle_faccessat \
+              kernel/sys.c:ksu_handle_setresuid"
+          fi
+          for chk in $ZM_CHECKS; do
             chk_file="${chk%%:*}"
             chk_sym="${chk##*:}"
             if ! grep -q "$chk_sym" "$chk_file"; then
@@ -374,8 +394,13 @@ jobs:
           make O=out $MAKE_OPTS $TOPTS $DEFCONFIG_NAME
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/vendor/oplus.config
-          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
-            ../Patches/luk/susfs.config
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              ../Patches/luk/susfs.config
+          else
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              ../Patches/luk/nosusfs.config
+          fi
           if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               ../Patches/luk/hybridmount.config
@@ -455,10 +480,14 @@ jobs:
       - name: ✅ Verify
         run: |
           cd device_kernel
-          grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS 未生效"; exit 1; }
-          grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS 版本异常"; exit 1; }
           nm out/vmlinux | grep -q "ksu_handle_execveat" || { echo "[-] KSU 符号缺失"; exit 1; }
-          nm out/vmlinux | grep -q "susfs_" || { echo "[-] SUSFS 符号缺失"; exit 1; }
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS 未生效"; exit 1; }
+            grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS 版本异常"; exit 1; }
+            nm out/vmlinux | grep -q "susfs_" || { echo "[-] SUSFS 符号缺失"; exit 1; }
+          else
+            echo "[i] SUSFS disabled — skipped SUSFS symbol checks."
+          fi
           if [ "${{ inputs.enable_droidspaces }}" = "true" ]; then
             grep -q "^CONFIG_USER_NS=y" out/.config || { echo "[-] USER_NS 缺失"; exit 1; }
             grep -q "kernfs_create_link" kernel/cgroup/cgroup.c || { echo "[-] cgroup 补丁缺失"; exit 1; }

@@ -11,6 +11,11 @@ name: Build Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
 on:
   workflow_call:
     inputs:
+      susfs_enable:
+        description: '集成 SUSFS (默认开启; 关闭则改用 syscall 手动钩子)'
+        required: false
+        type: boolean
+        default: true
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: false
@@ -35,6 +40,11 @@ on:
         value: ${{ jobs.build-kernel.outputs.build_sha }}
   workflow_dispatch:
     inputs:
+      susfs_enable:
+        description: '集成 SUSFS (默认开启; 关闭则改用 syscall 手动钩子)'
+        required: true
+        type: boolean
+        default: true
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: true
@@ -92,7 +102,10 @@ env:
   KERNELSU_AUTO_GET : "true" # if u want easy setting kernelsu, u can true.
   KERNELSU_AUTO_FORK : "resukisu" # xxksu, rsuntk, next, resukisu and sukisu
 
-  SUSFS_ENABLE : true
+  # SUSFS 由 UI 勾选控制（susfs_enable 输入），默认开启。
+  # 关闭时：不应用 SUSFS 补丁，改用 Patches/syscall_hook_patches.sh 的手动钩子。
+  # 注意: 直接用 inputs 表达式，避免 workflow 级 env 覆盖 GITHUB_ENV 运行时值。
+  SUSFS_ENABLE : ${{ inputs.susfs_enable }}
   SUSFS_FIXED : false
 
   AK3_SOURCE : "https://github.com/osm0sis/AnyKernel3.git"
@@ -260,13 +273,21 @@ jobs:
       - name: 🪝 Patch Kernel of SUSFS
         uses: ./.github/workflows/patch-susfs
 
-      - name: 🔗 Patch BakaSU Inline Hooks
+      - name: 🔗 Patch KernelSU Hooks (SUSFS inline / syscall fallback)
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
-          cp /tmp/Patches/Patch/resukisu_inline_hooks.patch ./
-          patch -p1 < resukisu_inline_hooks.patch || true
-          rm -f resukisu_inline_hooks.patch
-          echo "[+] BakaSU inline hooks patched."
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            cp /tmp/Patches/Patch/resukisu_inline_hooks.patch ./
+            patch -p1 < resukisu_inline_hooks.patch || true
+            rm -f resukisu_inline_hooks.patch
+            echo "[+] BakaSU SUSFS inline hooks patched."
+          else
+            # SUSFS 关闭：改用 syscall（手动）钩子回退
+            cp /tmp/Patches/syscall_hook_patches.sh ./
+            bash syscall_hook_patches.sh ./
+            rm -f syscall_hook_patches.sh
+            echo "[+] KernelSU syscall hooks patched (SUSFS disabled)."
+          fi
 
       - name: 🧩 Patch Hybrid Mount VFS Subsystem
         if: inputs.vfs_hybridmount == true
@@ -400,22 +421,30 @@ jobs:
           # 却把 ksu_handle_stat 等钩子静默删掉了，最后死在 BakaSU 的
           # inline_hook_check.mk（"You lost ksu_handle_stat hook"）。
           # 所以这里必须逐符号核对「补丁后仍存在」，任何 SUSFS/KSU 钩子丢失即失败。
-          for chk in \
-            "fs/stat.c:ksu_handle_stat" \
-            "fs/stat.c:ksu_handle_vfs_fstat" \
-            "fs/stat.c:ksu_is_init_rc_hook_enabled" \
-            "fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr" \
-            "fs/stat.c:zeromount_stat_hook" \
-            "fs/exec.c:ksu_handle_execveat" \
-            "fs/open.c:ksu_handle_faccessat" \
-            "fs/read_write.c:ksu_handle_sys_read" \
-            "kernel/sys.c:ksu_handle_setresuid" \
-          ; do
+          # SUSFS 开启时核对全套符号；关闭时 SUSFS 专有符号不存在，只核对核心钩子
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
+              fs/stat.c:ksu_handle_vfs_fstat \
+              fs/stat.c:ksu_is_init_rc_hook_enabled \
+              fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr \
+              fs/stat.c:zeromount_stat_hook \
+              fs/exec.c:ksu_handle_execveat \
+              fs/open.c:ksu_handle_faccessat \
+              fs/read_write.c:ksu_handle_sys_read \
+              kernel/sys.c:ksu_handle_setresuid"
+          else
+            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
+              fs/stat.c:zeromount_stat_hook \
+              fs/exec.c:ksu_handle_execveat \
+              fs/open.c:ksu_handle_faccessat \
+              kernel/sys.c:ksu_handle_setresuid"
+          fi
+          for chk in $ZM_CHECKS; do
             chk_file="${chk%%:*}"
             chk_sym="${chk##*:}"
             if ! grep -q "$chk_sym" "$chk_file"; then
               echo "[-] $chk_sym missing from $chk_file after ZeroMount patch!"
-              echo "[-] (ZeroMount 补丁必须与 SUSFS/KSU 钩子共存，不能覆盖它们)"
+              echo "[-] (ZeroMount 补丁必须与 KernelSU 钩子共存，不能覆盖它们)"
               false
             fi
           done
