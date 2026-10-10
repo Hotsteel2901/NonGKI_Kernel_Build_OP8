@@ -31,6 +31,12 @@ on:
         type: string
         default: ''
 
+      susfs_enable:
+        description: '集成 SUSFS (默认开启; 关闭则 stage2/3 不集成 SUSFS)'
+        required: true
+        type: boolean
+        default: true
+
       # ─────────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（三选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
@@ -196,6 +202,12 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/vendor/oplus.config
+          if [ "${{ inputs.susfs_enable }}" != "true" ]; then
+            # SUSFS 关闭：显式关掉（BakaSU 的 Kconfig 默认可能为 y），
+            # 否则会残留 SUSFS 代码却没有对应的内核补丁。
+            sed -i '/^CONFIG_KSU_SUSFS=/d' arch/arm64/configs/$DEFCONFIG_NAME
+            echo "CONFIG_KSU_SUSFS=n" >> arch/arm64/configs/$DEFCONFIG_NAME
+          fi
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -367,6 +379,7 @@ jobs:
         run: cd device_kernel && patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
 
       - name: 🪝 Apply Stage2 patch (SUSFS v2.3.0)
+        if: inputs.susfs_enable
         run: |
           cd device_kernel
           patch -p1 < ../Patches/crdroid/0002-stage2-susfs.patch
@@ -452,17 +465,24 @@ jobs:
           # 思路写成（86 删 / 46 增），应用时 0 reject 却把 ksu_handle_stat 静默删掉，
           # 最终死在 BakaSU 的 inline_hook_check.mk（"You lost ksu_handle_stat hook"）。
           # 因此必须逐符号确认补丁后钩子仍在。
-          for chk in \
-            "fs/stat.c:ksu_handle_stat" \
-            "fs/stat.c:ksu_handle_vfs_fstat" \
-            "fs/stat.c:ksu_is_init_rc_hook_enabled" \
-            "fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr" \
-            "fs/stat.c:zeromount_stat_hook" \
-            "fs/exec.c:ksu_handle_execveat" \
-            "fs/open.c:ksu_handle_faccessat" \
-            "fs/read_write.c:ksu_handle_sys_read" \
-            "kernel/sys.c:ksu_handle_setresuid" \
-          ; do
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
+              fs/stat.c:ksu_handle_vfs_fstat \
+              fs/stat.c:ksu_is_init_rc_hook_enabled \
+              fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr \
+              fs/stat.c:zeromount_stat_hook \
+              fs/exec.c:ksu_handle_execveat \
+              fs/open.c:ksu_handle_faccessat \
+              fs/read_write.c:ksu_handle_sys_read \
+              kernel/sys.c:ksu_handle_setresuid"
+          else
+            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
+              fs/stat.c:zeromount_stat_hook \
+              fs/exec.c:ksu_handle_execveat \
+              fs/open.c:ksu_handle_faccessat \
+              kernel/sys.c:ksu_handle_setresuid"
+          fi
+          for chk in $ZM_CHECKS; do
             chk_file="${chk%%:*}"
             chk_sym="${chk##*:}"
             if ! grep -q "$chk_sym" "$chk_file"; then
@@ -525,6 +545,12 @@ jobs:
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               ../Patches/crdroid/zeromount.config
           fi
+          if [ "${{ inputs.susfs_enable }}" != "true" ]; then
+            # SUSFS 关闭：显式关掉（BakaSU 的 Kconfig 默认可能为 y），
+            # 否则会残留 SUSFS 代码却没有对应的内核补丁。
+            sed -i '/^CONFIG_KSU_SUSFS=/d' arch/arm64/configs/$DEFCONFIG_NAME
+            echo "CONFIG_KSU_SUSFS=n" >> arch/arm64/configs/$DEFCONFIG_NAME
+          fi
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -540,9 +566,14 @@ jobs:
       - name: ✅ Verify Stage2
         run: |
           cd device_kernel
-          grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
-          grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS version mismatch"; exit 1; }
-          nm out/vmlinux | grep -q "susfs" || { echo "[-] susfs symbols missing"; exit 1; }
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
+            grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS version mismatch"; exit 1; }
+            nm out/vmlinux | grep -q "susfs" || { echo "[-] susfs symbols missing"; exit 1; }
+          else
+            grep -q "^CONFIG_KSU_SUSFS=y" out/.config && { echo "[-] SUSFS 未按预期关闭"; exit 1; } || true
+            echo "[i] SUSFS disabled — skipped SUSFS symbol checks."
+          fi
           # VFS 后端校验：只检查实际启用的那一个
           if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
             grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
@@ -705,6 +736,7 @@ jobs:
         run: cd device_kernel && patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
 
       - name: 🪝 Apply Stage2 patch
+        if: inputs.susfs_enable
         run: cd device_kernel && patch -p1 < ../Patches/crdroid/0002-stage2-susfs.patch
 
       - name: 🧩 Apply Hybrid Mount VFS patch
@@ -760,17 +792,24 @@ jobs:
           # 思路写成（86 删 / 46 增），应用时 0 reject 却把 ksu_handle_stat 静默删掉，
           # 最终死在 BakaSU 的 inline_hook_check.mk（"You lost ksu_handle_stat hook"）。
           # 因此必须逐符号确认补丁后钩子仍在。
-          for chk in \
-            "fs/stat.c:ksu_handle_stat" \
-            "fs/stat.c:ksu_handle_vfs_fstat" \
-            "fs/stat.c:ksu_is_init_rc_hook_enabled" \
-            "fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr" \
-            "fs/stat.c:zeromount_stat_hook" \
-            "fs/exec.c:ksu_handle_execveat" \
-            "fs/open.c:ksu_handle_faccessat" \
-            "fs/read_write.c:ksu_handle_sys_read" \
-            "kernel/sys.c:ksu_handle_setresuid" \
-          ; do
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
+              fs/stat.c:ksu_handle_vfs_fstat \
+              fs/stat.c:ksu_is_init_rc_hook_enabled \
+              fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr \
+              fs/stat.c:zeromount_stat_hook \
+              fs/exec.c:ksu_handle_execveat \
+              fs/open.c:ksu_handle_faccessat \
+              fs/read_write.c:ksu_handle_sys_read \
+              kernel/sys.c:ksu_handle_setresuid"
+          else
+            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
+              fs/stat.c:zeromount_stat_hook \
+              fs/exec.c:ksu_handle_execveat \
+              fs/open.c:ksu_handle_faccessat \
+              kernel/sys.c:ksu_handle_setresuid"
+          fi
+          for chk in $ZM_CHECKS; do
             chk_file="${chk%%:*}"
             chk_sym="${chk##*:}"
             if ! grep -q "$chk_sym" "$chk_file"; then
@@ -847,6 +886,12 @@ jobs:
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               ../Patches/crdroid/zeromount.config
           fi
+          if [ "${{ inputs.susfs_enable }}" != "true" ]; then
+            # SUSFS 关闭：显式关掉（BakaSU 的 Kconfig 默认可能为 y），
+            # 否则会残留 SUSFS 代码却没有对应的内核补丁。
+            sed -i '/^CONFIG_KSU_SUSFS=/d' arch/arm64/configs/$DEFCONFIG_NAME
+            echo "CONFIG_KSU_SUSFS=n" >> arch/arm64/configs/$DEFCONFIG_NAME
+          fi
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -862,7 +907,11 @@ jobs:
       - name: ✅ Verify Stage3
         run: |
           cd device_kernel
-          grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
+          else
+            echo "[i] SUSFS disabled — skipped SUSFS check."
+          fi
           grep -q "^CONFIG_USER_NS=y" out/.config || { echo "[-] USER_NS missing"; exit 1; }
           grep -q "^CONFIG_PID_NS=y" out/.config || { echo "[-] PID_NS missing"; exit 1; }
           grep -q "kernfs_create_link" kernel/cgroup/cgroup.c || { echo "[-] cgroup patch missing"; exit 1; }
