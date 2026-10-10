@@ -38,7 +38,7 @@
 | `0001-stage1-resukisu.patch` | BakaSU inline hooks（8 文件）+ defconfig + Makefile/Kconfig 接线 | 433 |
 | `0002-stage2-susfs.patch` | SUSFS v2.3.0 全部内核侧代码（17 文件；含 `fs/susfs.c`、`include/linux/susfs.h`、`susfs_def.h` 三个核心文件） | 4026 |
 | `0003-stage3-droidspaces.patch` | cgroup 前缀隐藏 + droidspaces.config | 16 |
-| `0004-hybridmount-vfs.patch` | Hybrid Mount VFS 后端子系统（`fs/hybridmount/`，fork 自 NoMount，keyring 驱动）built-in 集成（7 文件：`fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}`） | 3102 |
+| `0004-hybridmount-vfs.patch` | Hybrid Mount VFS 后端子系统（`fs/hybridmount/`，fork 自 NoMount，keyring 驱动）built-in 集成（7 文件：`fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}`） | 3155 |
 | `0005-zeromount-vfs.patch` | ZeroMount VFS 后端子系统（`fs/zeromount.c` + `include/linux/zeromount.h`，自带 `/dev/zeromount` 字符设备 + ioctl 协议，不依赖 keyring）built-in 自研 4.19 移植（12 文件） | 2357 |
 | `zeromount.config` | ZeroMount 编译开关（`CONFIG_ZEROMOUNT=y`） | 20 |
 | `droidspaces.config` | DroidSpaces Non-GKI 内核配置（含 USER_NS 等） | 98 |
@@ -61,7 +61,11 @@ keyring 协议**，**同期最多只能开一个**。两个 stage 开头的校�
 > `stage1` 仅集成 BakaSU，不含任何 VFS 后端，跳过该校验。
 >
 > `0004-hybridmount-vfs.patch` 与 `Patches/Patch/hybridmount_patch_to_4.19.patch`
-> 是同一份内容（sha256 `4264a03a...`），后者供共享的 `build-oneplus-8-los23-a16.yml` 使用。
+> 是同一份内容（sha256 `16fb539a15eb5437716b3937512ee12f3860c2d0dc4750329d37c8df76de89dc`），后者供共享的 `build-oneplus-8-los23-a16.yml` 使用。
+>
+> 已同步上游 `Hybrid-Mount/meta-hybrid_mount` **`dev`** 分支（v6.2.3-rc.3）内核侧
+> `module/vfs/src/hybridmount.{c,h}`（`parent_path` 生命周期固定、inode 发布/回收竞态修复等），
+> 并保留本仓库 4.19 专属的 `struct name_snapshot` 兼容 shim。
 >
 > AK3 标题按实际启用的后端动态拼装（`AK3_TITLE_STAGE{2,3}_PREFIX` + VFS 段 + `_SUFFIX`），
 > 关了某个后端标题里就不会再出现它的名字。
