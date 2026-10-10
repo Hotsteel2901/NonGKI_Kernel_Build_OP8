@@ -26,6 +26,12 @@ on:
         type: boolean
         default: true
 
+      susfs_enable:
+        description: '集成 SUSFS (默认开启; KSU 分支为手写桥接, 关闭则不集成)'
+        required: true
+        type: boolean
+        default: true
+
       # ─────────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（三选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
@@ -57,6 +63,7 @@ jobs:
       fail-fast: true
     if: github.event_name == 'workflow_dispatch' && inputs.build-kernel == true
     with:
+      susfs_enable: ${{ inputs.susfs_enable }}
       vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
       vfs_nomount: ${{ inputs.vfs_nomount }}
       vfs_zeromount: ${{ inputs.vfs_zeromount }}

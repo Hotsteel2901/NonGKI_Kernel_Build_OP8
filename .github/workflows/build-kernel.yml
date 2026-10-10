@@ -18,6 +18,11 @@ permissions:
 on:
   workflow_call:
     inputs:
+      susfs_enable:
+        description: '集成 SUSFS (默认开启; KSU 分支为手写桥接, 关闭则不集成)'
+        required: false
+        type: boolean
+        default: true
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: false
@@ -41,6 +46,11 @@ on:
         value: ${{ jobs.build-oneplus-8-lineageos23-a16.outputs.build_sha }}
   workflow_dispatch:
     inputs:
+      susfs_enable:
+        description: '集成 SUSFS (默认开启; KSU 分支为手写桥接, 关闭则不集成)'
+        required: true
+        type: boolean
+        default: true
       # ─────────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（三选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
@@ -77,8 +87,9 @@ jobs:
     # outputs 由上层 workflow_call.outputs 的 value 表达式自动映射，
     # 这里无需重复声明，仅作说明。
     with:
-      # 透传 VFS 后端选择。workflow_dispatch 直触发时用 UI 的值；
+      # 透传 SUSFS / VFS 选择。workflow_dispatch 直触发时用 UI 的值；
       # 被 build-release.yml 调用时用对方 with: 传入的值。
+      susfs_enable: ${{ inputs.susfs_enable }}
       vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
       vfs_nomount: ${{ inputs.vfs_nomount }}
       vfs_zeromount: ${{ inputs.vfs_zeromount }}
