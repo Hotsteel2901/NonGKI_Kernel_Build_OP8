@@ -54,6 +54,12 @@
 > 7 个钩子均通过 BakaSU `inline_hook_check.mk` 的编译期校验 (static_key 门控)。
 > 因 4.19 的 `__do_execve_file()` 成功路径在 `out_free:` 之前提前返回, `ksu_handle_post_execveat_sucompat`
 > 钩子置于 exec 成功路径 (su fd 必须在 exec 进 ksud 之后安装; 与官方 5.10 `do_execveat_common` 布局语义等价)。
+>
+> Hybrid Mount VFS 已同步上游 `Hybrid-Mount/meta-hybrid_mount` **`dev`** 分支 (v6.2.3-rc.3) 的内核侧
+> `module/vfs/src/hybridmount.{c,h}`：含 `parent_path` 生命周期固定（防被劫持 inode 被回收的 UAF）、
+> inode 发布/回收竞态重构、UID 快速路径等；并**保留** 4.19 专属的 `struct name_snapshot` 兼容 shim
+> (`hm_snapshot_qstr()`，因 4.19 的 `name_snapshot.name` 是裸指针而非 ≥5.2 的 `struct qstr`)。
+> 该上游内核源由官方 `module/vfs/setup.sh` 在 `dev` 分支提供，本仓库仅做 built-in 化与 4.19 适配。
 
 ## VFS 路径重定向后端（三选一）
 

@@ -54,6 +54,13 @@ Chinese docs: [README_cn.md](README_cn.md)
 > On 4.19 `__do_execve_file()` returns early (before `out_free:`) on the success path, so
 > `ksu_handle_post_execveat_sucompat` sits on the exec-success path (the su fd must be installed after the
 > exec into ksud - semantically the same spot as in the official 5.10 `do_execveat_common` layout).
+>
+> Hybrid Mount VFS is synced to upstream `Hybrid-Mount/meta-hybrid_mount` **`dev`** (v6.2.3-rc.3) kernel-side
+> `module/vfs/src/hybridmount.{c,h}`: `parent_path` lifetime pinning (prevents UAF when the hijacked inode is
+> reclaimed), the inode publish/evict race rework, the UID fast path, etc. The 4.19-only `struct name_snapshot`
+> compatibility shim (`hm_snapshot_qstr()` - 4.19's `name_snapshot.name` is a raw pointer, not the ≥5.2 `struct
+> qstr`) is kept. Upstream ships this kernel source via `module/vfs/setup.sh` on `dev`; this repo only makes it
+> built-in and 4.19-adapted.
 
 ## VFS backends (pick at most ONE)
 
