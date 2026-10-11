@@ -356,7 +356,7 @@ runs:
 
           # Fork
           if [[ "${{ env.KERNELSU_SOURCE }}" == *rsuntk* ]] || [[ "${{ env.KERNELSU_SOURCE }}" == *Next* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "rsuntk" ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "next" ]] || [[ "${{ env.KERNELSU_SOURCE }}" == *ReSukiSU* ]] || [[ "${{ env.KERNELSU_SOURCE }}" == *BakaSU* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "resukisu" ]]; then
-            if [[ ${{ env.SUSFS_ENABLE }} != "true" ]]; then
+            if [[ "${{ env.SUSFS_ENABLE }}" != "true" ]]; then
                 echo "CONFIG_KSU_MANUAL_HOOK=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
 
             fi
