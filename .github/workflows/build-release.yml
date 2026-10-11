@@ -68,7 +68,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Release 标题格式：管理器（分支名） + 时间，例如 "BakaSU (Master) 2026-10-05 10:47"。
       # 时间由 ${TIME} 在运行时拼接，这里只写前缀部分。
-      RELEASE_NAME: "FolkSU (Master)"
+      RELEASE_NAME: "KOWX712 (Master)"
       RELEASE_NOTES: |
         ### English
 
@@ -76,7 +76,7 @@ jobs:
 
         | Device Name | Codename | Kernel | System | Android | Method | KernelSU | SuSFS | Re:Kernel | BBG | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 | Lineage Based OS | 16 | AnyKernel3 | FolkSU | ✗ | ✓ | ✓ | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19 | Lineage Based OS | 16 | AnyKernel3 | KOWX712 | ✗ | ✓ | ✓ | ✓ |
 
         - Specific device information: [Supported List](Supported_list.md).
         - The KernelSU version is for reference only.
@@ -90,7 +90,7 @@ jobs:
            adb sideload NonGKI_Kernel_<codename>_<build>.zip
            ```
         4. Reboot to **System**.
-        5. Install **[FolkSU Manager](https://github.com/LyraVoid/FolkSU/releases)** to manage root.
+        5. Install **[KOWX712 KernelSU Manager](https://github.com/KOWX712/KernelSU/releases)** to manage root.
 
         > **Note**
         > - This is an **AnyKernel3** package: it only replaces the kernel image. Your `/data` is NOT wiped.
@@ -105,7 +105,7 @@ jobs:
 
         | 设备名称 | 代号 | 内核 | 系统 | Android | 方式 | KernelSU | SuSFS | Re:Kernel | BBG | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 | 基于 Lineage 的系统 | 16 | AnyKernel3 | FolkSU | ✗ | ✓ | ✓ | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19 | 基于 Lineage 的系统 | 16 | AnyKernel3 | KOWX712 | ✗ | ✓ | ✓ | ✓ |
 
         - 具体设备信息见 [Supported List](Supported_list.md)。
         - KernelSU 版本号仅供参考。
@@ -119,7 +119,7 @@ jobs:
            adb sideload NonGKI_Kernel_<代号>_<构建号>.zip
            ```
         4. 重启进入 **系统**。
-        5. 安装 **[FolkSU Manager](https://github.com/LyraVoid/FolkSU/releases)** 以管理 root。
+        5. 安装 **[KOWX712 KernelSU Manager](https://github.com/KOWX712/KernelSU/releases)** 以管理 root。
 
         > **注意**
         > - 本包为 **AnyKernel3** 格式：仅替换内核镜像，**不会清空**你的 `/data`。
@@ -155,13 +155,13 @@ jobs:
           KSU_SUKISU_ULTRA_VERSION=$(cd KernelSU-SukiSU-Ultra && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
           git clone -b legacy https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
           KSU_NEXT_VERSION=$(cd KernelSU-Next && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
-          # FolkSU（LyraVoid/FolkSU，master）：
+          # KOWX712/KernelSU（fork 自 backslashxx/KernelSU，master）：
           # kernel/Kbuild 的版本公式为 KSU_VERSION = 30000 + KSU_GIT_VERSION，即 base = 30000。
-          git clone -b master https://github.com/LyraVoid/FolkSU.git KernelSU-FolkSU
-          KSU_FOLKSU_VERSION=$(cd KernelSU-FolkSU && expr $(/usr/bin/git rev-list --count HEAD) + 30000)
+          git clone -b master https://github.com/KOWX712/KernelSU.git KernelSU-KOWX712
+          KSU_KOWX712_VERSION=$(cd KernelSU-KOWX712 && expr $(/usr/bin/git rev-list --count HEAD) + 30000)
 
-          # 本分支实际内置的 root 实现是 FolkSU，tag 里的语义化版本号取它的版本。
-          ROOT_VERSION=$KSU_FOLKSU_VERSION
+          # 本分支实际内置的 root 实现是 KOWX712/KernelSU，tag 里的语义化版本号取它的版本。
+          ROOT_VERSION=$KSU_KOWX712_VERSION
 
           # ---- tag 命名 ----
           # 格式：<分支>-v<管理器版本>-<Unix 时间戳>[ -N ]
@@ -212,7 +212,7 @@ jobs:
           echo "[KernelSU-rsuntk](https://github.com/rsuntk/KernelSU) Version: $KSU_RSUNTK_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-SukiSU-Ultra](https://github.com/ShirkNeko/SukiSU-Ultra) Version: $KSU_SUKISU_ULTRA_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) Version: $KSU_NEXT_VERSION  " >> $GITHUB_ENV
-          echo "[FolkSU](https://github.com/LyraVoid/FolkSU) Version: $KSU_FOLKSU_VERSION  " >> $GITHUB_ENV
+          echo "[KOWX712/KernelSU](https://github.com/KOWX712/KernelSU) Version: $KSU_KOWX712_VERSION  " >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
       # Create GitHub Release and upload files if make_release is true

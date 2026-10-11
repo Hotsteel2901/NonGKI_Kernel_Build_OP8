@@ -190,6 +190,14 @@ runs:
                 KERNELSU_ORIGIN_BRANCH="master"
                 KERNELSU_BRANCH="master"
 
+            elif [[ "${{ env.KERNELSU_AUTO_FORK }}" == "kowx712" ]]; then
+                # KOWX712/KernelSU（fork 自 backslashxx/KernelSU, master）。
+                # 它的 kernel/setup.sh 克隆 KOWX712/KernelSU 自己，故 shell 方式可用。
+                KERNELSU_AUTHOR="KOWX712"
+                KERNELSU_NAME="KernelSU"
+                KERNELSU_ORIGIN_BRANCH="master"
+                KERNELSU_BRANCH="master"
+
             else
                 echo "[-] Please input vaild fork name!"
                 false
@@ -346,9 +354,9 @@ runs:
           # Neccssary
           echo "CONFIG_KSU=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
 
-          # FolkSU: Kconfig `depends on KPROBES && EXT4_FS`；它的 syscall hook
-          # (hook/syscall_hook_manager.c) 用 kprobe/kretprobe，必须开 KPROBES。
-          if [[ "${{ env.KERNELSU_AUTO_FORK }}" == "folksu" ]]; then
+          # FolkSU / KOWX712 / Pseudo-SterSU: Kconfig `depends on KPROBES && EXT4_FS`；
+          # 它们的 syscall hook (hook/syscall_hook_manager.c) 用 kprobe/kretprobe，必须开 KPROBES。
+          if [[ "${{ env.KERNELSU_AUTO_FORK }}" == "folksu" ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "kowx712" ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "stersu" ]]; then
             echo "CONFIG_KPROBES=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
             echo "CONFIG_KRETPROBES=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
             echo "CONFIG_KALLSYMS=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
