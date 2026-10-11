@@ -282,6 +282,14 @@ runs:
             echo "[+] (4.19) stripped MODULE_IMPORT_NS from $KERNELSU_FOLDER/kernel/core/init.c"
           fi
 
+          # Pseudo-SterSU: policy/allowlist.h 用 #include "uapi/app_profile.h"
+          # （uapi/ 在仓库根，不在 kernel/）。在 kernel/ 下建 uapi -> ../uapi 软链，
+          # 让 -I$(KSU_KERNEL_DIR) 能解析到；
+          if [ -n "$KERNELSU_FOLDER" ] && [ -d "$KERNELSU_FOLDER/uapi" ] && [ ! -e "$KERNELSU_FOLDER/kernel/uapi" ]; then
+            ln -sfn ../uapi "$KERNELSU_FOLDER/kernel/uapi"
+            echo "[+] linked $KERNELSU_FOLDER/kernel/uapi -> ../uapi"
+          fi
+
       - name: KPM Function Support
         if: env.KPM_ENABLE == 'true'
         shell: bash
