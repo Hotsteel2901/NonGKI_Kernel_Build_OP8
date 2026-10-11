@@ -190,6 +190,15 @@ runs:
                 KERNELSU_ORIGIN_BRANCH="master"
                 KERNELSU_BRANCH="master"
 
+            elif [[ "${{ env.KERNELSU_AUTO_FORK }}" == "stersu" ]]; then
+                # Pseudo-SterSU (fixz232/Pseudo-SterSU, main)。它的 kernel/setup.sh
+                # 克隆的是 fixz232/ApkeSU 而非自己，所以必须 KERNELSU_METHOD=manual，
+                # 直接 clone Pseudo-SterSU 并用它自带的 kernel/。
+                KERNELSU_AUTHOR="fixz232"
+                KERNELSU_NAME="Pseudo-SterSU"
+                KERNELSU_ORIGIN_BRANCH="main"
+                KERNELSU_BRANCH="main"
+
             else
                 echo "[-] Please input vaild fork name!"
                 false
@@ -346,9 +355,9 @@ runs:
           # Neccssary
           echo "CONFIG_KSU=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
 
-          # FolkSU: Kconfig `depends on KPROBES && EXT4_FS`；它的 syscall hook
-          # (hook/syscall_hook_manager.c) 用 kprobe/kretprobe，必须开 KPROBES。
-          if [[ "${{ env.KERNELSU_AUTO_FORK }}" == "folksu" ]]; then
+          # FolkSU / KOWX712 / Pseudo-SterSU: Kconfig `depends on KPROBES && EXT4_FS`；
+          # 它们的 syscall hook (hook/syscall_hook_manager.c) 用 kprobe/kretprobe，必须开 KPROBES。
+          if [[ "${{ env.KERNELSU_AUTO_FORK }}" == "folksu" ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "kowx712" ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "stersu" ]]; then
             echo "CONFIG_KPROBES=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
             echo "CONFIG_KRETPROBES=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
             echo "CONFIG_KALLSYMS=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}

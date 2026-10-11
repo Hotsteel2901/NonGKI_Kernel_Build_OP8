@@ -1,4 +1,4 @@
-name: Build Oneplus 8 (LineageOS 23.2 A16) (FolkSU Kernel)
+name: Build Oneplus 8 (LineageOS 23.2 A16) (Pseudo-SterSU Kernel)
 
 # ============================================================================
 # 可复用构建工作流（OnePlus 8 / LineageOS 23.2 A16）
@@ -51,7 +51,7 @@ env:
   # 这里只给静态部分（不含 VFS），避免标题与实际集成内容不一致。
   # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
   # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
-  AK3_TITLE_PREFIX: "FolkSU (Master)"
+  AK3_TITLE_PREFIX: "Pseudo-SterSU"
   AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
@@ -77,12 +77,12 @@ env:
   KERNELSU_SOURCE : ""
   KERNELSU_BRANCH : ""
 
-  # 管理器 = FolkSU (LyraVoid/FolkSU, master)。
-  # ⚠️ FolkSU 的 kernel/setup.sh 克隆的是 tiann/KernelSU(官方)而非 FolkSU 自己，
-  #    所以不能用 setup.sh(shell) 方式；改用 KERNELSU_METHOD=manual：
-  #    git clone LyraVoid/FolkSU -b master KernelSU + symlink drivers/kernelsu。
+  # 管理器 = Pseudo-SterSU (fixz232/Pseudo-SterSU, main)。
+  # ⚠️ 它的 kernel/setup.sh 克隆的是 fixz232/ApkeSU，而非 Pseudo-SterSU 自己，
+  #    所以用 KERNELSU_METHOD=manual：git clone fixz232/Pseudo-SterSU -b main KernelSU
+  #    + symlink drivers/kernelsu（直接用它自带的 kernel/）。
   KERNELSU_AUTO_GET : "true"
-  KERNELSU_AUTO_FORK : "folksu" # xxksu, rsuntk, next, resukisu, sukisu, folksu
+  KERNELSU_AUTO_FORK : "stersu" # xxksu, rsuntk, next, resukisu, sukisu, folksu, kowx712, stersu
 
   AK3_SOURCE : "https://github.com/osm0sis/AnyKernel3.git"
   AK3_BRANCH : "master"
@@ -154,7 +154,7 @@ env:
 
 jobs:
   build-kernel:
-    name: Oneplus 8 (LineageOS 23.2 A16) (FolkSU Kernel)
+    name: Oneplus 8 (LineageOS 23.2 A16) (Pseudo-SterSU Kernel)
     runs-on: ubuntu-latest
     outputs:
       build_sha: ${{ steps.build_sha.outputs.build_sha }}
