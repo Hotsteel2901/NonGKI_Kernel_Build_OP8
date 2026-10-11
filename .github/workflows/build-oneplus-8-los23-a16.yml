@@ -618,6 +618,14 @@ jobs:
           cd kernel
           # 外置构建，针对同一个已构建的内核树（out/ 里已有 vmlinux + Module.symvers）。
           # 未定义符号由 ksud insmod 在真机上从 /proc/kallsyms 解析。
+          #
+          # ⚠️ 必须像内核构建那样导出交叉工具链（build-process 里 `export "$GCC_64"`），
+          # 否则模块 relocatable-link 会用宿主 x86_64 的 ld 而失败：
+          #   "ld: unrecognised emulation mode: aarch64linux"
+          # GCC_64/32 形如 "CROSS_COMPILE=aarch64-...-"，由 build-env 写进 $GITHUB_ENV。
+          [ -n "$GCC_64" ] && export "$GCC_64"
+          [ -n "$GCC_32" ] && export "$GCC_32"
+          echo "[i] CROSS_COMPILE=${CROSS_COMPILE:-<unset>}"
           set +e; set -o pipefail
           # NonGKI 内核默认带 -Werror：SUSFS-LKM 只在无 -Werror 下验证过，
           # 这里 KCFLAGS 追加 -Wno-error 把新告警降级（真正的 error 仍会中止）。
