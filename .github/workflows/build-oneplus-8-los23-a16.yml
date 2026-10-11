@@ -601,11 +601,16 @@ jobs:
           git clone --depth=1 --single-branch -b "$SUSFS_LKM_REF" "$SUSFS_LKM_SOURCE" susfs_lkm
           cd susfs_lkm
           echo "SUSFS-LKM HEAD: $(git rev-parse HEAD) ($SUSFS_LKM_REF)"
+          # 注意：build-env 里执行过 `mv $GITHUB_WORKSPACE/Patches /tmp/`，
+          # 所以这里必须用 /tmp/Patches/...（工作流其它步骤同理）。
           shopt -s nullglob
-          for p in "$GITHUB_WORKSPACE"/Patches/SUSFS-LKM/*.patch; do
+          for p in /tmp/Patches/SUSFS-LKM/*.patch; do
             echo "[+] applying $(basename "$p")"
             patch -p1 < "$p" || { echo "::error::$(basename "$p") failed to apply"; exit 1; }
           done
+          if [ "$(ls -1 /tmp/Patches/SUSFS-LKM/*.patch 2>/dev/null | wc -l)" -eq 0 ]; then
+            echo "::error::no SUSFS-LKM patches found in /tmp/Patches/SUSFS-LKM/"; exit 1
+          fi
           if [ -n "$(find . -name '*.rej')" ]; then
             echo "::error::SUSFS-LKM patches left .rej files:"; find . -name '*.rej'; exit 1
           fi
@@ -614,8 +619,10 @@ jobs:
           # 外置构建，针对同一个已构建的内核树（out/ 里已有 vmlinux + Module.symvers）。
           # 未定义符号由 ksud insmod 在真机上从 /proc/kallsyms 解析。
           set +e; set -o pipefail
+          # NonGKI 内核默认带 -Werror：SUSFS-LKM 只在无 -Werror 下验证过，
+          # 这里 KCFLAGS 追加 -Wno-error 把新告警降级（真正的 error 仍会中止）。
           make -C "$GITHUB_WORKSPACE/device_kernel" O="$GITHUB_WORKSPACE/device_kernel/out" M="$PWD" \
-            CC=clang ARCH="${{ env.KERNEL_ARCH }}" ${{ env.CUSTOM_CMDS }} \
+            CC=clang ARCH="${{ env.KERNEL_ARCH }}" ${{ env.CUSTOM_CMDS }} KCFLAGS="-Wno-error" \
             -j"$(nproc --all)" modules 2>&1 | tee /tmp/susfs_build.log
           rc=${PIPESTATUS[0]}
           set -e
