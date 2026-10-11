@@ -18,16 +18,6 @@ permissions:
 on:
   workflow_call:
     inputs:
-      susfs_enable:
-        description: '集成 SUSFS (默认开启; 关闭则改用 syscall 手动钩子)'
-        required: false
-        type: boolean
-        default: true
-      susfs_lkm:
-        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
-        required: false
-        type: boolean
-        default: false
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: false
@@ -35,11 +25,6 @@ on:
         default: true
       vfs_nomount:
         description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥)'
-        required: false
-        type: boolean
-        default: false
-      vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
         required: false
         type: boolean
         default: false
@@ -51,20 +36,10 @@ on:
         value: ${{ jobs.build-oneplus-8-lineageos23-a16.outputs.build_sha }}
   workflow_dispatch:
     inputs:
-      susfs_enable:
-        description: '集成 SUSFS (默认开启; 关闭则改用 syscall 手动钩子)'
-        required: true
-        type: boolean
-        default: true
-      susfs_lkm:
-        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
-        required: true
-        type: boolean
-        default: false
       # ─────────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（三选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
-      # HybridMount / NoMount / ZeroMount 都劫持同一层 VFS
+      # HybridMount / NoMount 都劫持同一层 VFS
       # (inode_operations / file_operations / dentry_operations)，
       # 且各自使用独立不兼容的 keyring 协议（"hm1" / "NOMOUNT" / 自有）。
       # 上游 Hybrid Mount 的 Kconfig 明确写了与 NoMount 的元模块
@@ -79,16 +54,10 @@ on:
         required: true
         type: boolean
         default: false
-      vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
-        required: true
-        type: boolean
-        default: false
-
 jobs:
   # OnePlus 8 (LineageOS 23.2)
   build-oneplus-8-lineageos23-a16:
-    name: "OnePlus 8 (LineageOS 23.2 Android 16) (BakaSU+SUSFS v2.3.0)"
+    name: "OnePlus 8 (LineageOS 23.2 Android 16) (FolkSU)"
     strategy:
       fail-fast: true
     uses: ./.github/workflows/build-oneplus-8-los23-a16.yml
@@ -96,10 +65,7 @@ jobs:
     # 转发下层 reusable workflow 的 outputs（job 用 uses: 调用时，
     # 直接写 outputs: <name>: ${{ jobs.<local-job>.outputs.<name> }} 即可）。
     with:
-      # 透传 SUSFS / VFS 选择。workflow_dispatch 直触发时用 UI 的值；
+      # 透传 VFS 选择。workflow_dispatch 直触发时用 UI 的值；
       # 被 build-release.yml 调用时用对方 with: 传入的值。
-      susfs_enable: ${{ inputs.susfs_enable }}
-      susfs_lkm: ${{ inputs.susfs_lkm }}
       vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
       vfs_nomount: ${{ inputs.vfs_nomount }}
-      vfs_zeromount: ${{ inputs.vfs_zeromount }}

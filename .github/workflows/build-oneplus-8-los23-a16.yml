@@ -1,4 +1,4 @@
-name: Build Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
+name: Build Oneplus 8 (LineageOS 23.2 A16) (FolkSU Kernel)
 
 # ============================================================================
 # 可复用构建工作流（OnePlus 8 / LineageOS 23.2 A16）
@@ -11,16 +11,6 @@ name: Build Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
 on:
   workflow_call:
     inputs:
-      susfs_enable:
-        description: '集成 SUSFS (默认开启; 关闭则改用 syscall 手动钩子)'
-        required: false
-        type: boolean
-        default: true
-      susfs_lkm:
-        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
-        required: false
-        type: boolean
-        default: false
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: false
@@ -28,11 +18,6 @@ on:
         default: true
       vfs_nomount:
         description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥)'
-        required: false
-        type: boolean
-        default: false
-      vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
         required: false
         type: boolean
         default: false
@@ -45,16 +30,6 @@ on:
         value: ${{ jobs.build-kernel.outputs.build_sha }}
   workflow_dispatch:
     inputs:
-      susfs_enable:
-        description: '集成 SUSFS (默认开启; 关闭则改用 syscall 手动钩子)'
-        required: true
-        type: boolean
-        default: true
-      susfs_lkm:
-        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
-        required: true
-        type: boolean
-        default: false
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: true
@@ -65,12 +40,6 @@ on:
         required: true
         type: boolean
         default: false
-      vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
-        required: true
-        type: boolean
-        default: false
-
 env:
   # Device env
   DEVICE_NAME : "oneplus_8"
@@ -82,7 +51,7 @@ env:
   # 这里只给静态部分（不含 VFS），避免标题与实际集成内容不一致。
   # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
   # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
-  AK3_TITLE_PREFIX: "BakaSU (Master) + SUSFS v2.3.0"
+  AK3_TITLE_PREFIX: "FolkSU (Master)"
   AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
@@ -108,31 +77,12 @@ env:
   KERNELSU_SOURCE : ""
   KERNELSU_BRANCH : ""
 
-  # 保持 latest: 每次构建都会通过 BakaSU setup.sh (git pull) 拉取最新 main 分支
-  KERNELSU_AUTO_GET : "true" # if u want easy setting kernelsu, u can true.
-  # 注意: "resukisu" 只是内部标识符(下游有多处分支判断, 改动无收益), 实际仓库指向
-  # Baka-SU/BakaSU, 拼出的 setup.sh 地址为:
-  #   https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/main/kernel/setup.sh
-  KERNELSU_AUTO_FORK : "resukisu" # xxksu, rsuntk, next, resukisu and sukisu
-
-  # SUSFS 由 UI 勾选控制（workflow_dispatch / workflow_call 的 susfs_enable 输入），
-  # 默认开启。关闭时：不应用 SUSFS 补丁，改用 Patches/syscall_hook_patches.sh
-  # 的手动（syscall）钩子，保证 KernelSU 仍可用。
-  # 注意: 直接用 inputs 表达式，而不是在运行时写 GITHUB_ENV —— 因为 workflow 级
-  # env 会覆盖 GITHUB_ENV 的运行时值（见 AK3_TITLE 的说明）。
-  # SUSFS 主开关（susfs_enable）分两种方式：
-  #   - built-in（susfs_lkm=false，默认）：打 in-tree SUSFS 补丁 + KernelSU 内联钩子；
-  #     并在 KernelSU 侧“解锁” BakaSU 的 suspend（48fa4bb 的 $(error)，见下）。
-  #   - LKM（susfs_lkm=true）：不打 in-tree SUSFS，改用 syscall 手动钩子；另外编译
-  #     外置 susfs_guard_lkm.ko 并打包成 KernelSU 模块（susfs-lkm-module.zip）。
-  # SUSFS_ENABLE 沿用旧语义（=“是否用 in-tree 内置 SUSFS”），下游所有 == "true" 判断无需改。
-  SUSFS_ENABLE : ${{ inputs.susfs_enable && !inputs.susfs_lkm }}
-  SUSFS_LKM : ${{ inputs.susfs_enable && inputs.susfs_lkm }}
-  SUSFS_FIXED : false
-
-  # 外置 SUSFS-LKM 源码（legacy 分支面向 pre-5.10；4.19 适配见 Patches/SUSFS-LKM/）
-  SUSFS_LKM_SOURCE : "https://github.com/Hotsteel2901/susfs4ksu-lkm.git"
-  SUSFS_LKM_REF : "legacy"
+  # 管理器 = FolkSU (LyraVoid/FolkSU, master)。
+  # ⚠️ FolkSU 的 kernel/setup.sh 克隆的是 tiann/KernelSU(官方)而非 FolkSU 自己，
+  #    所以不能用 setup.sh(shell) 方式；改用 KERNELSU_METHOD=manual：
+  #    git clone LyraVoid/FolkSU -b master KernelSU + symlink drivers/kernelsu。
+  KERNELSU_AUTO_GET : "true"
+  KERNELSU_AUTO_FORK : "folksu" # xxksu, rsuntk, next, resukisu, sukisu, folksu
 
   AK3_SOURCE : "https://github.com/osm0sis/AnyKernel3.git"
   AK3_BRANCH : "master"
@@ -150,13 +100,11 @@ env:
   PACK_METHOD: "Anykernel3"
   PACK_KMODULES: "false"
 
-  KERNELSU_METHOD: "shell"
+  KERNELSU_METHOD: "manual"
 
   PATCHES_SOURCE: ""
   PATCHES_BRANCH: ""
 
-  SUSFS_FOLDER_FIXED: ""
-  SUSFS_PATCH_FIXED: ""
 
   REKERNEL_ENABLE: "true"
   DROIDSPACES_ENABLE: "true"
@@ -164,9 +112,9 @@ env:
   # ─────────────────────────────────────────────────────────────────────────
   # VFS 路径重定向后端（三选一，互斥！）
   # ─────────────────────────────────────────────────────────────────────────
-  # 这三个都工作在同一个内核层（劫持 inode_operations / file_operations /
+  # 这两个都工作在同一个内核层（劫持 inode_operations / file_operations /
   # dentry_operations），并各自使用**独立且不兼容的 keyring 协议**
-  # （HybridMount 用 "hm1" / NoMount 用 "NOMOUNT" / ZeroMount 用自有协议）。
+  # （HybridMount 用 "hm1" / NoMount 用 "NOMOUNT"）。
   # 上游 Hybrid Mount 的 Kconfig 里就明确写了：
   #   "not compatible with NoMount's metametamodule or its tooling"
   # 同时开启会让两套驱动抢同一层 hook，轻则元模块认不到内核、重则崩溃。
@@ -180,7 +128,6 @@ env:
   # 默认: HybridMount 开, 其余关（HybridMount 是本仓库长期验证过的组合）。
   VFS_HYBRIDMOUNT: "true"  # Hybrid Mount VFS 后端 (fs/hybridmount, 4.19 内置移植)
   VFS_NOMOUNT: "false"     # NoMount VFS 后端 (fs/nomount, 上游 setup.sh 集成)
-  VFS_ZEROMOUNT: "false"   # ZeroMount VFS 后端 (4.19 自研移植版, 与另两个互斥)
 
   HOOK_METHOD: "syscall" # Manual hook method -> syscall.
 
@@ -207,7 +154,7 @@ env:
 
 jobs:
   build-kernel:
-    name: Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
+    name: Oneplus 8 (LineageOS 23.2 A16) (FolkSU Kernel)
     runs-on: ubuntu-latest
     outputs:
       build_sha: ${{ steps.build_sha.outputs.build_sha }}
@@ -228,7 +175,7 @@ jobs:
 
       - name: 🧭 Validate VFS backend selection (mutually exclusive)
         run: |
-          # HybridMount / NoMount / ZeroMount 三者互斥：它们都劫持同一层 VFS
+          # HybridMount / NoMount 互斥：它们都劫持同一层 VFS
           # (inode_operations / file_operations / dentry_operations)，且各自使用
           # 独立不兼容的 keyring 协议。同时启用会导致两套驱动抢同一批 hook，
           # 元模块无法正确握手（认不到内核），严重时直接崩溃。
@@ -240,25 +187,21 @@ jobs:
           # 而被当成 "false" 处理。
           HM="${{ inputs.vfs_hybridmount }}"
           NM="${{ inputs.vfs_nomount }}"
-          ZM="${{ inputs.vfs_zeromount }}"
           HM="${HM:-true}"
           NM="${NM:-false}"
-          ZM="${ZM:-false}"
 
           COUNT=0
           [ "$HM" = "true" ] && COUNT=$((COUNT + 1))
           [ "$NM" = "true" ] && COUNT=$((COUNT + 1))
-          [ "$ZM" = "true" ] && COUNT=$((COUNT + 1))
 
           echo "VFS backend selection:"
           echo "  VFS_HYBRIDMOUNT = $HM"
           echo "  VFS_NOMOUNT     = $NM"
-          echo "  VFS_ZEROMOUNT   = $ZM"
 
           if [ "$COUNT" -gt 1 ]; then
             echo ""
             echo "[-] ERROR: VFS backends are mutually exclusive, but $COUNT are enabled."
-            echo "[-] HybridMount / NoMount / ZeroMount all hijack the same VFS layer and"
+            echo "[-] HybridMount / NoMount both hijack the same VFS layer and"
             echo "[-] use incompatible keyring protocols. Enable at most ONE of them."
             exit 1
           fi
@@ -275,7 +218,6 @@ jobs:
           VFS_LABEL=""
           if [ "$HM" = "true" ]; then VFS_LABEL="Hybrid Mount VFS"; fi
           if [ "$NM" = "true" ]; then VFS_LABEL="NoMount VFS"; fi
-          if [ "$ZM" = "true" ]; then VFS_LABEL="ZeroMount VFS"; fi
 
           TITLE="${{ env.AK3_TITLE_PREFIX }}"
           if [ -n "$VFS_LABEL" ]; then
@@ -297,49 +239,6 @@ jobs:
           echo "[+] Build SHA: $(git rev-parse HEAD)"
           echo "-g$(git rev-parse --short HEAD)-hotsteel" > .scmversion
 
-      - name: 🪝 Patch Kernel of SUSFS
-        uses: ./.github/workflows/patch-susfs
-
-      - name: 🔗 Patch KernelSU Hooks (SUSFS inline / syscall fallback)
-        run: |
-          cd $GITHUB_WORKSPACE/device_kernel/
-          # env.SUSFS_ENABLE = susfs_enable && !susfs_lkm：即“in-tree 内置 SUSFS”。
-          # susfs_lkm=true 时走下面的 else（syscall 钩子），SUSFS 由外置 LKM 提供。
-          if [ "${{ env.SUSFS_ENABLE }}" = "true" ]; then
-            # SUSFS 开启：BakaSU 官方 SUSFS inline 模式的内联钩子
-            # (#ifdef CONFIG_KSU_SUSFS 门控)
-            cp /tmp/Patches/Patch/resukisu_inline_hooks.patch ./
-            patch -p1 < resukisu_inline_hooks.patch || true
-            rm -f resukisu_inline_hooks.patch
-            echo "[+] BakaSU SUSFS inline hooks patched."
-
-            # 解锁 BakaSU 对 in-tree SUSFS 的 suspend（commit 48fa4bb，2026-10）：
-            #   kernel/tools/susfs_compat.mk 里加了无条件 `$(error Please wait susfs update.)`，
-            #   只要 CONFIG_KSU_SUSFS=y 就 kbuild 直接炸。这里删掉该 error 行（保留 info），
-            #   让 in-tree SUSFS 能编。⚠️ BakaSU 这么说是因为 SUSFS 尚未同步最新 KernelSU，
-            #   有 selinux_hide 被检测的风险 —— 用户显式选 built-in 即视为接受。
-            if [ -f drivers/kernelsu/tools/susfs_compat.mk ]; then
-              cp drivers/kernelsu/tools/susfs_compat.mk /tmp/susfs_compat.mk.bak
-              sed -i '/Please wait susfs update/d' drivers/kernelsu/tools/susfs_compat.mk
-              if grep -qE '^\$\(error' drivers/kernelsu/tools/susfs_compat.mk; then
-                echo "[-] failed to unblock BakaSU susfs suspend in susfs_compat.mk"
-                echo "[-] --- susfs_compat.mk ---"; cat drivers/kernelsu/tools/susfs_compat.mk
-                false
-              fi
-              echo "[+] BakaSU in-tree SUSFS unblocked (removed the \$(error) suspend)."
-            else
-              echo "[i] drivers/kernelsu/tools/susfs_compat.mk not present (not a BakaSU tree?) - skip unblock."
-            fi
-          else
-            # SUSFS 关闭（或走外置 LKM）：改用 syscall（手动）钩子回退，KernelSU 以
-            # CONFIG_KSU_MANUAL_HOOK 模式工作（build-ready 已写入该开关）。
-            # 脚本来自上游 JackA1ltman/NonGKI_Kernel_Build_2nd。
-            cp /tmp/Patches/syscall_hook_patches.sh ./
-            bash syscall_hook_patches.sh ./
-            rm -f syscall_hook_patches.sh
-            echo "[+] KernelSU syscall hooks patched (in-tree SUSFS disabled)."
-          fi
-
       - name: 🧩 Patch Hybrid Mount VFS Subsystem
         if: inputs.vfs_hybridmount == true
         run: |
@@ -348,8 +247,7 @@ jobs:
           # Hybrid Mount 的 VFS 后端不是内核通用 VFS，而是它自己的 hybridmount 子系统
           # （fork 自 NoMount，通过 keyring 驱动）。它只提供 5.10/5.15/6.1/6.6/6.12 的
           # 预编译 .ko，4.19 一个候选都匹配不到，所以必须 built-in 集成。
-          # 本子系统与 SUSFS / BakaSU 完全解耦（不引用任何 ksu_/susfs_ 符号），
-          # 与 SUSFS 补丁仅在 fs/Makefile 尾部追加处有交集，补丁顺序对结果无影响。
+          # 本子系统与 KernelSU 完全解耦（不引用任何 ksu_ 符号）。
           cp /tmp/Patches/Patch/hybridmount_patch_to_4.19.patch ./
           patch -p1 < hybridmount_patch_to_4.19.patch || true
           rm -f hybridmount_patch_to_4.19.patch
@@ -439,145 +337,6 @@ jobs:
           echo "[+] Appended to ${DEFCONFIG_PATH}:"
           grep -nE "CONFIG_(NOMOUNT|KEYS|ASSOCIATIVE_ARRAY)=" "$DEFCONFIG_PATH"
 
-      - name: 🔮 Patch ZeroMount VFS Subsystem
-        if: inputs.vfs_zeromount == true
-        run: |
-          cd $GITHUB_WORKSPACE/device_kernel/
-          # ZeroMount 是 Enginex0/zeromount 的路径重定向子系统，与 HybridMount /
-          # NoMount 完全不同源：它自带 /dev/zeromount 字符设备 + 自定义 ioctl
-          # 协议（不依赖 keyring），因此 CONFIG_KEYS 不是它的依赖。
-          #
-          # 上游只提供 5.4/5.10/5.15/6.1/6.6/6.12 补丁，non-GKI 4.19 在其 roadmap
-          # 里仍标着 Planned —— 本仓库的这份补丁是自研移植版。
-          #
-          # ⚠️ 补丁核心 hunk 只落在 fs/d_path.c fs/namei.c fs/proc/base.c
-          # fs/proc/task_mmu.c fs/readdir.c fs/stat.c fs/statfs.c fs/xattr.c
-          # fs/zeromount.c include/linux/zeromount.h。
-          # 其中 readdir.c / task_mmu.c 与 SUSFS 有上下文重叠，因此本步骤必须
-          # 排在 SUSFS / BakaSU hooks 之后。
-          #
-          # fs/Makefile 与 fs/Kconfig 不在这份补丁里 —— 那两个文件的双后端上下文
-          # 锚点无法同时兼容「有 HybridMount」与「没有 HybridMount」两种树
-          # （patch 的 fuzz 匹配会静默插错位置），改由下面的文本注入完成，
-          # 这样 ZeroMount 才能脱离 HybridMount 独立启用。
-          cp /tmp/Patches/Patch/zeromount_patch_to_4.19.patch ./
-          patch -p1 < zeromount_patch_to_4.19.patch || true
-          rm -f zeromount_patch_to_4.19.patch
-
-          # patch -p1 加了 || true：真有 hunk 打不上必须立刻报出来。
-          if [ -n "$(find . -name '*.rej')" ]; then
-            echo "[-] zeromount_patch has rejected hunks!"
-            find . -name "*.rej" -exec sh -c 'echo "--- {} ---"; cat {}' \;
-            false
-          fi
-
-          # ⚠️ 光看 .rej 不够：旧的 zeromount 补丁是把 SUSFS/KSU 的整段上下文
-          # 当成「要替换掉的旧代码」写的（86 删 / 46 增），应用时 0 reject
-          # 却把 ksu_handle_stat 等钩子静默删掉了，最后死在 BakaSU 的
-          # inline_hook_check.mk（"You lost ksu_handle_stat hook"）。
-          # 所以这里必须逐符号核对「补丁后仍存在」，任何 SUSFS/KSU 钩子丢失即失败。
-          # SUSFS 开启时核对全套 SUSFS/KSU 符号；关闭时这些 SUSFS 专有符号
-          # （ksu_handle_vfs_fstat / ksu_is_init_rc_hook_enabled / ksu_handle_sys_read /
-          #  ksu_handle_setresuid / susfs_*）本就不存在，只核对 syscall 回退
-          # 仍提供的核心钩子，避免「补丁其实正确却假失败」。
-          if [ "${{ env.SUSFS_ENABLE }}" = "true" ]; then
-            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
-              fs/stat.c:ksu_handle_vfs_fstat \
-              fs/stat.c:ksu_is_init_rc_hook_enabled \
-              fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr \
-              fs/stat.c:zeromount_stat_hook \
-              fs/exec.c:ksu_handle_execveat \
-              fs/open.c:ksu_handle_faccessat \
-              fs/read_write.c:ksu_handle_sys_read \
-              kernel/sys.c:ksu_handle_setresuid"
-          else
-            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
-              fs/stat.c:zeromount_stat_hook \
-              fs/exec.c:ksu_handle_execveat \
-              fs/open.c:ksu_handle_faccessat \
-              kernel/sys.c:ksu_handle_setresuid"
-          fi
-          for chk in $ZM_CHECKS; do
-            chk_file="${chk%%:*}"
-            chk_sym="${chk##*:}"
-            if ! grep -q "$chk_sym" "$chk_file"; then
-              echo "[-] $chk_sym missing from $chk_file after ZeroMount patch!"
-              echo "[-] (ZeroMount 补丁必须与 KernelSU 钩子共存，不能覆盖它们)"
-              false
-            fi
-          done
-          echo "[+] KernelSU hooks preserved alongside ZeroMount."
-
-          # fs/Kconfig：在「最后一个 endmenu」之前插入 config 块
-          ENDMENU_LINE=$(grep -n '^endmenu' fs/Kconfig | tail -1 | cut -d: -f1)
-          if [ -z "$ENDMENU_LINE" ]; then
-            echo "[-] fs/Kconfig has no endmenu anchor"; false
-          fi
-          printf '%s\n' \
-            'config ZEROMOUNT' \
-            '	bool "ZeroMount Path Redirection Subsystem"' \
-            '	default y' \
-            '	help' \
-            '	  ZeroMount allows path redirection and virtual file injection' \
-            '	  without mounting filesystems. Useful for systemless modifications.' \
-            '' > /tmp/zm_kconfig_block.txt
-          { head -n $((ENDMENU_LINE - 1)) fs/Kconfig
-            cat /tmp/zm_kconfig_block.txt
-            tail -n +$ENDMENU_LINE fs/Kconfig
-          } > fs/Kconfig.zmnew && mv fs/Kconfig.zmnew fs/Kconfig
-          rm -f /tmp/zm_kconfig_block.txt
-
-          # fs/Makefile：末尾追加（Makefile 内部顺序无语义要求）
-          grep -qF 'CONFIG_ZEROMOUNT' fs/Makefile \
-            || echo 'obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o' >> fs/Makefile
-
-          # 集成结果自检
-          test -f fs/zeromount.c || { echo "[-] fs/zeromount.c missing"; false; }
-          test -f include/linux/zeromount.h || { echo "[-] include/linux/zeromount.h missing"; false; }
-          grep -qF 'obj-$(CONFIG_ZEROMOUNT)' fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
-          grep -q '^config ZEROMOUNT$' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
-          grep -q 'zeromount_inject_dents64' fs/readdir.c || { echo "[-] fs/readdir.c hook missing"; false; }
-          grep -q 'zeromount_stat_hook' fs/stat.c || { echo "[-] fs/stat.c hook missing"; false; }
-          grep -q 'zeromount_getname_hook' fs/namei.c || { echo "[-] fs/namei.c hook missing"; false; }
-          grep -q 'CONFIG_KSU_SUSFS_SUS_PATH' fs/readdir.c || { echo "[-] SUSFS readdir hooks lost!"; false; }
-          echo "[+] ZeroMount VFS subsystem patched (built-in, SUSFS-aware)."
-      - name: ⚙️ Enable ZeroMount VFS in DEFCONFIG
-        if: inputs.vfs_zeromount == true
-        run: |
-          cd $GITHUB_WORKSPACE/device_kernel
-
-          DEFCONFIG_PATH="./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}"
-
-          # ZeroMount 走自己的字符设备 + ioctl，不用 keyring，所以不需要
-          # CONFIG_KEYS / CONFIG_ASSOCIATIVE_ARRAY（那是 HM / NoMount 的依赖）。
-          #
-          # =y 而不是 =m：它 hook 的是 inode_permission / iterate_dir / vfs_getattr
-          # 这些核心 VFS 路径，必须编进内核镜像，做不成模块。
-          sed -i '/^CONFIG_ZEROMOUNT=/d' "$DEFCONFIG_PATH"
-          echo "CONFIG_ZEROMOUNT=y" >> "$DEFCONFIG_PATH"
-
-          echo "[+] Appended to ${DEFCONFIG_PATH}:"
-          grep -nE "CONFIG_ZEROMOUNT=" "$DEFCONFIG_PATH"
-
-      - name: ⚙️ Enable SUSFS-LKM deps in DEFCONFIG (LKM mode)
-        if: env.SUSFS_LKM == 'true'
-        run: |
-          cd $GITHUB_WORKSPACE/device_kernel
-          DEFCONFIG_PATH="./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}"
-
-          # 外置 SUSFS-LKM 的硬依赖：
-          #   - KPROBES/KRETPROBES：dirent 过滤与自身符号自举；
-          #   - KALLSYMS_ALL：ksud insmod 从 /proc/kallsyms 绝对化未定义符号；
-          #   - MODULES/MODULE_UNLOAD：可加载 + rmmod。
-          # 这些在 kona-perf_defconfig 里默认没有，显式打开。
-          for k in MODULES MODULE_UNLOAD KALLSYMS KALLSYMS_ALL KPROBES KRETPROBES; do
-            sed -i "/^CONFIG_${k}=/d" "$DEFCONFIG_PATH"
-            echo "CONFIG_${k}=y" >> "$DEFCONFIG_PATH"
-          done
-
-          echo "[+] SUSFS-LKM deps appended to ${DEFCONFIG_PATH}:"
-          grep -nE "CONFIG_(MODULES|MODULE_UNLOAD|KALLSYMS|KALLSYMS_ALL|KPROBES|KRETPROBES)=" "$DEFCONFIG_PATH"
-
       - name: 🪛 Extra Kernel Options
         run: |
           # Only ${{ env.DEVICE_NAME }} use it.
@@ -594,76 +353,6 @@ jobs:
 
       - name: 🚀 Build Process
         uses: ./.github/workflows/build-process
-
-      - name: 🧬 Build SUSFS-LKM (susfs_guard_lkm.ko) [LKM mode]
-        if: env.SUSFS_LKM == 'true'
-        run: |
-          git clone --depth=1 --single-branch -b "$SUSFS_LKM_REF" "$SUSFS_LKM_SOURCE" susfs_lkm
-          cd susfs_lkm
-          echo "SUSFS-LKM HEAD: $(git rev-parse HEAD) ($SUSFS_LKM_REF)"
-          # 注意：build-env 里执行过 `mv $GITHUB_WORKSPACE/Patches /tmp/`，
-          # 所以这里必须用 /tmp/Patches/...（工作流其它步骤同理）。
-          shopt -s nullglob
-          for p in /tmp/Patches/SUSFS-LKM/*.patch; do
-            echo "[+] applying $(basename "$p")"
-            patch -p1 < "$p" || { echo "::error::$(basename "$p") failed to apply"; exit 1; }
-          done
-          if [ "$(ls -1 /tmp/Patches/SUSFS-LKM/*.patch 2>/dev/null | wc -l)" -eq 0 ]; then
-            echo "::error::no SUSFS-LKM patches found in /tmp/Patches/SUSFS-LKM/"; exit 1
-          fi
-          if [ -n "$(find . -name '*.rej')" ]; then
-            echo "::error::SUSFS-LKM patches left .rej files:"; find . -name '*.rej'; exit 1
-          fi
-
-          cd kernel
-          # 外置构建，针对同一个已构建的内核树（out/ 里已有 vmlinux + Module.symvers）。
-          # 未定义符号由 ksud insmod 在真机上从 /proc/kallsyms 解析。
-          #
-          # ⚠️ 必须像内核构建那样导出交叉工具链（build-process 里 `export "$GCC_64"`），
-          # 否则模块 relocatable-link 会用宿主 x86_64 的 ld 而失败：
-          #   "ld: unrecognised emulation mode: aarch64linux"
-          # GCC_64/32 形如 "CROSS_COMPILE=aarch64-...-"，由 build-env 写进 $GITHUB_ENV。
-          [ -n "$GCC_64" ] && export "$GCC_64"
-          [ -n "$GCC_32" ] && export "$GCC_32"
-          echo "[i] CROSS_COMPILE=${CROSS_COMPILE:-<unset>}"
-          set +e; set -o pipefail
-          # NonGKI 内核默认带 -Werror：SUSFS-LKM 只在无 -Werror 下验证过，
-          # 这里 KCFLAGS 追加 -Wno-error 把新告警降级（真正的 error 仍会中止）。
-          make -C "$GITHUB_WORKSPACE/device_kernel" O="$GITHUB_WORKSPACE/device_kernel/out" M="$PWD" \
-            CC=clang ARCH="${{ env.KERNEL_ARCH }}" ${{ env.CUSTOM_CMDS }} KCFLAGS="-Wno-error" \
-            -j"$(nproc --all)" modules 2>&1 | tee /tmp/susfs_build.log
-          rc=${PIPESTATUS[0]}
-          set -e
-          if [ "$rc" -ne 0 ]; then
-            echo "::error::SUSFS-LKM build failed (rc=$rc) — see Patches/SUSFS-LKM/README.md"
-            grep -nE 'error:|fatal error:|Error [0-9]|undefined reference|No such file|No rule to make|implicit declaration' /tmp/susfs_build.log | tail -30 | while IFS= read -r l; do echo "::error::$l"; done
-            exit 1
-          fi
-          ls -la susfs_guard_lkm.ko
-
-      - name: 📦 Package SUSFS-LKM KernelSU module [LKM mode]
-        if: env.SUSFS_LKM == 'true'
-        run: |
-          # SUSFS 是外置运行时模块，不会被编进内核；打成 KernelSU 模块 zip，
-          # 在管理器里装一次即可开机自动 `ksud insmod`（见 susfs-module/README.md）。
-          rm -rf mod_stage
-          mkdir -p mod_stage
-          cp "$GITHUB_WORKSPACE"/susfs-module/module.prop mod_stage/
-          cp "$GITHUB_WORKSPACE"/susfs-module/post-fs-data.sh mod_stage/
-          cp "$GITHUB_WORKSPACE"/susfs-module/service.sh mod_stage/
-          cp susfs_lkm/kernel/susfs_guard_lkm.ko mod_stage/
-          chmod 755 mod_stage/*.sh
-          rm -f susfs-lkm-module.zip
-          ( cd mod_stage && zip -r9 "$GITHUB_WORKSPACE/susfs-lkm-module.zip" . )
-          unzip -l "$GITHUB_WORKSPACE/susfs-lkm-module.zip"
-
-      - name: ⬆️ Upload SUSFS-LKM module [LKM mode]
-        if: env.SUSFS_LKM == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: susfs-lkm-module
-          path: susfs-lkm-module.zip
-          if-no-files-found: error
 
       - name: 🖼️ Generate DTB (kona + kona-v2 + kona-v2.1)
         run: |
