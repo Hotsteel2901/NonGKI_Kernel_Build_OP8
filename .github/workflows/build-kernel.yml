@@ -23,6 +23,11 @@ on:
         required: false
         type: boolean
         default: true
+      susfs_lkm:
+        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
+        required: false
+        type: boolean
+        default: false
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: false
@@ -51,6 +56,11 @@ on:
         required: true
         type: boolean
         default: true
+      susfs_lkm:
+        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
+        required: true
+        type: boolean
+        default: false
       # ─────────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（三选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
@@ -89,6 +99,7 @@ jobs:
       # 透传 SUSFS / VFS 选择。workflow_dispatch 直触发时用 UI 的值；
       # 被 build-release.yml 调用时用对方 with: 传入的值。
       susfs_enable: ${{ inputs.susfs_enable }}
+      susfs_lkm: ${{ inputs.susfs_lkm }}
       vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
       vfs_nomount: ${{ inputs.vfs_nomount }}
       vfs_zeromount: ${{ inputs.vfs_zeromount }}

@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: true
+      susfs_lkm:
+        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
+        required: false
+        type: boolean
+        default: false
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: false
@@ -45,6 +50,11 @@ on:
         required: true
         type: boolean
         default: true
+      susfs_lkm:
+        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
+        required: true
+        type: boolean
+        default: false
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: true
@@ -110,8 +120,19 @@ env:
   # 的手动（syscall）钩子，保证 KernelSU 仍可用。
   # 注意: 直接用 inputs 表达式，而不是在运行时写 GITHUB_ENV —— 因为 workflow 级
   # env 会覆盖 GITHUB_ENV 的运行时值（见 AK3_TITLE 的说明）。
-  SUSFS_ENABLE : ${{ inputs.susfs_enable }}
+  # SUSFS 主开关（susfs_enable）分两种方式：
+  #   - built-in（susfs_lkm=false，默认）：打 in-tree SUSFS 补丁 + KernelSU 内联钩子；
+  #     并在 KernelSU 侧“解锁” BakaSU 的 suspend（48fa4bb 的 $(error)，见下）。
+  #   - LKM（susfs_lkm=true）：不打 in-tree SUSFS，改用 syscall 手动钩子；另外编译
+  #     外置 susfs_guard_lkm.ko 并打包成 KernelSU 模块（susfs-lkm-module.zip）。
+  # SUSFS_ENABLE 沿用旧语义（=“是否用 in-tree 内置 SUSFS”），下游所有 == "true" 判断无需改。
+  SUSFS_ENABLE : ${{ inputs.susfs_enable && !inputs.susfs_lkm }}
+  SUSFS_LKM : ${{ inputs.susfs_enable && inputs.susfs_lkm }}
   SUSFS_FIXED : false
+
+  # 外置 SUSFS-LKM 源码（legacy 分支面向 pre-5.10；4.19 适配见 Patches/SUSFS-LKM/）
+  SUSFS_LKM_SOURCE : "https://github.com/Hotsteel2901/susfs4ksu-lkm.git"
+  SUSFS_LKM_REF : "legacy"
 
   AK3_SOURCE : "https://github.com/osm0sis/AnyKernel3.git"
   AK3_BRANCH : "master"
@@ -282,21 +303,41 @@ jobs:
       - name: 🔗 Patch KernelSU Hooks (SUSFS inline / syscall fallback)
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
-          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+          # env.SUSFS_ENABLE = susfs_enable && !susfs_lkm：即“in-tree 内置 SUSFS”。
+          # susfs_lkm=true 时走下面的 else（syscall 钩子），SUSFS 由外置 LKM 提供。
+          if [ "${{ env.SUSFS_ENABLE }}" = "true" ]; then
             # SUSFS 开启：BakaSU 官方 SUSFS inline 模式的内联钩子
             # (#ifdef CONFIG_KSU_SUSFS 门控)
             cp /tmp/Patches/Patch/resukisu_inline_hooks.patch ./
             patch -p1 < resukisu_inline_hooks.patch || true
             rm -f resukisu_inline_hooks.patch
             echo "[+] BakaSU SUSFS inline hooks patched."
+
+            # 解锁 BakaSU 对 in-tree SUSFS 的 suspend（commit 48fa4bb，2026-10）：
+            #   kernel/tools/susfs_compat.mk 里加了无条件 `$(error Please wait susfs update.)`，
+            #   只要 CONFIG_KSU_SUSFS=y 就 kbuild 直接炸。这里删掉该 error 行（保留 info），
+            #   让 in-tree SUSFS 能编。⚠️ BakaSU 这么说是因为 SUSFS 尚未同步最新 KernelSU，
+            #   有 selinux_hide 被检测的风险 —— 用户显式选 built-in 即视为接受。
+            if [ -f drivers/kernelsu/tools/susfs_compat.mk ]; then
+              cp drivers/kernelsu/tools/susfs_compat.mk /tmp/susfs_compat.mk.bak
+              sed -i '/Please wait susfs update/d' drivers/kernelsu/tools/susfs_compat.mk
+              if grep -qE '^\$\(error' drivers/kernelsu/tools/susfs_compat.mk; then
+                echo "[-] failed to unblock BakaSU susfs suspend in susfs_compat.mk"
+                echo "[-] --- susfs_compat.mk ---"; cat drivers/kernelsu/tools/susfs_compat.mk
+                false
+              fi
+              echo "[+] BakaSU in-tree SUSFS unblocked (removed the \$(error) suspend)."
+            else
+              echo "[i] drivers/kernelsu/tools/susfs_compat.mk not present (not a BakaSU tree?) - skip unblock."
+            fi
           else
-            # SUSFS 关闭：改用 syscall（手动）钩子回退，BakaSU 以
+            # SUSFS 关闭（或走外置 LKM）：改用 syscall（手动）钩子回退，KernelSU 以
             # CONFIG_KSU_MANUAL_HOOK 模式工作（build-ready 已写入该开关）。
             # 脚本来自上游 JackA1ltman/NonGKI_Kernel_Build_2nd。
             cp /tmp/Patches/syscall_hook_patches.sh ./
             bash syscall_hook_patches.sh ./
             rm -f syscall_hook_patches.sh
-            echo "[+] KernelSU syscall hooks patched (SUSFS disabled)."
+            echo "[+] KernelSU syscall hooks patched (in-tree SUSFS disabled)."
           fi
 
       - name: 🧩 Patch Hybrid Mount VFS Subsystem
@@ -439,7 +480,7 @@ jobs:
           # （ksu_handle_vfs_fstat / ksu_is_init_rc_hook_enabled / ksu_handle_sys_read /
           #  ksu_handle_setresuid / susfs_*）本就不存在，只核对 syscall 回退
           # 仍提供的核心钩子，避免「补丁其实正确却假失败」。
-          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+          if [ "${{ env.SUSFS_ENABLE }}" = "true" ]; then
             ZM_CHECKS="fs/stat.c:ksu_handle_stat \
               fs/stat.c:ksu_handle_vfs_fstat \
               fs/stat.c:ksu_is_init_rc_hook_enabled \
@@ -518,6 +559,25 @@ jobs:
           echo "[+] Appended to ${DEFCONFIG_PATH}:"
           grep -nE "CONFIG_ZEROMOUNT=" "$DEFCONFIG_PATH"
 
+      - name: ⚙️ Enable SUSFS-LKM deps in DEFCONFIG (LKM mode)
+        if: env.SUSFS_LKM == 'true'
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel
+          DEFCONFIG_PATH="./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}"
+
+          # 外置 SUSFS-LKM 的硬依赖：
+          #   - KPROBES/KRETPROBES：dirent 过滤与自身符号自举；
+          #   - KALLSYMS_ALL：ksud insmod 从 /proc/kallsyms 绝对化未定义符号；
+          #   - MODULES/MODULE_UNLOAD：可加载 + rmmod。
+          # 这些在 kona-perf_defconfig 里默认没有，显式打开。
+          for k in MODULES MODULE_UNLOAD KALLSYMS KALLSYMS_ALL KPROBES KRETPROBES; do
+            sed -i "/^CONFIG_${k}=/d" "$DEFCONFIG_PATH"
+            echo "CONFIG_${k}=y" >> "$DEFCONFIG_PATH"
+          done
+
+          echo "[+] SUSFS-LKM deps appended to ${DEFCONFIG_PATH}:"
+          grep -nE "CONFIG_(MODULES|MODULE_UNLOAD|KALLSYMS|KALLSYMS_ALL|KPROBES|KRETPROBES)=" "$DEFCONFIG_PATH"
+
       - name: 🪛 Extra Kernel Options
         run: |
           # Only ${{ env.DEVICE_NAME }} use it.
@@ -534,6 +594,61 @@ jobs:
 
       - name: 🚀 Build Process
         uses: ./.github/workflows/build-process
+
+      - name: 🧬 Build SUSFS-LKM (susfs_guard_lkm.ko) [LKM mode]
+        if: env.SUSFS_LKM == 'true'
+        run: |
+          git clone --depth=1 --single-branch -b "$SUSFS_LKM_REF" "$SUSFS_LKM_SOURCE" susfs_lkm
+          cd susfs_lkm
+          echo "SUSFS-LKM HEAD: $(git rev-parse HEAD) ($SUSFS_LKM_REF)"
+          shopt -s nullglob
+          for p in "$GITHUB_WORKSPACE"/Patches/SUSFS-LKM/*.patch; do
+            echo "[+] applying $(basename "$p")"
+            patch -p1 < "$p" || { echo "::error::$(basename "$p") failed to apply"; exit 1; }
+          done
+          if [ -n "$(find . -name '*.rej')" ]; then
+            echo "::error::SUSFS-LKM patches left .rej files:"; find . -name '*.rej'; exit 1
+          fi
+
+          cd kernel
+          # 外置构建，针对同一个已构建的内核树（out/ 里已有 vmlinux + Module.symvers）。
+          # 未定义符号由 ksud insmod 在真机上从 /proc/kallsyms 解析。
+          set +e; set -o pipefail
+          make -C "$GITHUB_WORKSPACE/device_kernel" O="$GITHUB_WORKSPACE/device_kernel/out" M="$PWD" \
+            CC=clang ARCH="${{ env.KERNEL_ARCH }}" ${{ env.CUSTOM_CMDS }} \
+            -j"$(nproc --all)" modules 2>&1 | tee /tmp/susfs_build.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::SUSFS-LKM build failed (rc=$rc) — see Patches/SUSFS-LKM/README.md"
+            grep -nE 'error:|fatal error:|Error [0-9]|undefined reference|No such file|No rule to make|implicit declaration' /tmp/susfs_build.log | tail -30 | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          fi
+          ls -la susfs_guard_lkm.ko
+
+      - name: 📦 Package SUSFS-LKM KernelSU module [LKM mode]
+        if: env.SUSFS_LKM == 'true'
+        run: |
+          # SUSFS 是外置运行时模块，不会被编进内核；打成 KernelSU 模块 zip，
+          # 在管理器里装一次即可开机自动 `ksud insmod`（见 susfs-module/README.md）。
+          rm -rf mod_stage
+          mkdir -p mod_stage
+          cp "$GITHUB_WORKSPACE"/susfs-module/module.prop mod_stage/
+          cp "$GITHUB_WORKSPACE"/susfs-module/post-fs-data.sh mod_stage/
+          cp "$GITHUB_WORKSPACE"/susfs-module/service.sh mod_stage/
+          cp susfs_lkm/kernel/susfs_guard_lkm.ko mod_stage/
+          chmod 755 mod_stage/*.sh
+          rm -f susfs-lkm-module.zip
+          ( cd mod_stage && zip -r9 "$GITHUB_WORKSPACE/susfs-lkm-module.zip" . )
+          unzip -l "$GITHUB_WORKSPACE/susfs-lkm-module.zip"
+
+      - name: ⬆️ Upload SUSFS-LKM module [LKM mode]
+        if: env.SUSFS_LKM == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: susfs-lkm-module
+          path: susfs-lkm-module.zip
+          if-no-files-found: error
 
       - name: 🖼️ Generate DTB (kona + kona-v2 + kona-v2.1)
         run: |

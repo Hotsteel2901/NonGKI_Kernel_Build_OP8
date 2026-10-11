@@ -32,6 +32,12 @@ on:
         type: boolean
         default: true
 
+      susfs_lkm:
+        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
+        required: true
+        type: boolean
+        default: false
+
       # ─────────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（三选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
@@ -64,6 +70,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.build-kernel == true
     with:
       susfs_enable: ${{ inputs.susfs_enable }}
+      susfs_lkm: ${{ inputs.susfs_lkm }}
       vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
       vfs_nomount: ${{ inputs.vfs_nomount }}
       vfs_zeromount: ${{ inputs.vfs_zeromount }}
