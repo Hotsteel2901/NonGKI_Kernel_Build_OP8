@@ -275,6 +275,14 @@ runs:
           fi
           echo "KERNELSU_METHOD=${{ env.KERNELSU_METHOD }}" >> $GITHUB_ENV
 
+          # 4.19 适配：MODULE_IMPORT_NS 是 5.4+ 的模块命名空间宏；部分上游
+          # (FolkSU/KOWX712) 在 core/init.c 里没有 <5.0 门控，4.19 上会
+          # "type specifier missing" 编译失败。这些宏在 4.19 本就是 no-op，删行。
+          if [ "${{ env.FIRST_VERSION }}" -lt 5 ] && [ -n "$KERNELSU_FOLDER" ] && [ -f "$KERNELSU_FOLDER/kernel/core/init.c" ]; then
+            sed -i "/MODULE_IMPORT_NS/d" "$KERNELSU_FOLDER/kernel/core/init.c"
+            echo "[+] (4.19) stripped MODULE_IMPORT_NS from $KERNELSU_FOLDER/kernel/core/init.c"
+          fi
+
       - name: KPM Function Support
         if: env.KPM_ENABLE == 'true'
         shell: bash
