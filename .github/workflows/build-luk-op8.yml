@@ -388,10 +388,10 @@ jobs:
         run: |
           cd device_kernel
           export PATH=/opt/llvm/bin:$PATH
-          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
+          MAKE_OPTS="ARCH=arm64 LLVM=1 LLVM_IAS=0"
           TOPTS="CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu-"
 
-          make O=out $MAKE_OPTS $TOPTS $DEFCONFIG_NAME
+          make O=out $MAKE_OPTS $TOPTS CC="ccache clang" $DEFCONFIG_NAME
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/vendor/oplus.config
           if [ "${{ inputs.susfs_enable }}" = "true" ]; then
@@ -417,7 +417,7 @@ jobs:
             ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
               arch/arm64/configs/droidspaces.config
           fi
-          make O=out $MAKE_OPTS $TOPTS olddefconfig
+          make O=out $MAKE_OPTS $TOPTS CC="ccache clang" olddefconfig
 
           # ---- 原厂三态一致性校验 (防止 merge_config 静默覆盖 luk 原厂值) ----
           # susfs.config 在 oplus.config 之后合并, 若其中出现同名 CONFIG_x=...,
@@ -444,13 +444,13 @@ jobs:
           fi
           echo "[+] CONFIG_MODULE_SIG_FORCE 未启用 (允许加载原厂已签名模块)"
 
-          make -j$(nproc) O=out $MAKE_OPTS $TOPTS 2>&1 | tee error.log
+          make -j$(nproc) O=out $MAKE_OPTS $TOPTS CC="ccache clang" 2>&1 | tee error.log
 
       - name: 🧩 Collect & strip kernel modules
         run: |
           cd device_kernel
           export PATH=/opt/llvm/bin:$PATH
-          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
+          MAKE_OPTS="ARCH=arm64 LLVM=1 LLVM_IAS=0"
           TOPTS="CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu-"
 
           # luk 树只把 CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST 等极少数项设为 =m。
@@ -458,7 +458,7 @@ jobs:
           # kernel, 模块沿用系统分区, 这样两个系统都能用同一份产物。
           #
           # 但如果本次配置产生了原厂没有的模块, 就必须随包提供, 否则 OOS 侧缺失。
-          make O=out $MAKE_OPTS $TOPTS INSTALL_MOD_PATH=modules modules_install 2>&1 | tail -5
+          make O=out $MAKE_OPTS $TOPTS CC="ccache clang" INSTALL_MOD_PATH=modules modules_install 2>&1 | tail -5
           if [ -d modules/lib/modules ]; then
             find modules -name '*.ko' | sort > ../built_modules.txt
             echo "[+] 本次构建产生的模块:"
