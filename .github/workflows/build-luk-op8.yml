@@ -95,7 +95,7 @@ env:
 
 jobs:
   build-kernel:
-    name: "OnePlus 8 luk (BakaSU + SUSFS v2.3.0)"
+    name: "OnePlus 8 luk (BakaSU + NoMount + DroidSpaces)"
     runs-on: ubuntu-latest
     steps:
       - name: 🧭 Validate VFS backend selection (mutually exclusive)
