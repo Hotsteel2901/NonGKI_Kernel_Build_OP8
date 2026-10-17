@@ -1,7 +1,8 @@
 # ReSuki_Luk 分支 — OnePlus 8 luk 内核 (自定义 ROM + OOS 双兼容)
 
 本分支为 **luk1337/android_kernel_oneplus_sm8250** 的 **`luk`** 分支 (4.19.325) 提供
-ReSukiSU / SUSFS 集成补丁与独占构建工作流。
+BakaSU (原 ReSukiSU) 集成补丁与独占构建工作流。
+默认使用 syscall 手动钩子, SUSFS 可选。
 
 > **隔离声明**: 本分支只新增文件 (`Patches/luk/*`、`.github/workflows/build-luk-op8.yml`
 > 及 README 章节), 不改动仓库中原有的 LineageOS 工作流与 composite action,
@@ -16,7 +17,7 @@ ReSukiSU / SUSFS 集成补丁与独占构建工作流。
 | 内核版本 | 4.19.325 (含 CIP / MGLRU 等 OPLUS 上游合并) |
 | 本地验证基准提交 | `bc6f3fcb9` |
 | 设备 | OnePlus 8 (`instantnoodle`, sm8250/kona) |
-| root 实现 | ReSukiSU (v4.2.0-rc3 系列), `CONFIG_KSU_SUSFS` inline hook 模式 |
+| root 实现 | BakaSU `main`, 默认 `CONFIG_KSU_MANUAL_HOOK` (syscall 钩子); SUSFS 开关打开时改用 `CONFIG_KSU_SUSFS` inline hook 并自动锁定 BakaSU `v4.2.0-rc3` |
 | 工作流 | `.github/workflows/build-luk-op8.yml` (`Build luk Kernel`) |
 
 ## 双系统兼容 (自定义 ROM + OOS)
@@ -30,7 +31,8 @@ luk 分支与 LineageOS 树的关键区别: 它**保留了 OPLUS/OOS 的完整�
 
 1. `vendor/kona-perf_defconfig` — 使用 luk 自带 defconfig
 2. 合并 `vendor/oplus.config` — OOS 侧驱动/特性完整保留
-3. 仅追加 ReSukiSU/SUSFS 开关 (`Patches/luk/susfs.config`) 与可选 DroidSpaces 配置
+3. 仅追加 BakaSU 开关 (`Patches/luk/nosusfs.config` 默认, 或 `susfs.config`)、
+   VFS 后端配置与可选 DroidSpaces 配置
 
 产物为 **同一份 Image + dtb.img**, AnyKernel3 刷入即可, 自定义 ROM 与 OOS 通用。
 
@@ -155,10 +157,10 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 HybridMount / NoMount / ZeroMount 三者都劫持同一层 VFS 且 keyring 协议互不兼容，
 **同期最多只能开一个**，工作流开头的校验步骤会在开启多个时直接 fail。
 
-| 后端 | 开关（LOS 工作流 / luk-op8 工作流） | 默认 | 本目录文件 |
+| 后端 | 开关（LOS 工作流 / luk-op8 工作流） | luk-op8 默认 | 本目录文件 |
 |---|---|---|---|
-| Hybrid Mount VFS | `VFS_HYBRIDMOUNT` / `vfs_hybridmount` | 开 | `0004-hybridmount-vfs.patch` + `hybridmount.config` |
-| NoMount VFS | `VFS_NOMOUNT` / `vfs_nomount` | 关 | 无本地补丁（走上游 `kernel/setup.sh`）+ `nomount.config` |
+| Hybrid Mount VFS | `VFS_HYBRIDMOUNT` / `vfs_hybridmount` | 关 | `0004-hybridmount-vfs.patch` + `hybridmount.config` |
+| NoMount VFS | `VFS_NOMOUNT` / `vfs_nomount` | **开** | 无本地补丁（走上游 `kernel/setup.sh`）+ `nomount.config` |
 | ZeroMount VFS | `VFS_ZEROMOUNT` / `vfs_zeromount` | 关 | `0005-zeromount-vfs.patch` + `zeromount.config` |
 
 > 注意: `build-oneplus-8-los23-a16.yml`（共享 LOS 工作流）用 `Patches/Patch/`
@@ -179,7 +181,53 @@ luk 树与 LineageOS `lineage-23.2` 树**不同源**, 直接套用本仓库 Line
 
 ## 本地验证流程与结果
 
-环境: clang 18 + LLVM=1 + LLVM_IAS=0 + GNU binutils (aarch64), ccache 加速。
+### 2026-10 默认配置: BakaSU + NoMount + DroidSpaces (无 SUSFS)
+
+环境: clang **19.1.7** (与工作流一致) + `LLVM=1 LLVM_IAS=0` +
+GNU binutils 2.47 (aarch64), ccache 加速。
+
+| 检查项 | 结果 |
+|---|---|
+| syscall 钩子 (`Patches/syscall_hook_patches.sh` v2.2) | exec / open / read_write / stat / input / reboot / sys.c 全部打上 |
+| BakaSU manual hook 校验 (`manual_hook_check.mk`) | `using Manual Hook`; execveat / faccessat / stat / newfstat_ret / fstat64_ret / sys_reboot 全部 found |
+| NoMount 集成 (上游 `kernel/setup.sh`) | `fs/nomount` 符号链接 + `fs/Makefile` + `fs/Kconfig` 接线成功 |
+| DroidSpaces | netprio `css->id` 修复 + cocci cgroup 前缀 + USER_NS/PID_NS/netns 配置 |
+| 完整编译 | **BUILD_EXIT=0, 0 error** |
+| 产物 | `Image` 52,340,800 bytes + `dtb.img` 1,563,432 bytes |
+| 内核版本串 | `4.19.325-cip124-st8-perf-gbc6f3fcb9-hotsteel-luk` (无 `-dirty`) |
+| 模块 | `gspca_main.ko`、`oplus_connectivity_routerboost.ko` |
+| AK3 打包 | `instantnoodle-luk-<时间戳>-Anykernel3.zip` (25 MB, 含 `Image` / `dtb` / `modules/`) |
+
+关键校验:
+
+```
+-- KERNEL_VERSION: 4.19
+-- KERNEL_TYPE: Non-GKI
+-- BakaSU: using Manual Hook
+```
+
+符号表 (`nm out/vmlinux`): `ksu_handle_execveat`、`ksu_handle_sys_read`、
+`ksu_handle_input_handle_event`、`ksu_handle_setresuid`、`nomount_init` 命中。
+
+配置 (`out/.config`): `CONFIG_KSU=y`、`CONFIG_KSU_MANUAL_HOOK=y`、
+`CONFIG_KSU_SUSFS` 关闭、`CONFIG_NOMOUNT=y`、`CONFIG_KEYS=y`、
+`CONFIG_USER_NS=y`、`CONFIG_PID_NS=y`、`CONFIG_NET_NS=y`、
+`CONFIG_CGROUP_NET_PRIO=y`、`CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST=m`、
+`CONFIG_MODULE_SIG_FORCE` 关闭。
+
+同一份 `Image` + `dtb.img` 同时用于 **OOS 13.1** 与 **LOS-based ROM**
+(LineageOS / crDroid 等): luk 原厂 `vendor/oplus.config` 完整保留,
+OOS 的 `oplus_connectivity_routerboost.ko` 等模块以 `=m` 产出,
+同时不强制模块签名, 两套系统的原厂/ROM 模块均可加载。
+
+### 2026-09 SUSFS inline hook 验证 (可选路径)
+
+> **上游状态 (2026-10)**: BakaSU `main` 自 `48fa4bb7`
+> (`kernel: suspend susfs build`, 2026-10-10) 起在
+> `kernel/tools/susfs_compat.mk` 末尾无条件 `$(error)`, 等待 SUSFS 上游同步。
+> 因此工作流在 `susfs_enable=true` 且未指定 `ksu_ref` 时会自动锁定
+> **`v4.2.0-rc3`** (与本目录 SUSFS v2.3.0 补丁配套的最后一个稳定版本)。
+> `susfs_enable=false` (默认) 走 `CONFIG_KSU_MANUAL_HOOK`, 完全不受该限制影响。
 
 | 检查项 | 结果 |
 |---|---|
@@ -187,37 +235,8 @@ luk 树与 LineageOS `lineage-23.2` 树**不同源**, 直接套用本仓库 Line
 | ReSukiSU 编译期钩子校验 (`inline_hook_check.mk`) | 7/7 通过: setresuid / execveat / faccessat / sys_read / stat / sys_reboot / input |
 | SUSFS 版本识别 | `SUSFS_VERSION: v2.3.0` (`kernel/Kbuild` 自动读取) |
 | KSU 内核类型判定 | `KERNEL_TYPE: Non-GKI`, `using SuSFS Inline hook` |
-| 完整编译 (stage1: ReSukiSU+SUSFS) | 见下方"构建产物" |
-| 完整编译 (stage2: +DroidSpaces) | 见下方"构建产物" |
-
-### 构建产物
-
-| 阶段 | 产物 | 结果 |
-|---|---|---|
-| stage1 (ReSukiSU + SUSFS v2.3.0) | `out/arch/arm64/boot/Image` (56.5 MB) + `dtb.img` (1.53 MB) | BUILD_EXIT=0, 0 error |
-| stage2 (+ DroidSpaces 配置 + cgroup 前缀补丁 + netprio 修复) | `out/arch/arm64/boot/Image` (58.6 MB) + `dtb.img` (1.53 MB) | BUILD_EXIT=0, 0 error |
-
-关键校验 (stage2 最终编译日志):
-
-```
--- KERNEL_TYPE: Non-GKI
--- ReSukiSU: using SuSFS Inline hook
--- SUSFS_VERSION: v2.3.0
-```
-
-符号表校验 (`nm out/vmlinux`):
-
-| 符号 | 命中 |
-|---|---|
-| `ksu_handle_execveat` | 1 |
-| `ksu_handle_input_handle_event` | 1 |
-| `ksu_handle_stat` | 1 |
-| `ksu_handle_setresuid` | 1 |
-| `susfs_init` | 1 |
-
-配置校验 (`out/.config`): `CONFIG_KSU=y`、`CONFIG_KSU_SUSFS=y`、
-`CONFIG_USER_NS=y`、`CONFIG_PID_NS=y`、`CONFIG_NET_NS=y`、
-`CONFIG_CGROUP_NET_PRIO=y`、`CONFIG_OPLUS_FEATURE_WIFI_ROUTERBOOST=y` 全部生效。
+| 完整编译 (stage1: ReSukiSU+SUSFS) | `Image` 56.5 MB + `dtb.img` 1.53 MB, BUILD_EXIT=0 |
+| 完整编译 (stage2: +DroidSpaces) | `Image` 58.6 MB + `dtb.img` 1.53 MB, BUILD_EXIT=0 |
 
 ## 未集成项 (有意为之)
 

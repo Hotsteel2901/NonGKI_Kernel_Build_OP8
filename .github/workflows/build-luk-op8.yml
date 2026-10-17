@@ -1,4 +1,4 @@
-name: Build OnePlus 8 luk Kernel (BakaSU + SUSFS + DroidSpaces)
+name: Build OnePlus 8 luk Kernel (BakaSU + NoMount + DroidSpaces)
 
 # ============================================================================
 # luk 内核独占工作流 (ReSuki_Luk 分支)
@@ -10,8 +10,10 @@ name: Build OnePlus 8 luk Kernel (BakaSU + SUSFS + DroidSpaces)
 #   - 因此本工作流固定使用 luk 自带的 vendor/kona-perf_defconfig,
 #     并合并 vendor/oplus.config, 不做任何 AOSP-only 裁剪。
 #
-# 集成组件: BakaSU (原 ReSukiSU; root 实现, SUSFS inline hook 模式)
-#           -> SUSFS v2.3.0 (JackA1ltman 4.19 实证版)
+# 集成组件: BakaSU (原 ReSukiSU; root 实现)
+#           -> 默认 syscall 手动钩子 (CONFIG_KSU_MANUAL_HOOK)
+#           -> SUSFS v2.3.0 可选 (susfs_enable=true, inline hook 模式)
+#           -> NoMount VFS 默认开启 (可切 Hybrid Mount / ZeroMount)
 #           -> DroidSpaces (可选, cgroup 前缀 + USER_NS 配置)
 #
 # 本工作流自包含: 不引用仓库内其它 composite action, 也不依赖
@@ -27,7 +29,7 @@ on:
         type: string
         default: ''
       ksu_ref:
-        description: 'BakaSU 提交/标签 (留空=main 最新)'
+        description: 'BakaSU 提交/标签 (留空=main 最新; SUSFS 开启时留空会自动锁定 v4.2.0-rc3)'
         required: false
         type: string
         default: ''
@@ -38,10 +40,10 @@ on:
         default: true
 
       susfs_enable:
-        description: '集成 SUSFS (默认开启; 关闭则改用 syscall 手动钩子 + BakaSU 手动模式)'
+        description: '集成 SUSFS (默认关闭: 改用 syscall 手动钩子 + BakaSU 手动模式)'
         required: true
         type: boolean
-        default: true
+        default: false
 
       # ───────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（三选一，互斥！）
@@ -52,15 +54,15 @@ on:
       # 上游 Hybrid Mount 的 Kconfig 明确写了与 NoMount 的元模块
       # "not compatible"。最多只能开一个，构建开头有互斥校验。
       vfs_hybridmount:
-        description: 'VFS 后端: Hybrid Mount (默认开启)'
-        required: true
-        type: boolean
-        default: true
-      vfs_nomount:
-        description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥)'
+        description: 'VFS 后端: Hybrid Mount (与 NoMount 互斥)'
         required: true
         type: boolean
         default: false
+      vfs_nomount:
+        description: 'VFS 后端: NoMount (默认开启, 与 Hybrid Mount 互斥)'
+        required: true
+        type: boolean
+        default: true
       vfs_zeromount:
         description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
         required: true
@@ -77,8 +79,8 @@ env:
   # 这里只给静态部分（不含 VFS），避免标题与实际集成内容不一致。
   # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
   # 运行时值，导致动态组装的标题失效。AK3_TITLE 由校验步骤写入。
-  AK3_TITLE_PREFIX: "BakaSU (Luk) + SUSFS v2.3.0"
-  AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
+  AK3_TITLE_PREFIX: "BakaSU (Luk)"
+  AK3_TITLE_SUFFIX: "Built By hotsteel"
 
   KERNEL_SOURCE: "https://github.com/luk1337/android_kernel_oneplus_sm8250.git"
   KERNEL_BRANCH: "luk"
@@ -139,8 +141,14 @@ jobs:
           if [ "$ZM" = "true" ]; then VFS_LABEL="ZeroMount VFS"; fi
 
           TITLE="${{ env.AK3_TITLE_PREFIX }}"
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            TITLE="$TITLE + SUSFS v2.3.0"
+          fi
           if [ -n "$VFS_LABEL" ]; then
             TITLE="$TITLE + $VFS_LABEL"
+          fi
+          if [ "${{ inputs.enable_droidspaces }}" = "true" ]; then
+            TITLE="$TITLE + DroidSpaces"
           fi
           TITLE="$TITLE + ${{ env.AK3_TITLE_SUFFIX }}"
 
@@ -181,15 +189,29 @@ jobs:
             git fetch --depth=1 origin "${{ inputs.kernel_ref }}" && git checkout FETCH_HEAD
           fi
           git log --oneline -1
-          echo "-g$(git rev-parse --short HEAD)-luk" > .scmversion
+          echo "-g$(git rev-parse --short HEAD)-hotsteel-luk" > .scmversion
 
       - name: 📥 Setup BakaSU
         run: |
           cd device_kernel
           git clone "$KSU_REPO" KernelSU
           cd KernelSU
-          if [ -n "${{ inputs.ksu_ref }}" ]; then
-            git checkout "${{ inputs.ksu_ref }}"
+
+          # SUSFS 模式的上游兼容性回退:
+          # BakaSU main 自 2026-10-10 的 48fa4bb7 ("kernel: suspend susfs build")
+          # 起在 kernel/tools/susfs_compat.mk 末尾无条件 $(error)，等待 SUSFS
+          # 上游同步；直接拉 main 会在编译驱动阶段直接失败。v4.2.0-rc3 是
+          # 与该 SUSFS v2.3.0 补丁配套的最后一个稳定版本。
+          # 无 SUSFS (CONFIG_KSU_MANUAL_HOOK) 时该文件根本不会被 include，
+          # 因此保持 main 最新即可。
+          KSU_REF="${{ inputs.ksu_ref }}"
+          if [ -z "$KSU_REF" ] && [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            KSU_REF="v4.2.0-rc3"
+            echo "[i] SUSFS enabled without ksu_ref: pinning BakaSU to $KSU_REF"
+            echo "[i] (BakaSU main suspends SUSFS builds since 48fa4bb7)"
+          fi
+          if [ -n "$KSU_REF" ]; then
+            git checkout "$KSU_REF"
           fi
           git log --oneline -1
           cd ..
@@ -459,8 +481,10 @@ jobs:
           #
           # 但如果本次配置产生了原厂没有的模块, 就必须随包提供, 否则 OOS 侧缺失。
           make O=out $MAKE_OPTS $TOPTS CC="ccache clang" INSTALL_MOD_PATH=modules modules_install 2>&1 | tail -5
-          if [ -d modules/lib/modules ]; then
-            find modules -name '*.ko' | sort > ../built_modules.txt
+          # 注意: 使用 O=out 时子 make 的 cwd 是 out/, 相对路径 INSTALL_MOD_PATH=modules
+          # 实际落在 out/modules (不是源码根目录下的 modules/)。
+          if [ -d out/modules/lib/modules ]; then
+            find out/modules -name '*.ko' | sort > ../built_modules.txt
             echo "[+] 本次构建产生的模块:"
             cat ../built_modules.txt
           else
