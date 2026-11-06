@@ -91,7 +91,11 @@ env:
 jobs:
   build-kernel:
     name: "OnePlus 8 luk (BakaSU + NoMount + DroidSpaces)"
-    runs-on: ubuntu-latest
+    # 钉 24.04：本工作流用的是官方 LLVM 19.1.7 预编译包，其动态依赖是 noble
+    # 时代的 ABI（libxml2.so.2 / libicuuc.so.74）。26.04 这两个 soname 都没了，
+    # ld.lld 直接起不来；要上 26.04 得补齐 compat 并重新验证整套工具链，
+    # 不属于顺手升级的范围，所以这里显式钉住已知可用的镜像。
+    runs-on: ubuntu-24.04
     steps:
       - name: 🧭 Validate VFS backend selection (mutually exclusive)
         run: |
