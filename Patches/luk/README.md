@@ -147,21 +147,16 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 > 被回收的 UAF）、inode 发布/回收竞态重构、UID 快速路径等修复；并**保留**本仓库 4.19 专属的
 > `struct name_snapshot` 兼容 shim（`hm_snapshot_qstr()`，4.19 的 `name_snapshot.name` 是裸指针，
 > 而非 ≥5.2 的 `struct qstr`）。
->
-> `0005-zeromount-vfs.patch` 与 master / KSU 分支的
-> `Patches/Patch/zeromount_patch_to_4.19.patch` 是**同一份内容**，
-> 仅文件名按本目录的编号约定重命名。
 
-## VFS 后端三选一（互斥）
+## VFS 后端二选一（互斥）
 
-HybridMount / NoMount / ZeroMount 三者都劫持同一层 VFS 且 keyring 协议互不兼容，
+HybridMount / NoMount 两者都劫持同一层 VFS 且 keyring 协议互不兼容，
 **同期最多只能开一个**，工作流开头的校验步骤会在开启多个时直接 fail。
 
 | 后端 | 开关（LOS 工作流 / luk-op8 工作流） | luk-op8 默认 | 本目录文件 |
 |---|---|---|---|
 | Hybrid Mount VFS | `VFS_HYBRIDMOUNT` / `vfs_hybridmount` | 关 | `0004-hybridmount-vfs.patch` + `hybridmount.config` |
 | NoMount VFS | `VFS_NOMOUNT` / `vfs_nomount` | **开** | 无本地补丁（走上游 `kernel/setup.sh`）+ `nomount.config` |
-| ZeroMount VFS | `VFS_ZEROMOUNT` / `vfs_zeromount` | 关 | `0005-zeromount-vfs.patch` + `zeromount.config` |
 
 > 注意: `build-oneplus-8-los23-a16.yml`（共享 LOS 工作流）用 `Patches/Patch/`
 > 下的 `hybridmount_patch_to_4.19.patch`，`build-luk-op8.yml` 用本目录的
