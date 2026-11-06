@@ -78,15 +78,16 @@ env:
   KERNELSU_SOURCE : ""
   KERNELSU_BRANCH : ""
 
-  # 保持 latest: 每次构建都会通过 BakaSU setup.sh (git pull) 拉取最新 main 分支
-  # Pure 分支不集成任何 root 实现（KernelSU/BakaSU/Magisk/Apatch 均不预置），
-  # 保留 KERNELSU_* 变量仅为复用 build-ready 的通用逻辑，实际全部跳过。
+  # ── Pure: 不集成任何 root 实现 ───────────────────────────────────────────
+  # KERNELSU_ENABLE=false 让 build-ready 跳过 BakaSU 安装与 KSU defconfig 写入；
+  # 其余 KERNELSU_* 仅为复用共享 action 而保留占位。
   KERNELSU_ENABLE : "false"
   KERNELSU_AUTO_GET : "false"
-  # 注意: "resukisu" 只是内部标识符(下游有多处分支判断, 改动无收益), 实际仓库指向
-  # Baka-SU/BakaSU, 拼出的 setup.sh 地址为:
-  #   https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/main/kernel/setup.sh
-  KERNELSU_AUTO_FORK : "" # unused on Pure (KERNELSU_ENABLE=false)
+  KERNELSU_AUTO_FORK : ""
+  # 显式关闭 SUSFS：共享 action 里有 `[[ $SUSFS_ENABLE != "true" ]]` 这类
+  # 裸变量展开，未定义时会变成空操作数导致 shell 语法错误，必须给值。
+  SUSFS_ENABLE : "false"
+  SUSFS_LKM : "false"
 
 
 
