@@ -339,7 +339,13 @@ runs:
 
           if [[ "${{ env.KERNELSU_SOURCE }}" == *blackslashxx* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "xxksu" ]]; then
             echo "CONFIG_KSU_KPROBES_KSUD=n" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
-
+            # 本分支用的是**手写静态钩子**（backslashxx_manual_hooks.patch 直接在 fs/*.c 里
+            # 调 ksu_handle_*）。上游把 sucompat 的钩子改成 SUCOMPAT_HOOK_TYPE 宏控制后：
+            #   TAMPER_SYSCALL_TABLE / HACK_ARM64_BRANCH_LINK 任一 =y
+            #   -> 宏退化成 static __always_inline -> 我们的 extern 在链接期找不到符号。
+            # 这两个开关缺省是 n，但上游可能改默认值，所以这里显式钉住。
+            echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=n" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
+            echo "CONFIG_KSU_HACK_ARM64_BRANCH_LINK=n" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
           fi
 
           if [[ "${{ env.KERNELSU_SOURCE }}" == *SukiSU* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "sukisu" ]] || [[ "${{ env.KERNELSU_SOURCE }}" == *ReSukiSU* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "resukisu" ]]; then

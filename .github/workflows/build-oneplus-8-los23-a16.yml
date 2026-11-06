@@ -90,12 +90,20 @@ env:
   KERNELSU_SOURCE : ""
   KERNELSU_BRANCH : ""
 
-  # 保持 latest: 每次构建都会通过 backslashxx/KernelSU setup.sh (git pull) 拉取最新 master 分支
-  # 补丁对齐基准: backslashxx/KernelSU master @ 1f47db46 (KSU_VERSION=32657, 2026-10 核对)
-  #   注: 构建时取的是 master 最新而非固定该 SHA; 该值仅记录"补丁最后一次对齐到的上游状态",
-  #       上游若再改动 hook 接口, 请重新生成 backslashxx_susfs_bridge.patch。
+  # KERNELSU_AUTO_FORK=xxksu 走 backslashxx/KernelSU 的官方 setup.sh（clone + git pull master）。
+  # 补丁对齐基准: backslashxx/KernelSU master @ 4e6e9ff (v3.3.1+, 2026-11-06 核对)
+  #   本分支的两份补丁是**手写**的，签名必须与上游逐个对齐，上游一改就会链接失败/静默错位：
+  #     - backslashxx_manual_hooks.patch  依赖 ksu_handle_{execveat,faccessat,stat,
+  #       newfstat_ret,fstat64_ret,sys_reboot} 在 drivers/kernelsu 里是**外部可见**符号
+  #       （sucompat.c 的 SUCOMPAT_HOOK_TYPE 在 TAMPER_SYSCALL_TABLE / HACK_ARM64_BRANCH_LINK
+  #        打开时会退化成 static __always_inline，手写钩子就绑不上了）；
+  #     - backslashxx_susfs_bridge.patch  依赖 supercall/{supercall,dispatch}.c、ksu.c、
+  #       feature/kernel_umount.c 的具体上下文。
+  # 因此这里**钉死 SHA**（KERNELSU_PIN），保证补丁与源码树一一对应、构建可复现。
+  # 升上游 = 改 KERNELSU_PIN + 重新对齐两份补丁（见 Patches/Archive/README.md 的流程说明）。
   KERNELSU_AUTO_GET : "true" # if u want easy setting kernelsu, u can true.
   KERNELSU_AUTO_FORK : "xxksu" # xxksu, rsuntk, next, resukisu and sukisu
+  KERNELSU_PIN : "4e6e9ff00b99c92a4078753b13c791ae2df11b4f"
 
   # SUSFS 由 UI 勾选控制（susfs_enable 输入），默认开启。
   # KSU 分支的 SUSFS 是**手写桥接**（backslashxx_manual_hooks.patch 的 SUSFS 片段
@@ -269,6 +277,44 @@ jobs:
           grep -q "source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
           echo "-g4238ee49a84b-hotsteel" > .scmversion
 
+      - name: 📌 Pin KernelSU to the audited commit
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel
+          # setup.sh 拉的是 master tip，手写补丁却是按 KERNELSU_PIN 对齐的，必须回到那个 SHA，
+          # 否则一棵树配两份不同版本的上游 = 静默错位（patch 打上去了但语义不对）。
+          test -d KernelSU/.git || { echo "[-] KernelSU/ not found (setup.sh did not run?)"; false; }
+          cd KernelSU
+          git fetch --depth=1 origin "${{ env.KERNELSU_PIN }}"
+          git checkout -f "${{ env.KERNELSU_PIN }}"
+          echo "[+] KernelSU pinned: $(git rev-parse HEAD) ($(git log -1 --format=%s))"
+
+      - name: 🔎 Verify KernelSU hook symbols are linkable (hand-written hooks)
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel/drivers/kernelsu
+          # 手写钩子要求这些符号是**外部可见**的。sucompat.c 里 SUCOMPAT_HOOK_TYPE 由
+          # CONFIG_KSU_TAMPER_SYSCALL_TABLE / CONFIG_KSU_HACK_ARM64_BRANCH_LINK 决定：
+          # 任一打开 -> static __always_inline -> 我们的 extern 声明在链接期找不到符号。
+          # 这里做前置检查，把"链接期一大堆 undefined symbol"提前成一条清晰的报错。
+          grep -q "^#define SUCOMPAT_HOOK_TYPE int" feature/sucompat.c || {
+            echo "[-] SUCOMPAT_HOOK_TYPE is no longer 'int' -- sucompat hooks became static."
+            echo "    Check CONFIG_KSU_TAMPER_SYSCALL_TABLE / CONFIG_KSU_HACK_ARM64_BRANCH_LINK."
+            false
+          }
+          for sym in ksu_handle_execveat ksu_handle_faccessat ksu_handle_stat; do
+            grep -q "^SUCOMPAT_HOOK_TYPE ${sym}(" feature/sucompat.c || {
+              echo "[-] ${sym} is no longer defined via SUCOMPAT_HOOK_TYPE in feature/sucompat.c";
+              echo "    upstream moved -> re-anchor Patches/Patch/backslashxx_manual_hooks.patch";
+              false
+            }
+          done
+          grep -q "^void ksu_handle_newfstat_ret(unsigned int \*fd, struct stat __user \*\*statbuf_ptr)" runtime/ksud_integration.c || {
+            echo "[-] ksu_handle_newfstat_ret signature changed"; false; }
+          grep -q "^void ksu_handle_fstat64_ret(unsigned long \*fd, struct stat64 __user \*\*statbuf_ptr)" runtime/ksud_integration.c || {
+            echo "[-] ksu_handle_fstat64_ret signature changed"; false; }
+          grep -q "^int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user \*\*arg)" supercall/supercall.c || {
+            echo "[-] ksu_handle_sys_reboot signature changed"; false; }
+          echo "[+] hand-written hook symbols verified."
+
       - name: 🧩 Add SUSFS Kconfig definitions (backslashxx lacks them)
         if: inputs.susfs_enable == true
         run: |
@@ -389,6 +435,15 @@ jobs:
           grep -q "ksu_handle_susfs_cmd" drivers/kernelsu/supercall/dispatch.c
           grep -q "SUSFS_MAGIC" drivers/kernelsu/supercall/supercall.c
           grep -q "susfs_init();" drivers/kernelsu/ksu.c
+          grep -q "susfs_set_current_proc_umounted();" drivers/kernelsu/feature/kernel_umount.c
+          # 位置校验：patch(1) 带 -F 时会在 fuzz 里挑错上下文（曾把 susfs_init() 塞进
+          # ksu_print_build_info() 的 #if 块里），光 grep 符号名抓不到这种错位。
+          # 这里要求 susfs_init(); 必须落在 kernelsu_init() 之后 60 行内。
+          awk '/^static int __init kernelsu_init\(void\)/{f=1;n=0} f{n++} f&&/susfs_init\(\);/{found=1; exit} f&&n>60{exit} END{exit(found?0:1)}' \
+            drivers/kernelsu/ksu.c || { echo "[-] susfs_init() is not inside kernelsu_init()"; false; }
+          # 函数体必须在文件作用域（顶格 static/ 或顶格注释），不能嵌进别的函数
+          awk '/^int ksu_handle_susfs_cmd\(/{f=1} END{exit(f?0:1)}' \
+            drivers/kernelsu/supercall/dispatch.c || { echo "[-] ksu_handle_susfs_cmd() is not at file scope"; false; }
           echo "[+] SUSFS bridge verified in source tree."
 
       - name: 🧩 Patch Hybrid Mount VFS Subsystem
