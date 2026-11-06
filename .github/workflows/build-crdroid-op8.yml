@@ -144,11 +144,26 @@ jobs:
 
       - name: 🧰 Install build dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq flex bison libssl-dev libelf-dev \
+          export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
             device-tree-compiler ccache cpio rsync zip unzip bc python3 \
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi libxml2
+
+          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2；26.04 没有这个
+          # soname 时会在 vdso 阶段报 "ld.lld: error while loading shared
+          # libraries: libxml2.so.2" + Error 127。缺则从 24.04 取 compat 库。
+          if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
+            echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
+            sudo mkdir -p /opt/llvm-compat/lib
+            curl -fsSL --retry 3 -o /tmp/libxml2.deb \
+              http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3_amd64.deb
+            dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
+            sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
+            echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
+            echo "[+] compat libxml2 installed"
+          fi
 
       - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
         run: |
@@ -158,6 +173,11 @@ jobs:
           tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
           echo "/opt/llvm/bin" >> $GITHUB_PATH
           /opt/llvm/bin/clang --version
+          /opt/llvm/bin/ld.lld --version || {
+            echo "[-] /opt/llvm/bin/ld.lld cannot run (missing shared library?)"
+            ldd /opt/llvm/bin/ld.lld || true
+            false
+          }
 
       - name: 📥 Clone crDroid kernel
         run: |
@@ -205,6 +225,8 @@ jobs:
           echo "CONFIG_KSU_SUSFS=n" >> out/.config
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          # pipefail: 否则 make 失败被 tee 的 0 掩盖，报错会漂到后面的步骤
+          set -o pipefail
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
           SIZE=$(stat -c%s out/arch/arm64/boot/Image)
@@ -331,11 +353,26 @@ jobs:
 
       - name: 🧰 Install build dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq flex bison libssl-dev libelf-dev \
+          export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
             device-tree-compiler ccache cpio rsync zip unzip bc python3 \
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi libxml2
+
+          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2；26.04 没有这个
+          # soname 时会在 vdso 阶段报 "ld.lld: error while loading shared
+          # libraries: libxml2.so.2" + Error 127。缺则从 24.04 取 compat 库。
+          if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
+            echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
+            sudo mkdir -p /opt/llvm-compat/lib
+            curl -fsSL --retry 3 -o /tmp/libxml2.deb \
+              http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3_amd64.deb
+            dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
+            sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
+            echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
+            echo "[+] compat libxml2 installed"
+          fi
 
       - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
         run: |
@@ -344,6 +381,12 @@ jobs:
           mkdir -p /opt/llvm
           tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
           echo "/opt/llvm/bin" >> $GITHUB_PATH
+          /opt/llvm/bin/clang --version
+          /opt/llvm/bin/ld.lld --version || {
+            echo "[-] /opt/llvm/bin/ld.lld cannot run (missing shared library?)"
+            ldd /opt/llvm/bin/ld.lld || true
+            false
+          }
 
       - name: 📥 Clone crDroid kernel
         run: |
@@ -454,6 +497,8 @@ jobs:
           fi
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          # pipefail: 否则 make 失败被 tee 的 0 掩盖，报错会漂到后面的步骤
+          set -o pipefail
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
           echo "image_size=$(stat -c%s out/arch/arm64/boot/Image)" >> $GITHUB_OUTPUT
@@ -594,11 +639,26 @@ jobs:
 
       - name: 🧰 Install build dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq flex bison libssl-dev libelf-dev \
+          export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
             device-tree-compiler ccache cpio rsync zip unzip bc python3 \
             coccinelle gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi libxml2
+
+          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2；26.04 没有这个
+          # soname 时会在 vdso 阶段报 "ld.lld: error while loading shared
+          # libraries: libxml2.so.2" + Error 127。缺则从 24.04 取 compat 库。
+          if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
+            echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
+            sudo mkdir -p /opt/llvm-compat/lib
+            curl -fsSL --retry 3 -o /tmp/libxml2.deb \
+              http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3_amd64.deb
+            dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
+            sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
+            echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
+            echo "[+] compat libxml2 installed"
+          fi
 
       - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
         run: |
@@ -607,6 +667,12 @@ jobs:
           mkdir -p /opt/llvm
           tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
           echo "/opt/llvm/bin" >> $GITHUB_PATH
+          /opt/llvm/bin/clang --version
+          /opt/llvm/bin/ld.lld --version || {
+            echo "[-] /opt/llvm/bin/ld.lld cannot run (missing shared library?)"
+            ldd /opt/llvm/bin/ld.lld || true
+            false
+          }
 
       - name: 📥 Clone crDroid kernel
         run: |
@@ -716,6 +782,8 @@ jobs:
           fi
           make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          # pipefail: 否则 make 失败被 tee 的 0 掩盖，报错会漂到后面的步骤
+          set -o pipefail
           make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
           echo "image_size=$(stat -c%s out/arch/arm64/boot/Image)" >> $GITHUB_OUTPUT
