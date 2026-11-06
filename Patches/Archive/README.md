@@ -266,6 +266,15 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
     留档纪律：删除任何"曾经可用"的集成时，补丁与操作记录必须保留在
     `Patches/Archive/` 下，不得直接 rm。历史 build tag / release 仍可追溯。
 
+  - 2026-11-06: 【构建环境：Ubuntu 26.04 apt 静默挂死】
+    GitHub 把 `ubuntu-latest` 升到 26.04 之后，"⌛️ Compilation environment
+    preparation" 这一步会卡住几十分钟、日志一个字都不出（不是慢，是在等 stdin）。
+    根因是 26.04 的 apt 会弹 needrestart / conffile 询问，而 CI 没有 tty。
+    修法：所有 apt 调用改成 `apt-get -y` + `DEBIAN_FRONTEND=noninteractive` +
+    `NEEDRESTART_MODE=a` + `confdef/confold`；可选包（libz3-4 → 26.04 改名
+    libz3-4t64、libtinfo5、mkdtboimg）下载加 timeout 并允许降级；每个子步骤
+    打时间戳，下次再挂能一眼定位到哪一步。
+
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 
 ## 0. 先解包源码（patch 外的外部依赖）
