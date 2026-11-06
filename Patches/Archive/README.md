@@ -164,6 +164,108 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
       repository-projects / security-events / statuses。
       离线复现方法: actionlint v1.7.7，`actionlint -oneline .github/workflows/*.yml`。
 
+  - 2026-11-06: 【组件同步（全分支）】
+    逐项核对所有集成的上游状态并落地更新，记录如下（按"实际改动 / 仅核对"分类）。
+
+    **1. Hybrid Mount VFS — 已更新**
+      上游 `Hybrid-Mount/meta-hybrid_mount` dev（2026-11-05）的 `module/vfs/src/hybridmount.{c,h}`
+      替换进 `Patches/Patch/hybridmount_patch_to_4.19.patch`（以及 luk / crdroid 分支的
+      `0004-hybridmount-vfs.patch`）。相对上一版的关键变化：
+        - 新增 `inode_users`（atomic）+ `refs`（refcount）双计数：所有伪造 inode（含被挤出的
+          缓存世代）都 pin 住 dir_node，修复 inode 回收与节点释放之间的 UAF；
+        - `hm_dir_get()/hm_dir_put()`：RCU 下取引用，retire 时 drop 拓扑引用，读者可跨睡眠调用；
+        - `hm_destroy_virtual_inode()` 改用 `xchg(&inode->i_private, NULL)`，与 retire 侧的
+          orphan 发布配对，避免最后一代节点无人释放；
+        - 新增 `backing_path` 借用快照（只在 RCU 下比对，绝不 path_put）；
+        - 新增 `export_operations`（fake_eop）支持与按 UID 的子项查找
+          `hybridmount_child_for_uid()`，`rule_info->backing_path` 对虚拟目录返回空 path；
+        - 4.19 兼容**由上游内置**（`< 5.2` 用 `QSTR_INIT(name.name, strlen(...))`），
+          本地不再需要 `hm_snapshot_qstr()` shim —— 该 shim 已随旧版一并移除。
+      in-tree Makefile 保留本地版本（`obj-$(CONFIG_HYBRIDMOUNT)` + `-std=gnu11`
+      `-Wno-declaration-after-statement` `-Wno-error`），因为上游 Makefile 是 out-of-tree 模块构建。
+      验证：新补丁在 lineage-23.2 tip 骨架树上 `patch -p1 --dry-run` 全通过，应用后
+      `diff` 与上游 `module/vfs/src` 逐字节一致（.c / .h）。
+
+    **2. DroidSpaces — 已更新配置片段**
+      按上游 `Documentation/Kernel-Configuration.md`（2026-11-05）的 Non-GKI 段补齐：
+        + `CONFIG_MEMCG_SWAP=y`（4.19 属 <5.8，另需 `swapaccount=1` 或
+          `CONFIG_MEMCG_SWAP_ENABLED=y`，本内核用默认关闭 swap 的配置，仅补齐符号）
+        + `CONFIG_MACVLAN=y`（`--net=macvlan` 模式）
+      其余项与上游逐项一致。cocci 两个脚本与上游一致，无需改。
+
+    **3. NoMount VFS — 已适配上游脚本变更**
+      上游 `kernel/setup.sh`（2026-11-06）布局变了：源码由 `kernel/` 移到 `kernel/src/`，
+      脚本自己完成 `fs/nomount` symlink + `fs/Makefile` + `fs/Kconfig`（最后一个 endmenu 前）接线。
+      工作流自检相应加强：`test -L fs/nomount`、`fs/nomount/{nomount.c,Kconfig}` 双文件存在性、
+      Makefile/Kconfig 接线，并打印 `readlink fs/nomount` 便于排障。
+      仍为动态拉取 dev（不 pin），与"跟随上游最新"的既定策略一致。
+
+    **4. SUSFS-LKM (legacy) — 仅核对，无需改**
+      上游 `Hotsteel2901/susfs4ksu-lkm` legacy（2026-10-11）最新代码上，5 个 4.19 适配补丁
+      全部 `patch -p1 --dry-run` 干净通过：susfs.h（regs_set_return_value pre-5.5）、
+      sus_path.c（path_notify pre-5.2）、susfs_kstat.c（syscall_get_arguments 5 参数）、
+      sus_mount.c（419 mount layout + statx）、spoof_cmdline.c（pre-5.10 无 bootconfig）。
+
+    **5. BakaSU — 仅核对，无需改**
+      上游 main（2026-11-05）的 `kernel/tools/inline_hook_check.mk` 仍要求 7 个钩子：
+      `ksu_handle_{setresuid,execveat,faccessat,sys_read,stat,sys_reboot,input_handle_event}`，
+      并显式拒绝旧符号 `ksu_vfs_read_hook` / `ksu_input_hook` / `ksu_execveat_hook` /
+      `ksu_init_rc_hook`。本地 `resukisu_inline_hooks.patch` 7/7 齐备且 0 旧符号。
+      `CONFIG_KSU_SUSFS` 下 `ksu_handle_stat/faccessat` 的签名仍是 `struct filename **`
+      （sucompat.c 的 `#ifdef CONFIG_KSU_SUSFS` 分支），与本地补丁一致，无需改。
+      说明：BakaSU 的 inline hook 是其**官方支持**路径，本仓库 master/luk/crdroid 三个分支
+      用的就是这条路径。
+
+    **6. Ksu-backslashxx（KSU 分支）— 仅核对，需保持手写桥接完整**
+      KSU 分支不是 BakaSU，而是 backslashxx/KernelSU + **本仓库手写的桥接**：
+      `backslashxx_manual_hooks.patch`（内核侧 7 个 `ksu_handle_*` 调用点）+
+      `backslashxx_susfs_bridge.patch`（KSU 侧 `susfs_set_current_proc_umounted()` 等
+      SUSFS 符号桥接）。这两份补丁与 BakaSU 的官方 inline hook **不能混用**：
+      前者按 backslashxx 的 `const char __user **` 旧签名写，后者按 BakaSU 的
+      `struct filename **` 新签名写。升级时必须成对检查、不得只替换其中一份。
+      `build-oneplus-8-los23-a16.yml` 里已有 `🔍 Verify SUSFS bridge applied` 步骤做符号守卫，
+      本次保持原样；如后续要跟 backslashxx 新版本，先核对其 `sucompat.c` 签名再动补丁。
+
+    **7. SUSFS（in-tree）— 已评估，本轮不升级内核侧**
+      对照 Jack 上游 `NonGki_Build_2nd` mainline（2026-11-05）的
+      `Patches/Patch/susfs_patch_to_4.19.patch`：上游在 v2.3.0 基础上新增了
+      `CMD_SUSFS_SET_PRIORITY_UID_FILTER`（getpriority UID 过滤位图）、`sus_type` /
+      `sus_avd_allowed` 新命令、`susfs_switch_to_ksu_domain()` 等特性，`fs/susfs.c`
+      1568 -> 2214 行；并新增 `block/ioprio.c`、`fs/stat.c`、`kernel/sys.c` 的 hunk，
+      把 KSU 钩子并入同一补丁。
+      **本轮不采纳**，原因：
+        a) 上游补丁在 LineageOS sm8250 4.19 上直接 `patch -p1 --dry-run` 有 4 处 hunk 失败
+           （fs/namei.c x2、fs/proc/task_mmu.c、fs/super.c），其基线是 CAF 4.19（含
+           `mmap_read_lock_killable` 旧名、`fs_context.h` 差异），与本树不同源；
+        b) 新特性依赖 KSU 侧配套命令与新 CONFIG（`CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER`），
+           4.19 上从未验证，本仓库有 v2.2.0 黑屏前科，按"稳定优先"不引入未验证路径；
+        c) 新 susfs.c 依赖 `statfs_by_dentry_wrapper()` / `calculate_f_flags_wrapper()`，
+           需要同步重构 `fs/statfs.c` 的 `susfs_statfs_by_dentry()` 签名（增加 vfsmount 参数），
+           属于跨文件 API 变更，不宜在无实机验证的情况下合并。
+      结论：保留现有 v2.3.0 集成（与本文件 2026-09-05 记录一致），并把上游差异记录在此，
+      待有实机可验证时按"重做移植"流程处理（参考 2026-08-06 的 Jack 方法重建步骤）。
+
+  - 2026-11-06: 【移除 ZeroMount 支持（留档）】
+    全部活跃分支移除第三方 VFS 后端 **ZeroMount**，只保留 HybridMount / NoMount 二选一。
+    原因：与 SUSFS 在 fs/readdir.c / fs/proc/task_mmu.c / fs/stat.c 上下文大面积重叠，
+    每次 SUSFS 升级都要重生成「纯新增」补丁并靠逐符号守卫兜底，维护成本与回归风险高；
+    4.19 为自研移植、上游无支持；实际使用中默认关闭，收益不足以覆盖风险。
+
+    移除内容（所有分支一致）：
+      - `Patches/Patch/zeromount_patch_to_4.19.patch` → 归档至
+        `Patches/Archive/zeromount/zeromount_patch_to_4.19.patch`（未删除，仅移出构建路径）
+      - 工作流：`vfs_zeromount` 输入、`VFS_ZEROMOUNT` env、互斥校验中的 ZM 分支、
+        AK3 标题拼接、`🔮 Patch ZeroMount VFS Subsystem` 与
+        `⚙️ Enable ZeroMount VFS in DEFCONFIG` 两个 step
+      - README / README_cn 的 ZeroMount 表格行与章节
+
+    恢复方法：把归档补丁复制回 `Patches/Patch/`，并从 2026-10-05 的记录中取回两个
+    workflow step 原文（逐符号守卫必须一起恢复）；补丁基线必须是「SUSFS + BakaSU
+    inline hooks 之后」的树，顺序不能提前。
+
+    留档纪律：删除任何"曾经可用"的集成时，补丁与操作记录必须保留在
+    `Patches/Archive/` 下，不得直接 rm。历史 build tag / release 仍可追溯。
+
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 
 ## 0. 先解包源码（patch 外的外部依赖）

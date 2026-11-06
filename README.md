@@ -11,7 +11,6 @@ Chinese docs: [README_cn.md](README_cn.md)
 | SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
 | NoMount VFS | `fs/nomount` built-in via upstream `kernel/setup.sh` (keyring magic `"NOMOUNT"`), off by default |
-| ZeroMount VFS | `fs/zeromount` in-house 4.19 port (`/dev/zeromount` char device + custom ioctl, no keyring), off by default |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
 | DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
 | Baseband Guard | partition write protection LSM |
@@ -37,7 +36,6 @@ Chinese docs: [README_cn.md](README_cn.md)
 | `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
 | `Patch/resukisu_inline_hooks.patch` | BakaSU SUSFS inline hooks: exec / open / read_write / stat / input / reboot / setresuid (+ SUS_KSTAT / SPOOF_UNAME bits) | custom workflow step |
 | `Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS subsystem (`fs/hybridmount`, keyring magic `"hm1"`) | custom workflow step (gated by `VFS_HYBRIDMOUNT`) |
-| `Patch/zeromount_patch_to_4.19.patch` | ZeroMount VFS subsystem (`fs/zeromount`, `/dev/zeromount` + ioctl) | custom workflow step (gated by `VFS_ZEROMOUNT`) |
 | *(NoMount)* | no in-repo patch — pulled from upstream `kernel/setup.sh` | custom workflow step (gated by `VFS_NOMOUNT`) |
 | `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
@@ -55,12 +53,12 @@ Chinese docs: [README_cn.md](README_cn.md)
 > `ksu_handle_post_execveat_sucompat` sits on the exec-success path (the su fd must be installed after the
 > exec into ksud - semantically the same spot as in the official 5.10 `do_execveat_common` layout).
 >
-> Hybrid Mount VFS is synced to upstream `Hybrid-Mount/meta-hybrid_mount` **`dev`** (v6.2.3-rc.3) kernel-side
-> `module/vfs/src/hybridmount.{c,h}`: `parent_path` lifetime pinning (prevents UAF when the hijacked inode is
-> reclaimed), the inode publish/evict race rework, the UID fast path, etc. The 4.19-only `struct name_snapshot`
-> compatibility shim (`hm_snapshot_qstr()` - 4.19's `name_snapshot.name` is a raw pointer, not the ≥5.2 `struct
-> qstr`) is kept. Upstream ships this kernel source via `module/vfs/setup.sh` on `dev`; this repo only makes it
-> built-in and 4.19-adapted.
+> Hybrid Mount VFS is synced to upstream `Hybrid-Mount/meta-hybrid_mount` **`dev`** (2026-11-05) kernel-side
+> `module/vfs/src/hybridmount.{c,h}`: `inode_users` / `refs` lifetime rework (prevents UAF when the hijacked
+> inode is reclaimed), the `backing_path` borrowed snapshot, `export_operations` support and per-UID child
+> lookup. 4.19 compatibility is now **provided upstream** (`#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0)`
+> rebuilds the qstr with `QSTR_INIT`), so the local `hm_snapshot_qstr()` shim is gone; only the in-tree
+> Makefile (`-std=gnu11`, `-Wno-declaration-after-statement`, `-Wno-error`) is kept.
 
 ## VFS backends (pick at most ONE)
 
@@ -78,12 +76,11 @@ backend is enabled.
 |---|---|---|---|
 | `VFS_HYBRIDMOUNT` | Hybrid Mount VFS | `true` | `fs/hybridmount` (in-tree 4.19 port) |
 | `VFS_NOMOUNT` | NoMount VFS | `false` | `fs/nomount` (upstream `setup.sh` integration) |
-| `VFS_ZEROMOUNT` | ZeroMount VFS | `false` | `fs/zeromount` (in-house 4.19 port, SUSFS-aware) |
 
 Set them in the workflow's `env:` block (`build-oneplus-8-los23-a16.yml`) or via the
 `workflow_dispatch` inputs where the workflow exposes them.
 
-> All three must be built-in (`=y`), never `=m`: 4.19 has no matching prebuilt `.ko`
+> Both must be built-in (`=y`), never `=m`: 4.19 has no matching prebuilt `.ko`
 > (upstream only ships 5.10/5.15/6.1/6.6/6.12 modules).
 >
 > Hybrid Mount and NoMount are **same-root, different vendors**: `fs/hybridmount` was forked
@@ -94,74 +91,6 @@ Set them in the workflow's `env:` block (`build-oneplus-8-los23-a16.yml`) or via
 > The AK3 title line is assembled at build time from the backend actually enabled, so the
 > title never claims a backend the kernel does not contain.
 >
-> **About the ZeroMount port**: upstream `Enginex0/zeromount` only ships patches for
-> 5.4 / 5.10 / 5.15 / 6.1 / 6.6 / 6.12 — non-GKI 4.19 is still marked *Planned* on its
-> roadmap. `Patches/Patch/zeromount_patch_to_4.19.patch` here is an in-house port
-> (12 files, +1962 lines) that keeps `zeromount.c` / `zeromount.h` **byte-identical** to
-> the 5.4 original; only the 4.19 kernel-side wiring differs:
->
-> - 4.19 has no `CONFIG_ANDROID_VENDOR_OEM_DATA` / `current->android_oem_data1`, so the
->   header's built-in `current->journal_info` re-entrancy fallback is selected automatically;
-> - 4.19's `SYSCALL_DEFINE3(getdents64, ...)` is only a thin wrapper around
->   `ksys_getdents64()`; the real `iterate_dir` call lives in the latter, so the dents
->   injection hook is placed in `ksys_getdents64`;
-> - `vfs_getattr` / `inode_permission` / `kern_path` / `lookup_one_len` all have signatures
->   identical to 5.4, so no adaptation was needed.
->
-> The patch's **baseline is the post-SUSFS + post-BakaSU-inline-hooks tree**, not pristine
-> 4.19: it overlaps SUSFS heavily in `fs/readdir.c` (SUSFS rewrites the `iterate_dir` call
-> sites and adds `orig_flow:` labels), in `fs/proc/task_mmu.c` (both hook `show_map_vma`) and
-> above all in `fs/stat.c`. The workflow orders the ZeroMount step after SUSFS / BakaSU hooks
-> — **that order must not be changed**.
->
-> **⚠️ The patch must be purely additive — it must never delete SUSFS/KSU lines.** An earlier
-> revision was authored against *raw upstream* 4.19, so its `fs/stat.c` hunks treated the
-> already-hooked regions as "old code to replace": **46 lines added vs 86 deleted**, wiping
-> `ksu_handle_stat`, `ksu_handle_vfs_fstat`, `ksu_is_init_rc_hook_enabled` and the SUSFS
-> `susfs_sus_kstat_spoof_*` block. Because the patch applied with **zero `.rej` files**, the
-> existing reject-guard passed and the loss only surfaced at compile time inside BakaSU's
-> `inline_hook_check.mk`:
->
-> ```
-> -- You lost ksu_handle_stat hook in your kernel
-> KernelSU/kernel/tools/inline_hook_check.mk:52: *** You should integrate BakaSU in your kernel. . Stop.
-> ```
->
-> The current patch is **32 hunks, 0 `ksu_`/`susfs_` deletions**, and `fs/stat.c` keeps both
-> subsystems side by side (ZeroMount's `zeromount_stat_hook()` runs first and falls through via
-> `-ENOENT` to the untouched SUSFS `filename_lookup` / `orig_flow:` path):
->
-> ```c
-> #ifdef CONFIG_ZEROMOUNT
-> 	/* ZeroMount: try redirection first for relative paths */
-> 	if (filename) {
-> 		int zm_ret = zeromount_stat_hook(dfd, filename, stat, request_mask, flags);
-> 		if (zm_ret != -ENOENT)
-> 			return zm_ret;
-> 	}
-> #endif
-> retry:
-> #ifdef CONFIG_KSU_SUSFS
-> 	fname = getname_flags(filename, lookup_flags, NULL);
-> 	if (likely(susfs_is_current_proc_no_su()))
-> 		goto orig_flow;
-> 	if (static_branch_likely(&ksu_su_compat_enabled)) {
-> 		if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
-> 			ksu_handle_stat(&dfd, &fname, &flags);
-> 	}
-> orig_flow:
-> 	error = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
-> #else
-> 	error = user_path_at(dfd, filename, lookup_flags, &path);
-> #endif
-> ```
->
-> **Regression guard:** a resolved `.rej` count of 0 does **not** mean the patch applied
-> correctly. Every workflow that applies the ZeroMount patch therefore also asserts, per
-> symbol, that the SUSFS/KSU hooks still exist afterwards (`SUSFS/KSU hooks preserved
-> alongside ZeroMount`) and fails the build if any is missing. Keep that check when editing
-> the step — it is the only thing standing between a silent hook deletion and a confusing
-> compile failure.
 
 ## Release tags (build-release.yml)
 
@@ -197,7 +126,7 @@ Two things here are deliberate and easy to get wrong:
 ## Key settings (build-oneplus-8-los23-a16.yml)
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **required** (schgm-flash.c needs CONFIG_OPLUS_SM8250_CHARGER)
-- `VFS_HYBRIDMOUNT / VFS_NOMOUNT / VFS_ZEROMOUNT` — mutually exclusive, see the section above
+- `VFS_HYBRIDMOUNT / VFS_NOMOUNT` — mutually exclusive, see the section above
 - BakaSU stays **latest** (setup.sh git pull each run)
 - dtb: custom step concatenates `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img`; dtbo not packed (stock partition used)
 
