@@ -128,7 +128,9 @@ jobs:
   # 改名收益不大而风险不小, 故保持不动。显示名 (name:) 已是 BakaSU。
   stage1-resukisu:
     name: "Stage1: BakaSU"
-    runs-on: ubuntu-latest
+    # 钉 24.04：本工作流用官方 LLVM 19.1.7 预编译包，其动态依赖是 noble 时代的
+    # ABI（libxml2.so.2 / libicuuc.so.74）。26.04 上 ld.lld 直接起不来。
+    runs-on: ubuntu-24.04
     if: inputs.stage == 'stage1' || inputs.stage == 'stage2' || inputs.stage == 'stage3'
     outputs:
       image_size: ${{ steps.build.outputs.image_size }}
@@ -308,7 +310,9 @@ jobs:
   # --------------------------------------------------------------------------
   stage2-susfs:
     name: "Stage2: BakaSU + SUSFS v2.3.0"
-    runs-on: ubuntu-latest
+    # 钉 24.04：本工作流用官方 LLVM 19.1.7 预编译包，其动态依赖是 noble 时代的
+    # ABI（libxml2.so.2 / libicuuc.so.74）。26.04 上 ld.lld 直接起不来。
+    runs-on: ubuntu-24.04
     needs: stage1-resukisu
     if: inputs.stage == 'stage2' || inputs.stage == 'stage3'
     steps:
@@ -611,7 +615,9 @@ jobs:
   # --------------------------------------------------------------------------
   stage3-droidspaces:
     name: "Stage3: + DroidSpaces"
-    runs-on: ubuntu-latest
+    # 钉 24.04：本工作流用官方 LLVM 19.1.7 预编译包，其动态依赖是 noble 时代的
+    # ABI（libxml2.so.2 / libicuuc.so.74）。26.04 上 ld.lld 直接起不来。
+    runs-on: ubuntu-24.04
     needs: stage2-susfs
     if: inputs.stage == 'stage3'
     steps:
