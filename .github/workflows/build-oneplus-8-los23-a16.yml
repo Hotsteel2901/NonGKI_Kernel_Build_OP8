@@ -401,11 +401,12 @@ jobs:
           # Port SUSFS bridge into backslashxx's kernel source
           # (the BakaSU/ReSukiSU branches have this built-in; backslashxx
           # has none, so SUSFS tool commands used to go nowhere).
-          # 对齐基准: backslashxx/KernelSU master @ 1f47db46 (KSU_VERSION=32657)
-          # 上一次对齐是 b694933 (32628)。b694933..1f47db46 共 26 个提交，属大规模
-          # 重构（kernel_compat.h / kernel_includes.h / lsm_hooks_list.c 等），
-          # 但本补丁依赖的符号全部保留（ksu_handle_sys_reboot / toolkit_handle_sys_reboot），
-          # 仅上下文行号漂移，故已按新 tip 重新锚定，确保 0 offset / 0 fuzz / 0 reject。
+          # 对齐基准: backslashxx/KernelSU master @ 4e6e9ff (v3.3.1+, 2026-11-06)
+          # 上一版对齐是 1f47db46 (32657)；那一版之后上游又在 kernelsu_init() 里加了
+          # '// register features'，ksu.c 的 hunk 直接 reject，所以整份补丁按新 tip
+          # 重新生成，确保 0 offset / 0 fuzz / 0 reject。
+          # 注意: 本步骤依赖前面的 '📌 Pin KernelSU to the audited commit'，
+          # 否则补丁对齐的 SHA 与实际源码树不是同一个版本。
           # Adds:
           #  - ksu_handle_susfs_cmd() dispatch (supercall/dispatch.c)
           #  - SUSFS_MAGIC routing in ksu_handle_sys_reboot() (supercall/supercall.c)

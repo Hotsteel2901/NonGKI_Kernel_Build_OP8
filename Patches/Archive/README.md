@@ -228,6 +228,48 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
     留档纪律：删除任何"曾经可用"的集成时，补丁与操作记录必须保留在
     `Patches/Archive/` 下，不得直接 rm。历史 build tag / release 仍可追溯。
 
+  - 2026-11-06: 【KSU 分支手写桥接重锚 + 组件同步】
+    **本分支的 SUSFS 接入是手写的**（BakaSU/ReSukiSU 那几条分支是官方 inline
+    hook，直接照抄官方补丁即可；backslashxx 没有 SUSFS，桥接由本仓库维护）。
+    上游 `backslashxx/KernelSU` 已从 `1f47db46` 走到 `4e6e9ff`（v3.3.1+），
+    `ksu.c: kernelsu_init()` 里多了一行 `// register features`，导致
+    `backslashxx_susfs_bridge.patch` 的 ksu.c hunk 直接 reject。
+
+    这次的处理方式（不模糊移植，逐条对齐）：
+      1. `backslashxx_susfs_bridge.patch` 按 `4e6e9ff` 整份重新生成，
+         4 文件 / 8 hunk 全部 0 offset / 0 fuzz / 0 reject。
+      2. `susfs_init()` 必须落在 `kernelsu_init()` 内。用 `patch -F3` 硬套时
+         它会被 fuzz 进 `ksu_print_build_info()` 的 `#if` 块里 —— 符号 grep 查得到、
+         运行期根本不执行，是最难查的一类错。工作流新增 awk 位置校验挡住它。
+      3. 手写钩子的符号可见性：`sucompat.c` 的 `SUCOMPAT_HOOK_TYPE` 在
+         `CONFIG_KSU_TAMPER_SYSCALL_TABLE` / `CONFIG_KSU_HACK_ARM64_BRANCH_LINK`
+         打开时退化为 `static __always_inline`，extern 就绑不上 →
+         defconfig 显式把这两个开关钉成 `n`，并新增逐符号前置检查。
+      4. 工作流新增 `KERNELSU_PIN=4e6e9ff`，构建时 checkout 到该 SHA：
+         补丁与源码树一一对应，不再"补丁对齐 A 版本、构建拉 B 版本"。
+         升上游流程：改 KERNELSU_PIN → 对新 SHA 重生成 bridge 补丁 →
+         跑 `🔎 Verify KernelSU hook symbols` 看签名是否变了 → 更新本节记录。
+
+    已核对的钩子签名（4e6e9ff）:
+      ksu_handle_execveat       (int*, struct filename**, void*, void*, int*)
+      ksu_handle_faccessat      (int*, const char __user**, int*, int*)
+      ksu_handle_stat           (int*, const char __user**, int*)
+      ksu_handle_newfstat_ret   (unsigned int*, struct stat __user**)
+      ksu_handle_fstat64_ret    (unsigned long*, struct stat64 __user**)
+      ksu_handle_sys_reboot     (int, int, unsigned int, void __user**)
+    另注：`ksu_handle_sys_read_fd` 在 backslashxx 里是 `static`，手写钩子不能调它；
+    本分支也**不**需要它（那是 BakaSU 的 initrc 钩子，SUSFS inline 模式专用）。
+
+    组件同步（与 master 对齐）:
+      - `hybridmount_patch_to_4.19.patch` → md5 `e3099390…`（meta-hybrid_mount dev 2026-11-05）
+      - `droidspaces.config` → 补 `CONFIG_MEMCG_SWAP=y` / `CONFIG_MACVLAN=y`
+      - 构建环境：支持 Ubuntu 26.04（`SYSTEM_VERSION=latest`），并修掉 26.04 上
+        apt 因 needrestart/conffile 询问而静默挂死的问题（详见 build-env 提交说明）
+
+    另：SUSFS 内核侧本轮**不升级**（仍是 v2.3.0 4.19 移植）。上游新版补丁在本树
+    有 4 处 hunk 打不上、且依赖新 KSU 命令与跨文件 API 变更，4.19 未验证；
+    宁可不升，也不拿开机当赌注。
+
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 
 ## 0. 先解包源码（patch 外的外部依赖）
@@ -292,7 +334,7 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
    CONFIG_KSU=y + CONFIG_KSU_SUSFS=y (全部 SUSFS 子选项), CONFIG_REKERNEL=y (NETWORK=n),
    Non-GKI DroidSpaces 配置, CONFIG_BBG=y, CONFIG_LSM="...,bpf,baseband_guard"
 
-## 6. 可选 VFS 后端（三选一，见仓库主 README 的 "VFS backends" 一节）
+## 6. 可选 VFS 后端（二选一，见仓库主 README 的 "VFS backends" 一节）
    以下三个后端都劫持同一层 VFS + 使用互不兼容的 keyring/ioctl 协议，**同时只能开一个**:
 
    - Hybrid Mount:  Patches/Patch/hybridmount_patch_to_4.19.patch   (默认开)
