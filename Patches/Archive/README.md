@@ -185,6 +185,22 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
     留档纪律：删除任何"曾经可用"的集成时，补丁与操作记录必须保留在
     `Patches/Archive/` 下，不得直接 rm。历史 build tag / release 仍可追溯。
 
+  - 2026-11-06: 【组件同步 + 构建环境修复】
+    组件（与 master/KSU/Pure 对齐，避免各分支漂移）：
+      - `hybridmount_patch_to_4.19.patch` → md5 `e3099390…`
+        （meta-hybrid_mount dev 2026-11-05；上游已自带 4.19 兼容分支，
+          本地那层 `#if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)` shim 已删）
+      - `droidspaces.config` → 补 `CONFIG_MEMCG_SWAP=y` / `CONFIG_MACVLAN=y`
+    构建环境：
+      - GitHub `ubuntu-latest` 已升到 26.04，原模板只认 22.04/24.04，直接
+        `[-] Not supported ubuntu version: 26.04.`；已补 `SYSTEM_VERSION=latest`
+        分支与依赖安装段
+      - 26.04 的 apt 会弹 needrestart / conffile 询问，CI 没 tty → 该 step
+        静默挂死几十分钟无输出。已改为 apt-get -y + DEBIAN_FRONTEND=noninteractive
+        + NEEDRESTART_MODE=a + confdef/confold，并给下载加 timeout、每步打时间戳
+    SUSFS 内核侧本轮不升级（仍 v2.3.0 4.19 移植）：上游新补丁在本树 4 处 hunk
+    打不上、依赖新 KSU 命令，4.19 未验证，不做无把握的升级。
+
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 
 ## 0. 先解包源码（patch 外的外部依赖）
