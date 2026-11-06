@@ -158,42 +158,47 @@ jobs:
       - name: 🧰 Install build dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
-          sudo -E apt-get update -qq
-          sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
-            device-tree-compiler ccache cpio rsync zip unzip bc python3 \
+          # 不用 -qq：它会把进度全吞掉，卡住时日志一片空白，根本分不清是
+          # "在下大包" 还是 "真的死了"。加 timeout 兜底，最多 15 分钟。
+          timeout 900 sudo -E apt-get update
+          timeout 900 sudo -E apt-get install -y \
+            flex bison libssl-dev libelf-dev device-tree-compiler \
+            ccache cpio rsync zip unzip bc python3 \
             coccinelle gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
 
+      - name: 🩹 Ensure libxml2.so.2 for ld.lld
+        run: |
           # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2。26.04 里这个 soname
           # 没了（包名也变成 libxml2-16），不处理就会在 vdso 阶段死：
           #   ld.lld: error while loading shared libraries: libxml2.so.2
           #   make[2]: *** [arch/arm64/kernel/vdso/Makefile:65: vdso.so.dbg] Error 127
           # 而 ld.lld 只认 libxml2.so.2，所以不装系统包，直接从 24.04(noble)
-          # 归档取一份 compat 库单独放到 /opt/llvm-compat，用 LD_LIBRARY_PATH 喂给
-          # ld.lld —— 系统自带的 libxml2 一动不动。
-          # 所有 curl 都必须带 --max-time：runner 到 archive.ubuntu.com 偶发卡死，
-          # 没有超时就是无限等（表现为这一步几十分钟没有任何输出）。
-          if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
-            echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
-            sudo mkdir -p /opt/llvm-compat/lib
-            BASE=http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/
-            FILE=$(curl -fsSL --connect-timeout 15 --max-time 60 "$BASE" \
-                   | grep -o 'libxml2_2\.9\.14[^"]*_amd64\.deb' | sort -uV | tail -n1)
-            if [ -z "$FILE" ]; then
-              echo "[-] cannot resolve libxml2 deb name from $BASE"
-              false
-            fi
-            echo "[i] using $FILE"
-            curl -fsSL --connect-timeout 15 --max-time 120 --retry 2 -o /tmp/libxml2.deb "$BASE$FILE" || {
-              echo "[-] download failed: $BASE$FILE"; false; }
-            dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
-            sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
-            test -e /opt/llvm-compat/lib/libxml2.so.2 || { echo "[-] compat lib missing after copy"; false; }
-            echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
-            echo "[+] compat libxml2 installed: $(ls /opt/llvm-compat/lib)"
-          else
-            echo "[+] libxml2.so.2 present"
+          # 归档取一份 compat 库放到 /opt/llvm-compat，用 LD_LIBRARY_PATH 喂给它。
+          # 每个 curl 都带 --max-time，避免 runner 到 archive.ubuntu.com 卡死时无限等。
+          set -e
+          if ldconfig -p | grep -q 'libxml2\.so\.2'; then
+            echo "[+] libxml2.so.2 already present, nothing to do."
+            exit 0
           fi
+          echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
+          sudo mkdir -p /opt/llvm-compat/lib
+          BASE=http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/
+          echo "[i] listing $BASE"
+          FILE=$(curl -fsSL --connect-timeout 15 --max-time 60 "$BASE" \
+                 | grep -o 'libxml2_2\.9\.14[^"]*_amd64\.deb' | sort -uV | tail -n1)
+          if [ -z "$FILE" ]; then
+            echo "[-] cannot resolve libxml2 deb name from $BASE"
+            exit 1
+          fi
+          echo "[i] using $FILE"
+          curl -fsSL --connect-timeout 15 --max-time 180 --retry 2 \
+            -o /tmp/libxml2.deb "$BASE$FILE"
+          dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
+          sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
+          test -e /opt/llvm-compat/lib/libxml2.so.2
+          echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
+          echo "[+] compat libxml2 installed: $(ls /opt/llvm-compat/lib)"
 
       - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
         run: |
