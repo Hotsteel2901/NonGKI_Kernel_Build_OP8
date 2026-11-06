@@ -18,16 +18,6 @@ permissions:
 on:
   workflow_call:
     inputs:
-      susfs_enable:
-        description: '集成 SUSFS (默认开启; 关闭则改用 syscall 手动钩子)'
-        required: false
-        type: boolean
-        default: true
-      susfs_lkm:
-        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
-        required: false
-        type: boolean
-        default: false
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: false
@@ -46,16 +36,6 @@ on:
         value: ${{ jobs.build-oneplus-8-lineageos23-a16.outputs.build_sha }}
   workflow_dispatch:
     inputs:
-      susfs_enable:
-        description: '集成 SUSFS (默认开启; 关闭则改用 syscall 手动钩子)'
-        required: true
-        type: boolean
-        default: true
-      susfs_lkm:
-        description: 'SUSFS 方式: true=外置 LKM (susfs_guard_lkm.ko), false=in-tree 内置'
-        required: true
-        type: boolean
-        default: false
       # ─────────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（二选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
@@ -78,7 +58,7 @@ on:
 jobs:
   # OnePlus 8 (LineageOS 23.2)
   build-oneplus-8-lineageos23-a16:
-    name: "OnePlus 8 (LineageOS 23.2 Android 16) (BakaSU+SUSFS v2.3.0)"
+    name: "OnePlus 8 (LineageOS 23.2 Android 16) (Pure / No Root)"
     strategy:
       fail-fast: true
     uses: ./.github/workflows/build-oneplus-8-los23-a16.yml
@@ -88,7 +68,5 @@ jobs:
     with:
       # 透传 SUSFS / VFS 选择。workflow_dispatch 直触发时用 UI 的值；
       # 被 build-release.yml 调用时用对方 with: 传入的值。
-      susfs_enable: ${{ inputs.susfs_enable }}
-      susfs_lkm: ${{ inputs.susfs_lkm }}
       vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
       vfs_nomount: ${{ inputs.vfs_nomount }}

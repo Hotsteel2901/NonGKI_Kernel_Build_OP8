@@ -1,159 +1,113 @@
-# NonGKI_Kernel_Build_OP8
+# NonGKI_Kernel_Build_OP8 — Pure
 
-基于 [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) 的 sample 分支格式，
-为 **OnePlus 8 (instantnoodle, 4.19.325-cip132-st16)** 的 **LineageOS 23.2 (Android 16)** 内核提供自动化编译。
+基于 [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) 的构建模板，
+为 **OnePlus 8 (instantnoodle, sm8250, 4.19.325-cip)** 的 **LineageOS 23.2 (Android 16)** 内核提供自动化编译。
+
+**本分支（Pure）只产出"纯净内核"：不集成任何 root 实现**（无 KernelSU / BakaSU / SUSFS /
+Magisk / Apatch 预置），用于你自己用 Apatch、Magisk 等工具事后修补。
+
+> 需要开箱即用的 root？请用 `master`（BakaSU + SUSFS）、`KSU`（backslashxx 手写桥接）、
+> `ReSuki_Luk` / `crdroid_Resuki`（对应 ROM 变体）。
 
 ## 集成内容
 
 | 组件 | 说明 |
 |---|---|
-| BakaSU | KernelSU 分支 (原 ReSukiSU), CONFIG_KSU_SUSFS (inline hook) 模式 |
-| SUSFS v2.3.0 | 官方 gki v2.3.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
-| Hybrid Mount VFS | `fs/hybridmount` 4.19 内置移植 (keyring 魔数 `"hm1"`), **默认开启** |
-| NoMount VFS | `fs/nomount` 内置集成, 走上游 `kernel/setup.sh` (keyring 魔数 `"NOMOUNT"`), 默认关闭 |
-| ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
-| DroidSpaces | cgroup 前缀隐藏 + Non-GKI 配置 (含 USER_NS) |
-| Baseband Guard | 分区写保护 LSM |
+| Re:Kernel-X | v9 系列的 4.19 移植（内置驱动 `drivers/rekernel_x`），`CONFIG_REKERNEL_X=y` |
+| DroidSpaces | Non-GKI 配置（PID/IPC/NET/USER ns、cgroup、veth/bridge/NAT 等）+ cgroup 前缀隐藏 |
+| Baseband Guard | 分区写保护 LSM（上游 `setup.sh` 动态集成，`CONFIG_BBG=y`） |
+| Hybrid Mount VFS | `fs/hybridmount`，4.19 built-in（keyring `"hm1"`），**默认开启** |
+| NoMount VFS | `fs/nomount`，走上游 `kernel/setup.sh`（keyring `"NOMOUNT"`），默认关闭 |
 
-## 使用方法
+VFS 两个后端**互斥**：它们劫持同一层 VFS 且 keyring 协议不兼容，同时开启会让元模块
+握手失败甚至崩溃。构建开头有校验，开启多个直接 fail。
 
-1. **Fork 本仓库** 到你自己的 GitHub 账号
-2. **Settings → Actions → General → Workflow permissions** 选择 `Read and write permissions`
-3. 进入 **Actions** 页, 选择 `Build Kernel` 工作流, 点 **Run workflow** (或直接 push 触发)
-4. 构建完成后在 **Actions → 本次运行 → Artifacts** 下载 zip。本包为 **AnyKernel3** 格式, 刷入步骤:
-   - 重启到 recovery (TWRP / Lineage Recovery / crDroid Recovery)
-   - **Apply update (应用更新)** → **Apply from ADB (从 ADB 应用)**, 然后执行 `adb sideload NonGKI_Kernel_<代号>_<构建号>.zip`
-   - 重启进入系统
-   - 仅替换内核镜像, **不会清空** `/data`; 刷入前建议**备份原厂 `boot.img`** 以便回滚
-   - 本包**与 Magisk 不兼容**, 请勿与 Magisk 一起刷入
-5. 安装 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** 并验证: 显示 **SUSFS 2.3.0**, 授权/模块功能正常.
+## 产物：HotSPatch1（不是 AnyKernel3）
 
-> 上游 ReSukiSU 项目已更名/迁移为 **[BakaSU](https://github.com/Baka-SU/BakaSU)** (原 `ReSukiSU/ReSukiSU`
-> 组织已归档; GitHub 保留永久重定向, 旧地址仍可访问)。本仓库现已直接指向新地址。
+Pure 分支的构建产物是 **HotSPatch1** 压缩包，用于在电脑上把新内核替换进你自己的
+`boot.img`，而不是 recovery 刷机包。
 
-## 补丁说明 (Patches/)
+解压后的结构：
 
-| 文件 | 内容 | 应用时机 |
+```
+kernel          编译好的内核（Image.gz-dtb / Image.gz / Image）
+boot_patch.py   替换逻辑（纯 Python 标准库，无第三方依赖）
+patch.sh        Linux / macOS 启动脚本
+patch.bat       Windows 启动脚本
+README.txt      包内使用说明
+```
+
+使用步骤：
+
+1. 解压到一个文件夹；
+2. 把原机 `boot.img` 放进同一文件夹（建议就命名为 `boot.img`；目录里只有一个 `.img` 时也会自动识别）；
+3. 执行 `./patch.sh`（Windows 双击 `patch.bat`）；
+4. 生成 `boot-patched.img`；
+5. 刷入：
+
+```bash
+adb reboot bootloader
+fastboot flash boot boot-patched.img
+fastboot reboot
+```
+
+细节与限制：
+
+- 支持 Android boot header **v0 / v1 / v2**（OP8 为 v2）；v3 / v4（GKI）会明确报错，不会产出坏包；
+- 只替换 kernel 段，ramdisk / second / recovery_dtbo / dtb / cmdline / 地址字段原样保留，
+  按原 `page_size` 重新对齐并重算 header 的 SHA1 id；
+- 原镜像若带 AVB footer 会被剥离（改 kernel 后原签名必然失效）；
+- 不会覆盖原始 `boot.img`（输出固定为 `boot-patched.img`）；
+- 刷入前请确认 bootloader 已解锁，并保留原始 `boot.img` 以便 `fastboot flash boot boot.img` 回滚。
+
+## 使用方法（编译）
+
+1. Fork 本仓库，切到 `Pure` 分支；
+2. **Settings → Actions → General → Workflow permissions** 选 `Read and write permissions`；
+3. **Actions → Build Kernel → Run workflow**，按需勾选 VFS 后端（HybridMount / NoMount，二选一）；
+4. 构建完成后在 **Artifacts** 下载 `*-HotSPatch1.zip`。
+
+本地构建（非 Actions）需要 x86_64、内存 ≥ 8G；手机本体构建严禁 `-j8`。
+
+## 关键配置（`build-oneplus-8-los23-a16.yml`）
+
+| 变量 | 值 | 说明 |
 |---|---|---|
-| `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
-| `Patches/Patch/resukisu_inline_hooks.patch` | BakaSU SUSFS inline 模式官方内联钩子: exec / open / read_write / stat / input / reboot / setresuid (另含 fs/stat.c SUS_KSTAT 与 kernel/sys.c uname 伪装片段) | 工作流自定义步骤 |
-| `Patches/Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS 子系统 (`fs/hybridmount`, keyring 魔数 `"hm1"`) | 工作流自定义步骤 (受 `VFS_HYBRIDMOUNT` 控制) |
-| *(NoMount)* | 本仓库无补丁文件, 直接拉上游 `kernel/setup.sh` | 工作流自定义步骤 (受 `VFS_NOMOUNT` 控制) |
-| `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
-| `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
+| `KERNEL_SOURCE` / `KERNEL_BRANCH` | LineageOS `android_kernel_oneplus_sm8250` / `lineage-23.2` | 始终跟随最新 tip，不 pin |
+| `DEFCONFIG_NAME` | `vendor/kona-perf_defconfig` | 另合并 `vendor/oplus.config`（`schgm-flash.c` 需要） |
+| `PACK_METHOD` | `HotSPatch1` | 由 `pack-process` 组装工具包 |
+| `KERNELSU_ENABLE` | `false` | 关掉 build-ready 里的 KSU 安装与 defconfig 写入 |
+| `VFS_HYBRIDMOUNT` / `VFS_NOMOUNT` | `true` / `false` | 互斥，实际值来自 workflow 输入 |
+| `BASEBAND_GUARD_ENABLE` | `true` | BBG LSM |
+| `REKERNEL_ENABLE` / `DROIDSPACES_ENABLE` | `true` | 均可用开关关闭 |
 
-> 说明: 补丁基于生成时 lineage-23.2 最新提交 (当前 `66e230426430`) 生成; 工作流使用**最新**内核源码
-> (不固定 checkout), 常规偏移下 `patch -p1` 自动应用。若 LineageOS 上游更新导致 reject, 请基于新 tip 重新生成:
-> ```bash
-> git diff <新base> -- <susfs相关文件> > Patches/Patch/susfs_patch_to_4.19.patch
-> ```
->
-> 内联钩子与 Jack 的官方 `susfs_inline_hook_patches.sh` (SUSFS v2.3.00+ 官方内联钩子) 对齐:
-> 7 个钩子均通过 BakaSU `inline_hook_check.mk` 的编译期校验 (static_key 门控)。
-> 因 4.19 的 `__do_execve_file()` 成功路径在 `out_free:` 之前提前返回, `ksu_handle_post_execveat_sucompat`
-> 钩子置于 exec 成功路径 (su fd 必须在 exec 进 ksud 之后安装; 与官方 5.10 `do_execveat_common` 布局语义等价)。
->
-> Hybrid Mount VFS 已同步上游 `Hybrid-Mount/meta-hybrid_mount` **`dev`** 分支（2026-11-05）的内核侧
-> `module/vfs/src/hybridmount.{c,h}`：含 `inode_users` / `refs` 生命周期重构（防被劫持 inode 被回收的
-> UAF）、`backing_path` 借用快照、`export_operations` 支持、按 UID 的子项查找等修复。
-> 4.19 兼容**由上游自身提供**（`#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0)` 用 `QSTR_INIT`
-> 重建 qstr，4.19 的 `name_snapshot.name` 是裸指针而非 ≥5.2 的 `struct qstr`），
-> 本仓库不再维护 `hm_snapshot_qstr()` shim；仅保留 in-tree 化的 Makefile（`-std=gnu11`
-> `-Wno-declaration-after-statement` `-Wno-error`）。
-> 该上游内核源由官方 `module/vfs/setup.sh` 在 `dev` 分支提供，本仓库仅做 built-in 化。
+## Release tag 机制（`build-release.yml`）
 
-## VFS 路径重定向后端（三选一）
+tag 格式 `<分支名>-v<版本>-<unix 时间戳>`，指向**本次实际编译的 commit**（由内核 job 的
+`build_sha` outputs 逐层透传），只推当前这一个 tag。
 
-本仓库支持三种路径重定向后端。它们全部工作在**同一个 VFS 层**
-（劫持 `inode_operations` / `file_operations` / `dentry_operations`），且各自使用
-**互不兼容的 keyring 协议**，因此**同一时间最多只能开启一个**。同时开启会让两套驱动
-争抢同一批 hook：userspace 元模块无法握手（会提示"内核不支持"），严重时直接崩溃。
-上游 Hybrid Mount 的 Kconfig 里就明确写了与 NoMount 的元模块
-*"not compatible with NoMount's metamodule or its tooling"*。
+> 不要为了绕过 GitHub 的 workflow 权限拒绝而在 `permissions:` 里写 `workflows: write`——
+> 它不是合法作用域，写了会让整个工作流文件变成 `Invalid workflow file`。
 
-构建开头有一步校验：**开启超过一个会立刻 fail**，不会产出一个坏内核。
+## 与 root 分支的关系
 
-| 开关 | 后端 | 默认 | 内核侧 |
-|---|---|---|---|
-| `VFS_HYBRIDMOUNT` | Hybrid Mount VFS | `true` | `fs/hybridmount` (本仓库 4.19 内置移植) |
-| `VFS_NOMOUNT` | NoMount VFS | `false` | `fs/nomount` (上游 `setup.sh` 集成) |
-
-在 `build-oneplus-8-los23-a16.yml` 的 `env:` 段修改，或使用工作流暴露的
-`workflow_dispatch` 输入（视具体工作流而定）。
-
-> 两者都必须内置（`=y`）而非 `=m`：4.19 没有匹配的预编译 `.ko`
-> （上游只提供 5.10/5.15/6.1/6.6/6.12 的模块）。
->
-> Hybrid Mount 与 NoMount 是**同源不同家**：`fs/hybridmount` 是从 NoMount fork 出来的，
-> 但重命名了符号、换了自己的 wire magic（`"HYBRIDMO"` vs `"NOMOUNT"`），
-> 两者元模块与工具链**互不通用**。按你的 userspace 管理器支持哪套来选。
->
-> AK3 标题行在构建时按**实际启用**的后端动态拼装，因此标题不会出现内核里其实没有的后端。
->
-
-## Release tag 机制 (build-release.yml)
-
-`Build and Release Kernel` 会构建内核并发布 GitHub **Release**，tag 精确标识「本次编译
-所用的那个 commit」。
-
-| 项目 | 行为 |
-|---|---|
-| tag 格式 | `<分支名>-v<版本>-<unix 时间戳>`，例如 `master-v35203-1791179734` |
-| 冲突处理 | 该 tag 已存在时追加 `-2`、`-3`… 后缀 |
-| tag 指向 | **实际构建的 commit**，由内核 job 通过 `build_sha` outputs 逐层透传（不是 release job 的 `HEAD`） |
-| 推送方式 | `git push origin refs/tags/$NEW_TAG` —— **只推当前这一个 tag** |
-
-这里有两处是刻意设计，且很容易改错：
-
-> **加分支前缀。** 不加前缀时，同一天在别的分支（或同一分支）再跑一次就会 tag 冲突、
-> release 直接失败。带上分支名后 tag 既能保证唯一，也自带出处信息。
-
-> **只推当前 tag。** 用 `git push --tags` 会把本地历史里**所有** tag 一起推上去。
-> 这些 tag 可能指向「修改过 `.github/workflows/` 的 commit」，GitHub 会以
-> `refusing to allow a GitHub App to create or update workflow ... without workflows
-> permission` 拒绝。只推 `refs/tags/$NEW_TAG` 就不会携带那段历史，也就不需要额外权限。
->
-> ⚠️ 千万**不要**为了绕过这个拒绝而去 `permissions:` 里加 `workflows: write` ——
-> `workflows` **不是合法的权限作用域**，写了会让 GitHub 把**整个工作流文件**判为
-> `Invalid workflow file`，导致该分支上所有工作流全部失效。合法作用域只有：
-> `actions`、`attestations`、`checks`、`contents`、`deployments`、`discussions`、
-> `id-token`、`issues`、`packages`、`pages`、`pull-requests`、`repository-projects`、
-> `security-events`、`statuses`。
-
-## 关键配置项 (build-oneplus-8-los23-a16.yml)
-
-- `KERNEL_SOURCE/Branch`: LineageOS 官方仓库 `lineage-23.2`
-- `MERGE_CONFIG_FILES: vendor/oplus.config` — **必须保留** (schgm-flash.c 需要 CONFIG_OPLUS_SM8250_CHARGER)
-- `VFS_HYBRIDMOUNT / VFS_NOMOUNT` — 互斥, 详见上一节
-- `KERNELSU_AUTO_FORK: resukisu` — 自动获取最新 BakaSU
-- dtb: 构建后自定义步骤拼接 `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img` (与官方 DTB_SZ 一致)
-- dtbo: 不打包 (NEED_DTBO=false, 沿用系统分区的 dtbo)
-
-## 与 Jack 原版格式的差异（有意为之）
-
-- `patch-no-kprobe` 步骤/动作未采用: 其 `susfs_inline_hook_patches.sh` 即 Jack 的官方内联钩子实现
-  (SUSFS v2.3.00+, 与 BakaSU inline 模式兼容), 本仓库以等价内容固化为
-  `resukisu_inline_hooks.patch` (保持补丁化流程、便于审查与固定应用顺序);
-  该脚本的 selinuxfs 静态符号移除部分因本内核 CONFIG_KALLSYMS_ALL=y 会跳过, 无实际作用
-- 仅保留 4.19 版本的 susfs 补丁 (设备内核版本固定, 无需 4.4/4.9/5.4 等)
-- ReKernel-X 4.19 直接用补丁集成 (内置), 替换原 Re:Kernel v8.5
-- HOOK_METHOD 变量保留但无实际作用: BakaSU inline 钩子由 resukisu_inline_hooks.patch 提供
-
-## 补丁记录存档 (Patches/Archive/)
-
-开发过程中的完整补丁记录: `0000-full-all-changes.patch` (全量合集)、
-`0001-resukisu-susfs.patch` (ReSukiSU (现 BakaSU) + SUSFS v2.2.0 完整集成)、
-`0001-rekernel.patch` / `0001-droidspaces-cgroup-prefix.patch` /
-`0001-baseband-guard.patch` / `0001-defconfig.patch` 及 `README.md` (开发记录)。
-工作流实际使用 `Patches/Patch/` 与 `Patches/Rekernel/`, Archive 仅存档。
+| 分支 | root 实现 | 产物 |
+|---|---|---|
+| `master` | BakaSU（官方 inline hooks）+ SUSFS v2.3.0 | AnyKernel3 |
+| `KSU` | backslashxx/KernelSU + **手写 SUSFS 桥接** | AnyKernel3 |
+| `ReSuki_Luk` | BakaSU + NoMount（luk 树适配） | AnyKernel3 |
+| `crdroid_Resuki` | BakaSU（crdroid 树，分 stage 构建） | AnyKernel3 |
+| **`Pure`** | **无** | **HotSPatch1** |
 
 ## 已知限制
 
-- 构建需要 x86_64 环境 (GitHub Actions 默认 runner 即可)
-- SUSFS v2.3.0 的 OPEN_REDIRECT 实际重定向在 4.19 上不生效 (架构限制, 与官方一致)
-- 若使用本地构建 (非 GitHub Actions), 内存 ≥ 8G 且用 `make -j2` (手机本体构建严禁 -j8)
+- 构建需要 x86_64 环境（GitHub Actions 默认 runner 即可）；
+- dtb 由 `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` 拼接为 `dtb.img`（与官方 DTB_SZ 一致），dtbo 不打包；
+- Pure 不含 SUSFS，因此没有路径/挂载隐藏能力；需要隐藏请用 root 分支；
+- 内核与 ROM 版本必须匹配（LineageOS 23.2 / Android 16）。
 
 ## 鸣谢
 
-- [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) — 项目格式与 4.19 移植方法
-- [BakaSU](https://github.com/Baka-SU/BakaSU) / [SuSFS](https://gitlab.com/simonpunk/susfs4ksu) / [Re:Kernel](https://github.com/Sakion-Team/Re-Kernel) / [Droidspaces](https://github.com/ravindu644/Droidspaces-OSS) / [Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)
+- [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) — 构建模板与 4.19 移植方法
+- [Re:Kernel](https://github.com/Sakion-Team/Re-Kernel) / [Droidspaces](https://github.com/ravindu644/Droidspaces-OSS) / [Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)
+- [Hybrid Mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) / [NoMount](https://github.com/maxsteeel/nomount)

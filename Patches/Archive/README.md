@@ -164,6 +164,38 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
       repository-projects / security-events / statuses。
       离线复现方法: actionlint v1.7.7，`actionlint -oneline .github/workflows/*.yml`。
 
+  - 2026-11-06: 【新增 Pure 分支 + HotSPatch1 打包器】
+    新增第 5 个长期分支 `Pure`：只产出"纯净内核"，不集成任何 root 实现
+    （无 KSU / BakaSU / SUSFS / Magisk / Apatch 预置），供用户自行用
+    Apatch / Magisk 修补。集成内容固定为：Re:Kernel-X + DroidSpaces +
+    Baseband Guard + HybridMount / NoMount（二选一）。
+
+    分支层面的改动：
+      - `KERNELSU_ENABLE: "false"`：`build-ready` 的 `Set KernelSU` 与
+        `Set KSU and SUSFS for DEFCONFIG` 两个 step 加 `if: env.KERNELSU_ENABLE != 'false'`
+        门控；未定义该变量的其它分支行为不变；
+      - 删除 `🪝 Patch Kernel of SUSFS`、`🔗 Patch KernelSU Hooks`、
+        `⚙️ Enable SUSFS-LKM deps`、`🧬 Build SUSFS-LKM`、`📦 Package SUSFS-LKM`、
+        `⬆️ Upload SUSFS-LKM` 六个 step，以及 `susfs_enable` / `susfs_lkm` 两个 UI 输入；
+      - `PACK_METHOD: "HotSPatch1"`，`pack-process` 新增对应打包 step，
+        `upload-files` 的 artifact 上传条件扩展为 Anykernel3 || HotSPatch1。
+
+    HotSPatch1 设计（替代 AnyKernel3）：
+      - 包内只有：`kernel` + `boot_patch.py` + `patch.sh` + `patch.bat` + `README.txt`；
+      - 纯 Python 标准库实现 boot image v0/v1/v2 解析与重打包，不依赖 magiskboot、
+        不依赖 recovery / root；
+      - 只替换 kernel 段，ramdisk / second / recovery_dtbo / dtb / cmdline / 地址字段原样保留；
+        按原 page_size 重新对齐，重算 header SHA1 id；检测到 AVB footer 时剥离并告警；
+      - 输出固定 `boot-patched.img`，拒绝覆盖输入文件；v3/v4（GKI）明确报错退出；
+      - 包内 `patch.sh` / `patch.bat` 自动寻找 `boot.img`（或目录内唯一 `.img`）与 `kernel`，
+        面向"解压 → 放 boot.img → 执行"的 AK3 式操作习惯；
+      - 构建期自检：`python3 boot_patch.py --help`，确保工具在包内可独立运行。
+
+    验证：用合成 boot.img（v2/4096、v0/2048、v3、非 boot 文件、截断文件）做了
+    替换/校验/报错路径测试；v2 用例确认 kernel 段逐字节一致、ramdisk/dtb 保留、
+    header 字段与 page 对齐正确、SHA1 重算有效。未在真机 boot.img 上验证 —— 首次
+    使用请保留原厂 boot.img 以便 fastboot 回滚。
+
   - 2026-11-06: 【组件同步（全分支）】
     逐项核对所有集成的上游状态并落地更新，记录如下（按"实际改动 / 仅核对"分类）。
 

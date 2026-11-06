@@ -1,151 +1,121 @@
-# NonGKI_Kernel_Build_OP8
+# NonGKI_Kernel_Build_OP8 — Pure
 
-Automated kernel build for **OnePlus 8 (instantnoodle, 4.19.325-cip132-st16)** with **LineageOS 23.2 (Android 16)**.
-Formatted after [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) (sample branch).
+Automated kernel build for **OnePlus 8 (instantnoodle, sm8250, 4.19.325-cip)** with
+**LineageOS 23.2 (Android 16)**, formatted after
+[JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd).
 Chinese docs: [README_cn.md](README_cn.md)
 
+**This branch (`Pure`) ships a clean kernel with no root implementation** — no KernelSU /
+BakaSU / SUSFS / Magisk / Apatch baked in. Patch it afterwards with Apatch, Magisk, or
+whatever you prefer.
+
+> Want root out of the box? Use `master` (BakaSU + SUSFS), `KSU` (backslashxx with a
+> hand-written SUSFS bridge), or `ReSuki_Luk` / `crdroid_Resuki` for those ROM trees.
+
 ## Integrations
+
 | Component | Note |
 |---|---|
-| BakaSU | KernelSU fork (formerly ReSukiSU), CONFIG_KSU_SUSFS (inline hook) mode |
-| SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
-| Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
-| NoMount VFS | `fs/nomount` built-in via upstream `kernel/setup.sh` (keyring magic `"NOMOUNT"`), off by default |
-| ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
-| DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
-| Baseband Guard | partition write protection LSM |
+| Re:Kernel-X | v9-series 4.19 port (in-tree `drivers/rekernel_x`), `CONFIG_REKERNEL_X=y` |
+| DroidSpaces | non-GKI config (PID/IPC/NET/USER ns, cgroup, veth/bridge/NAT) + cgroup prefix hide |
+| Baseband Guard | partition write-protection LSM (upstream `setup.sh`, `CONFIG_BBG=y`) |
+| Hybrid Mount VFS | `fs/hybridmount`, built-in 4.19 (keyring `"hm1"`), **on by default** |
+| NoMount VFS | `fs/nomount` via upstream `kernel/setup.sh` (keyring `"NOMOUNT"`), off by default |
 
-## Usage
-1. Fork this repo, enable **Actions** with `Read and write permissions`.
-2. Run the `Build Kernel` workflow (or push to trigger).
-3. Download the `*.zip` artifact and flash it via recovery — this is an **AnyKernel3** package:
-   - Reboot to **Recovery** (TWRP / Lineage Recovery / crDroid Recovery)
-   - **Apply update** → **Apply from ADB**, then `adb sideload NonGKI_Kernel_<codename>_<build>.zip`
-   - Reboot to **System**
-   - The kernel image is the only thing replaced — `/data` is **not** wiped. Back up your stock `boot.img` first so you can roll back.
-   - **Magisk is NOT compatible** with these builds.
-4. Install **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** and verify in it: SUSFS version **2.3.0**, allowlist & modules working.
+The two VFS backends are **mutually exclusive**: they hijack the same VFS layer with
+incompatible keyring protocols. The build validates this up front and fails if both are on.
 
-> The upstream ReSukiSU project has been renamed/migrated to **[BakaSU](https://github.com/Baka-SU/BakaSU)** (the old
-> `ReSukiSU/ReSukiSU` org is archived; GitHub keeps permanent redirects, so old URLs still resolve). This repo now
-> points at the new address directly.
+## Artifact: HotSPatch1 (not AnyKernel3)
 
-## Patches (Patches/)
-| File | Content | Applied by |
+`Pure` produces a **HotSPatch1** archive that replaces the kernel inside *your* `boot.img`
+on a PC — it is not a recovery flashable zip.
+
+Layout after extraction:
+
+```
+kernel          compiled kernel (Image.gz-dtb / Image.gz / Image)
+boot_patch.py   replacement logic (stdlib only, no third-party deps)
+patch.sh        Linux / macOS launcher
+patch.bat       Windows launcher
+README.txt      in-package instructions
+```
+
+Usage:
+
+1. Extract the archive to a folder;
+2. Put your stock `boot.img` in the same folder (name it `boot.img`, or leave a single
+   `.img` in the folder — it is auto-detected);
+3. Run `./patch.sh` (double-click `patch.bat` on Windows);
+4. A `boot-patched.img` is produced;
+5. Flash it:
+
+```bash
+adb reboot bootloader
+fastboot flash boot boot-patched.img
+fastboot reboot
+```
+
+Details and limits:
+
+- Supports Android boot header **v0 / v1 / v2** (OP8 is v2). v3 / v4 (GKI) fails with a
+  clear error instead of producing a broken image;
+- Only the kernel segment is replaced: ramdisk / second / recovery_dtbo / dtb / cmdline /
+  address fields are preserved, everything is re-aligned to the original `page_size` and the
+  header SHA1 id is recomputed;
+- An existing AVB footer is stripped (the old signature cannot survive a kernel change);
+- The original `boot.img` is never overwritten (`boot-patched.img` is always the output);
+- Unlock the bootloader first and keep the original image for
+  `fastboot flash boot boot.img` rollback.
+
+## Building
+
+1. Fork this repo and check out `Pure`;
+2. **Settings → Actions → General → Workflow permissions** → `Read and write permissions`;
+3. **Actions → Build Kernel → Run workflow**, pick one VFS backend (HybridMount / NoMount);
+4. Download `*-HotSPatch1.zip` from the run artifacts.
+
+Local builds need x86_64 and ≥ 8 GB RAM; never `-j8` when building on the phone itself.
+
+## Key knobs (`build-oneplus-8-los23-a16.yml`)
+
+| Variable | Value | Note |
 |---|---|---|
-| `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
-| `Patch/resukisu_inline_hooks.patch` | BakaSU SUSFS inline hooks: exec / open / read_write / stat / input / reboot / setresuid (+ SUS_KSTAT / SPOOF_UNAME bits) | custom workflow step |
-| `Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS subsystem (`fs/hybridmount`, keyring magic `"hm1"`) | custom workflow step (gated by `VFS_HYBRIDMOUNT`) |
-| *(NoMount)* | no in-repo patch — pulled from upstream `kernel/setup.sh` | custom workflow step (gated by `VFS_NOMOUNT`) |
-| `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
-| `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
+| `KERNEL_SOURCE` / `KERNEL_BRANCH` | LineageOS `android_kernel_oneplus_sm8250` / `lineage-23.2` | always tracks the latest tip |
+| `DEFCONFIG_NAME` | `vendor/kona-perf_defconfig` | merged with `vendor/oplus.config` (`schgm-flash.c` needs it) |
+| `PACK_METHOD` | `HotSPatch1` | assembled by `pack-process` |
+| `KERNELSU_ENABLE` | `false` | disables the KSU install and defconfig writes in `build-ready` |
+| `VFS_HYBRIDMOUNT` / `VFS_NOMOUNT` | `true` / `false` | exclusive, driven by workflow inputs |
+| `BASEBAND_GUARD_ENABLE` | `true` | BBG LSM |
+| `REKERNEL_ENABLE` / `DROIDSPACES_ENABLE` | `true` | both switchable |
 
-> Patches are generated against the then-current lineage-23.2 tip (now `66e230426430`); the workflow uses the
-> **latest** kernel source (no pinned checkout), so `patch -p1` applies them with normal offsets.
-> Regenerate after upstream changes:
-> ```bash
-> git diff <new-base> -- <susfs-files> > Patches/Patch/susfs_patch_to_4.19.patch
-> ```
->
-> The inline hooks match Jack's official `susfs_inline_hook_patches.sh` (official SUSFS v2.3.00+ inline hooks):
-> all 7 hooks pass BakaSU's compile-time `inline_hook_check.mk` (static_key gated).
-> On 4.19 `__do_execve_file()` returns early (before `out_free:`) on the success path, so
-> `ksu_handle_post_execveat_sucompat` sits on the exec-success path (the su fd must be installed after the
-> exec into ksud - semantically the same spot as in the official 5.10 `do_execveat_common` layout).
->
-> Hybrid Mount VFS is synced to upstream `Hybrid-Mount/meta-hybrid_mount` **`dev`** (2026-11-05) kernel-side
-> `module/vfs/src/hybridmount.{c,h}`: `inode_users` / `refs` lifetime rework (prevents UAF when the hijacked
-> inode is reclaimed), the `backing_path` borrowed snapshot, `export_operations` support and per-UID child
-> lookup. 4.19 compatibility is now **provided upstream** (`#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0)`
-> rebuilds the qstr with `QSTR_INIT`), so the local `hm_snapshot_qstr()` shim is gone; only the in-tree
-> Makefile (`-std=gnu11`, `-Wno-declaration-after-statement`, `-Wno-error`) is kept.
+## Release tags (`build-release.yml`)
 
-## VFS backends (pick at most ONE)
+Tags are `<branch>-v<version>-<unix-ts>` and point at the commit that was actually built
+(forwarded through the kernel job's `build_sha` output); only that one tag is pushed.
 
-Three path-redirection backends are supported. They all hijack **the same VFS layer**
-(`inode_operations` / `file_operations` / `dentry_operations`) and each speaks its own
-**incompatible keyring protocol**, so **exactly one may be enabled at a time**. Enabling
-two makes the drivers fight over the same hooks: the userspace metamodule cannot handshake
-(it reports "kernel not supported"), and it can crash outright. Upstream Hybrid Mount's own
-Kconfig states it is *"not compatible with NoMount's metamodule or its tooling"*.
+> Do not add `workflows: write` to `permissions:` to dodge GitHub's workflow permission
+> error — it is not a valid scope and turns the whole workflow file into
+> `Invalid workflow file`.
 
-A validation step runs at the start of the build and **fails immediately** if more than one
-backend is enabled.
+## Branch map
 
-| Switch | Backend | Default | Kernel side |
-|---|---|---|---|
-| `VFS_HYBRIDMOUNT` | Hybrid Mount VFS | `true` | `fs/hybridmount` (in-tree 4.19 port) |
-| `VFS_NOMOUNT` | NoMount VFS | `false` | `fs/nomount` (upstream `setup.sh` integration) |
+| Branch | Root | Artifact |
+|---|---|---|
+| `master` | BakaSU (official inline hooks) + SUSFS v2.3.0 | AnyKernel3 |
+| `KSU` | backslashxx/KernelSU + **hand-written SUSFS bridge** | AnyKernel3 |
+| `ReSuki_Luk` | BakaSU + NoMount (luk tree) | AnyKernel3 |
+| `crdroid_Resuki` | BakaSU (crdroid tree, staged builds) | AnyKernel3 |
+| **`Pure`** | **none** | **HotSPatch1** |
 
-Set them in the workflow's `env:` block (`build-oneplus-8-los23-a16.yml`) or via the
-`workflow_dispatch` inputs where the workflow exposes them.
+## Known limits
 
-> Both must be built-in (`=y`), never `=m`: 4.19 has no matching prebuilt `.ko`
-> (upstream only ships 5.10/5.15/6.1/6.6/6.12 modules).
->
-> Hybrid Mount and NoMount are **same-root, different vendors**: `fs/hybridmount` was forked
-> from NoMount but renamed its symbols and changed its wire magic (`"HYBRIDMO"` vs `"NOMOUNT"`),
-> so metamodules and tooling are **not** interchangeable. Pick the one your userspace
-> manager supports.
->
-> The AK3 title line is assembled at build time from the backend actually enabled, so the
-> title never claims a backend the kernel does not contain.
->
-
-## Release tags (build-release.yml)
-
-`Build and Release Kernel` builds the kernel and publishes a GitHub **Release** whose tag
-identifies exactly which commit was compiled.
-
-| Aspect | Behavior |
-|---|---|
-| Tag format | `<branch>-v<version>-<unix-ts>`, e.g. `master-v35203-1791179734` |
-| Collision | if that exact tag already exists, a `-2`, `-3`, … suffix is appended |
-| Tag target | the **actual build commit**, passed up from the kernel job via `build_sha` outputs (not the release job's `HEAD`) |
-| Push | `git push origin refs/tags/$NEW_TAG` — **only the current tag** |
-
-Two things here are deliberate and easy to get wrong:
-
-> **Branch prefix.** Without it, a same-day run on a different branch (or the same branch)
-> produces a colliding tag and the release fails. The branch name makes tags unique per
-> branch and self-describing.
-
-> **Push only the current tag.** Using `git push --tags` also pushes every *other* tag in the
-> local history. Since these tags can point at commits that modify `.github/workflows/`,
-> GitHub rejects the push with `refusing to allow a GitHub App to create or update workflow
-> ... without workflows permission`. Pushing just `refs/tags/$NEW_TAG` never carries that
-> history, so no extra permission is needed.
->
-> ⚠️ Do **not** try to "fix" that rejection by adding `workflows: write` to the workflow's
-> `permissions:` block — `workflows` is **not a valid permission scope**, and including it
-> makes GitHub mark the **entire workflow file** as `Invalid workflow file`, breaking every
-> workflow on the branch. Valid scopes are only: `actions`, `attestations`, `checks`,
-> `contents`, `deployments`, `discussions`, `id-token`, `issues`, `packages`, `pages`,
-> `pull-requests`, `repository-projects`, `security-events`, `statuses`.
-
-## Key settings (build-oneplus-8-los23-a16.yml)
-- `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
-- `MERGE_CONFIG_FILES: vendor/oplus.config` — **required** (schgm-flash.c needs CONFIG_OPLUS_SM8250_CHARGER)
-- `VFS_HYBRIDMOUNT / VFS_NOMOUNT` — mutually exclusive, see the section above
-- BakaSU stays **latest** (setup.sh git pull each run)
-- dtb: custom step concatenates `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img`; dtbo not packed (stock partition used)
-
-## Deviations from Jack's original (intentional)
-- `patch-no-kprobe` not used: its `susfs_inline_hook_patches.sh` is Jack's official inline-hook implementation (SUSFS v2.3.00+, compatible with BakaSU inline); the repo ships the equivalent content as `resukisu_inline_hooks.patch` (patch-based flow, reviewable, fixed apply order). Its selinuxfs static-symbol removal is skipped anyway (CONFIG_KALLSYMS_ALL=y)
-- Only the 4.19 susfs patch is kept (fixed device kernel version)
-- ReKernel-X 4.19 in-tree port via patch (replaces Re:Kernel v8.5)
-- HOOK_METHOD kept but inert: BakaSU inline hooks come from resukisu_inline_hooks.patch
-
-## Patch Record Archive (Patches/Archive/)
-
-Complete patch records from local development:
-- `0000-full-all-changes.patch` — full combined patch set
-- `0001-resukisu-susfs.patch` — ReSukiSU (now BakaSU) + SUSFS v2.2.0 complete integration (namei/namespace/proc etc.)
-- `0001-rekernel.patch` / `0001-droidspaces-cgroup-prefix.patch` / `0001-baseband-guard.patch` / `0001-defconfig.patch`
-- `README-record.md` — development log (version history / known issues / build notes)
-
-> Note: the workflows actually use the patches under `Patches/Patch/` and `Patches/Rekernel/`;
-> `Archive/` is for record only and is not used in builds.
+- Build host must be x86_64 (GitHub-hosted runners are fine);
+- `dtb.img` is `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` (matches the official DTB_SZ); dtbo is not packaged;
+- No SUSFS on `Pure`, so no path/mount hiding — use a root branch if you need that;
+- Kernel and ROM versions must match (LineageOS 23.2 / Android 16).
 
 ## Credits
-[JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) · [BakaSU](https://github.com/Baka-SU/BakaSU) · [SuSFS](https://gitlab.com/simonpunk/susfs4ksu) · [Re:Kernel](https://github.com/Sakion-Team/Re-Kernel) · [Droidspaces](https://github.com/ravindu644/Droidspaces-OSS) · [Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)
+
+- [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) — build template and 4.19 porting method
+- [Re:Kernel](https://github.com/Sakion-Team/Re-Kernel) / [Droidspaces](https://github.com/ravindu644/Droidspaces-OSS) / [Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)
+- [Hybrid Mount](https://github.com/Hybrid-Mount/meta-hybrid_mount) / [NoMount](https://github.com/maxsteeel/nomount)

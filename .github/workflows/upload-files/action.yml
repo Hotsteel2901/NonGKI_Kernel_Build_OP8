@@ -3,8 +3,8 @@ name: 'Upload files.'
 runs:
   using: 'composite'
   steps:
-      - name: Upload Build Artifacts For Anykernel3
-        if: env.PACK_METHOD == 'Anykernel3'
+      - name: Upload Build Artifacts For Anykernel3 / HotSPatch1
+        if: env.PACK_METHOD == 'Anykernel3' || env.PACK_METHOD == 'HotSPatch1'
         uses: actions/upload-artifact@v7
         with:
           name: Kernel-${{ env.PACK_NAME }}
