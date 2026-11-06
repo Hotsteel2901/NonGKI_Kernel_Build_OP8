@@ -207,6 +207,27 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
       repository-projects / security-events / statuses。
       离线复现方法: actionlint v1.7.7，`actionlint -oneline .github/workflows/*.yml`。
 
+  - 2026-11-06: 【移除 ZeroMount 支持（留档）】
+    全部活跃分支移除第三方 VFS 后端 **ZeroMount**，只保留 HybridMount / NoMount 二选一。
+    原因：与 SUSFS 在 fs/readdir.c / fs/proc/task_mmu.c / fs/stat.c 上下文大面积重叠，
+    每次 SUSFS 升级都要重生成「纯新增」补丁并靠逐符号守卫兜底，维护成本与回归风险高；
+    4.19 为自研移植、上游无支持；实际使用中默认关闭，收益不足以覆盖风险。
+
+    移除内容（所有分支一致）：
+      - `Patches/Patch/zeromount_patch_to_4.19.patch` → 归档至
+        `Patches/Archive/zeromount/zeromount_patch_to_4.19.patch`（未删除，仅移出构建路径）
+      - 工作流：`vfs_zeromount` 输入、`VFS_ZEROMOUNT` env、互斥校验中的 ZM 分支、
+        AK3 标题拼接、`🔮 Patch ZeroMount VFS Subsystem` 与
+        `⚙️ Enable ZeroMount VFS in DEFCONFIG` 两个 step
+      - README / README_cn 的 ZeroMount 表格行与章节
+
+    恢复方法：把归档补丁复制回 `Patches/Patch/`，并从 2026-10-05 的记录中取回两个
+    workflow step 原文（逐符号守卫必须一起恢复）；补丁基线必须是「SUSFS + BakaSU
+    inline hooks 之后」的树，顺序不能提前。
+
+    留档纪律：删除任何"曾经可用"的集成时，补丁与操作记录必须保留在
+    `Patches/Archive/` 下，不得直接 rm。历史 build tag / release 仍可追溯。
+
 本目录内容与重放顺序（若内核更新破坏集成，按此顺序恢复）:
 
 ## 0. 先解包源码（patch 外的外部依赖）

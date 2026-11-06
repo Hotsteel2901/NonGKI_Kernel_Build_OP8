@@ -26,11 +26,6 @@ on:
         required: false
         type: boolean
         default: false
-      vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
-        required: false
-        type: boolean
-        default: false
     # 把「实际参与编译的内核 commit」向上暴露给 build-kernel / build-release，
     # 让 release tag 能精确打在这个 commit 上，而不是 release job 自己
     # checkout 出来的 HEAD（并发/后续提交场景下两者可能不同）。
@@ -52,11 +47,6 @@ on:
         default: true
       vfs_nomount:
         description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥)'
-        required: true
-        type: boolean
-        default: false
-      vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
         required: true
         type: boolean
         default: false
@@ -142,11 +132,11 @@ env:
   DROIDSPACES_ENABLE: "true"
 
   # ─────────────────────────────────────────────────────────────────────────
-  # VFS 路径重定向后端（三选一，互斥！）
+  # VFS 路径重定向后端（二选一，互斥！）
   # ─────────────────────────────────────────────────────────────────────────
   # 这三个都工作在同一个内核层（劫持 inode_operations / file_operations /
   # dentry_operations），并各自使用**独立且不兼容的 keyring 协议**
-  # （HybridMount 用 "hm1" / NoMount 用 "NOMOUNT" / ZeroMount 用自有协议）。
+  # （HybridMount 用 "hm1" / NoMount 用 "NOMOUNT"）。
   # 上游 Hybrid Mount 的 Kconfig 里就明确写了：
   #   "not compatible with NoMount's metamodule or its tooling"
   # 同时开启会让两套驱动抢同一层 hook，轻则元模块认不到内核、重则崩溃。
@@ -160,7 +150,6 @@ env:
   # 默认: HybridMount 开, 其余关（HybridMount 是本仓库长期验证过的组合）。
   VFS_HYBRIDMOUNT: "true"  # Hybrid Mount VFS 后端 (fs/hybridmount, 4.19 内置移植)
   VFS_NOMOUNT: "false"     # NoMount VFS 后端 (fs/nomount, 上游 setup.sh 集成)
-  VFS_ZEROMOUNT: "false"   # ZeroMount VFS 后端 (4.19 自研移植版, 与另两个互斥)
 
   HOOK_METHOD: "syscall" # Manual hook method -> syscall.
 
@@ -208,7 +197,7 @@ jobs:
 
       - name: 🧭 Validate VFS backend selection (mutually exclusive)
         run: |
-          # HybridMount / NoMount / ZeroMount 三者互斥：它们都劫持同一层 VFS
+          # HybridMount / NoMount 二者互斥：它们都劫持同一层 VFS
           # (inode_operations / file_operations / dentry_operations)，且各自使用
           # 独立不兼容的 keyring 协议。同时启用会导致两套驱动抢同一批 hook，
           # 元模块无法正确握手（认不到内核），严重时直接崩溃。
@@ -220,25 +209,21 @@ jobs:
           # 而被当成 "false" 处理。
           HM="${{ inputs.vfs_hybridmount }}"
           NM="${{ inputs.vfs_nomount }}"
-          ZM="${{ inputs.vfs_zeromount }}"
           HM="${HM:-true}"
           NM="${NM:-false}"
-          ZM="${ZM:-false}"
 
           COUNT=0
           [ "$HM" = "true" ] && COUNT=$((COUNT + 1))
           [ "$NM" = "true" ] && COUNT=$((COUNT + 1))
-          [ "$ZM" = "true" ] && COUNT=$((COUNT + 1))
 
           echo "VFS backend selection:"
           echo "  VFS_HYBRIDMOUNT = $HM"
           echo "  VFS_NOMOUNT     = $NM"
-          echo "  VFS_ZEROMOUNT   = $ZM"
 
           if [ "$COUNT" -gt 1 ]; then
             echo ""
             echo "[-] ERROR: VFS backends are mutually exclusive, but $COUNT are enabled."
-            echo "[-] HybridMount / NoMount / ZeroMount all hijack the same VFS layer and"
+            echo "[-] HybridMount / NoMount both hijack the same VFS layer and"
             echo "[-] use incompatible keyring protocols. Enable at most ONE of them."
             exit 1
           fi
@@ -255,7 +240,6 @@ jobs:
           VFS_LABEL=""
           if [ "$HM" = "true" ]; then VFS_LABEL="Hybrid Mount VFS"; fi
           if [ "$NM" = "true" ]; then VFS_LABEL="NoMount VFS"; fi
-          if [ "$ZM" = "true" ]; then VFS_LABEL="ZeroMount VFS"; fi
 
           TITLE="${{ env.AK3_TITLE_PREFIX }}"
           if [ -n "$VFS_LABEL" ]; then
@@ -508,132 +492,6 @@ jobs:
 
           echo "[+] Appended to ${DEFCONFIG_PATH}:"
           grep -nE "CONFIG_(NOMOUNT|KEYS|ASSOCIATIVE_ARRAY)=" "$DEFCONFIG_PATH"
-
-      - name: 🔮 Patch ZeroMount VFS Subsystem
-        if: inputs.vfs_zeromount == true
-        run: |
-          cd $GITHUB_WORKSPACE/device_kernel/
-          # ZeroMount 是 Enginex0/zeromount 的路径重定向子系统，与 HybridMount /
-          # NoMount 完全不同源：它自带 /dev/zeromount 字符设备 + 自定义 ioctl
-          # 协议（不依赖 keyring），因此 CONFIG_KEYS 不是它的依赖。
-          #
-          # 上游只提供 5.4/5.10/5.15/6.1/6.6/6.12 补丁，non-GKI 4.19 在其 roadmap
-          # 里仍标着 Planned —— 本仓库的这份补丁是自研移植版。
-          #
-          # ⚠️ 补丁核心 hunk 只落在 fs/d_path.c fs/namei.c fs/proc/base.c
-          # fs/proc/task_mmu.c fs/readdir.c fs/stat.c fs/statfs.c fs/xattr.c
-          # fs/zeromount.c include/linux/zeromount.h。
-          # 其中 readdir.c / task_mmu.c 与 SUSFS 有上下文重叠，因此本步骤必须
-          # 排在 SUSFS / BakaSU hooks 之后。
-          #
-          # fs/Makefile 与 fs/Kconfig 不在这份补丁里 —— 那两个文件的双后端上下文
-          # 锚点无法同时兼容「有 HybridMount」与「没有 HybridMount」两种树
-          # （patch 的 fuzz 匹配会静默插错位置），改由下面的文本注入完成，
-          # 这样 ZeroMount 才能脱离 HybridMount 独立启用。
-          cp /tmp/Patches/Patch/zeromount_patch_to_4.19.patch ./
-          patch -p1 < zeromount_patch_to_4.19.patch || true
-          rm -f zeromount_patch_to_4.19.patch
-
-          # patch -p1 加了 || true：真有 hunk 打不上必须立刻报出来。
-          if [ -n "$(find . -name '*.rej')" ]; then
-            echo "[-] zeromount_patch has rejected hunks!"
-            find . -name "*.rej" -exec sh -c 'echo "--- {} ---"; cat {}' \;
-            false
-          fi
-
-          # ⚠️ 光看 .rej 不够：旧的 zeromount 补丁是把 SUSFS/KSU 的整段上下文
-          # 当成「要替换掉的旧代码」写的（86 删 / 46 增），应用时 0 reject
-          # 却把 ksu_handle_stat 等钩子静默删掉了，最后死在 BakaSU 的
-          # inline_hook_check.mk（"You lost ksu_handle_stat hook"）。
-          # 所以这里必须逐符号核对「补丁后仍存在」，任何 SUSFS/KSU 钩子丢失即失败。
-          # 注意：本分支是 backslashxx/KernelSU（手动钩子），符号集与
-          # BakaSU/ReSukiSU 分支**不同**，不能照抄那边的清单：
-          #   - 没有 ksu_handle_vfs_fstat / ksu_is_init_rc_hook_enabled
-          #     （改用 ksu_handle_newfstat_ret / ksu_handle_fstat64_ret）
-          #   - 没有 ksu_handle_sys_read（backslashxx 未接该钩子）
-          #   - 没有 ksu_handle_setresuid（其 setresuid 走 selinux hook）
-          # SUSFS 开启时才核对 SUSFS 专有符号；关闭时 susfs_sus_kstat_spoof_*
-          # 本就不存在，只核对 backslashxx 手动钩子提供的核心符号。
-          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
-            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
-              fs/stat.c:ksu_handle_newfstat_ret \
-              fs/stat.c:ksu_handle_fstat64_ret \
-              fs/stat.c:susfs_sus_kstat_spoof_generic_fillattr \
-              fs/stat.c:zeromount_stat_hook \
-              fs/exec.c:ksu_handle_execveat \
-              fs/open.c:ksu_handle_faccessat \
-              kernel/reboot.c:ksu_handle_sys_reboot"
-          else
-            ZM_CHECKS="fs/stat.c:ksu_handle_stat \
-              fs/stat.c:ksu_handle_newfstat_ret \
-              fs/stat.c:ksu_handle_fstat64_ret \
-              fs/stat.c:zeromount_stat_hook \
-              fs/exec.c:ksu_handle_execveat \
-              fs/open.c:ksu_handle_faccessat \
-              kernel/reboot.c:ksu_handle_sys_reboot"
-          fi
-          for chk in $ZM_CHECKS; do
-            chk_file="${chk%%:*}"
-            chk_sym="${chk##*:}"
-            if ! grep -q "$chk_sym" "$chk_file"; then
-              echo "[-] $chk_sym missing from $chk_file after ZeroMount patch!"
-              echo "[-] (ZeroMount 补丁必须与 KernelSU 钩子共存，不能覆盖它们)"
-              false
-            fi
-          done
-          echo "[+] KernelSU hooks preserved alongside ZeroMount."
-
-          # fs/Kconfig：在「最后一个 endmenu」之前插入 config 块
-          ENDMENU_LINE=$(grep -n '^endmenu' fs/Kconfig | tail -1 | cut -d: -f1)
-          if [ -z "$ENDMENU_LINE" ]; then
-            echo "[-] fs/Kconfig has no endmenu anchor"; false
-          fi
-          printf '%s\n' \
-            'config ZEROMOUNT' \
-            '	bool "ZeroMount Path Redirection Subsystem"' \
-            '	default y' \
-            '	help' \
-            '	  ZeroMount allows path redirection and virtual file injection' \
-            '	  without mounting filesystems. Useful for systemless modifications.' \
-            '' > /tmp/zm_kconfig_block.txt
-          { head -n $((ENDMENU_LINE - 1)) fs/Kconfig
-            cat /tmp/zm_kconfig_block.txt
-            tail -n +$ENDMENU_LINE fs/Kconfig
-          } > fs/Kconfig.zmnew && mv fs/Kconfig.zmnew fs/Kconfig
-          rm -f /tmp/zm_kconfig_block.txt
-
-          # fs/Makefile：末尾追加（Makefile 内部顺序无语义要求）
-          grep -qF 'CONFIG_ZEROMOUNT' fs/Makefile \
-            || echo 'obj-$(CONFIG_ZEROMOUNT)		+= zeromount.o' >> fs/Makefile
-
-          # 集成结果自检
-          test -f fs/zeromount.c || { echo "[-] fs/zeromount.c missing"; false; }
-          test -f include/linux/zeromount.h || { echo "[-] include/linux/zeromount.h missing"; false; }
-          grep -qF 'obj-$(CONFIG_ZEROMOUNT)' fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
-          grep -q '^config ZEROMOUNT$' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
-          grep -q 'zeromount_inject_dents64' fs/readdir.c || { echo "[-] fs/readdir.c hook missing"; false; }
-          grep -q 'zeromount_stat_hook' fs/stat.c || { echo "[-] fs/stat.c hook missing"; false; }
-          grep -q 'zeromount_getname_hook' fs/namei.c || { echo "[-] fs/namei.c hook missing"; false; }
-          grep -q 'CONFIG_KSU_SUSFS_SUS_PATH' fs/readdir.c || { echo "[-] SUSFS readdir hooks lost!"; false; }
-          echo "[+] ZeroMount VFS subsystem patched (built-in, SUSFS-aware)."
-      - name: ⚙️ Enable ZeroMount VFS in DEFCONFIG
-        if: inputs.vfs_zeromount == true
-        run: |
-          cd $GITHUB_WORKSPACE/device_kernel
-
-          DEFCONFIG_PATH="./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}"
-
-          # ZeroMount 走自己的字符设备 + ioctl，不用 keyring，所以不需要
-          # CONFIG_KEYS / CONFIG_ASSOCIATIVE_ARRAY（那是 HM / NoMount 的依赖）。
-          #
-          # =y 而不是 =m：它 hook 的是 inode_permission / iterate_dir / vfs_getattr
-          # 这些核心 VFS 路径，必须编进内核镜像，做不成模块。
-          sed -i '/^CONFIG_ZEROMOUNT=/d' "$DEFCONFIG_PATH"
-          echo "CONFIG_ZEROMOUNT=y" >> "$DEFCONFIG_PATH"
-
-          echo "[+] Appended to ${DEFCONFIG_PATH}:"
-          grep -nE "CONFIG_ZEROMOUNT=" "$DEFCONFIG_PATH"
-
 
       - name: 🪛 Extra Kernel Options
         run: |
