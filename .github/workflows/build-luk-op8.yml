@@ -157,11 +157,31 @@ jobs:
 
       - name: 🧰 Install build dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq flex bison libssl-dev libelf-dev \
+          export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
             device-tree-compiler ccache cpio rsync zip unzip bc python3 \
             coccinelle gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi libxml2
+
+          # 官方 LLVM 预编译包里的 ld.lld 动态依赖 libxml2.so.2。ubuntu-latest
+          # 升到 26.04 之后这个 soname 没了，表现为构建早期就死：
+          #   ld.lld: error while loading shared libraries: libxml2.so.2
+          #   make[2]: *** [arch/arm64/kernel/vdso/Makefile:65: vdso.so.dbg] Error 127
+          # 这里探测一次，缺了就从 24.04(noble) 归档取一份 compat 库单独放，
+          # 用 LD_LIBRARY_PATH 喂给 ld.lld，不动系统自带的 libxml2。
+          if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
+            echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
+            sudo mkdir -p /opt/llvm-compat/lib
+            curl -fsSL --retry 3 -o /tmp/libxml2.deb \
+              http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3_amd64.deb
+            dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
+            sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
+            echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
+            echo "[+] compat libxml2 installed: $(ls /opt/llvm-compat/lib)"
+          else
+            echo "[+] libxml2.so.2 present"
+          fi
 
       - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
         run: |
@@ -171,6 +191,13 @@ jobs:
           tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
           echo "/opt/llvm/bin" >> $GITHUB_PATH
           /opt/llvm/bin/clang --version
+          # ld.lld 是 vdso/链接期的实际执行者，先自检一次：缺动态库时这里就报，
+          # 而不是等到 make 里变成一个看不懂的 Error 127。
+          /opt/llvm/bin/ld.lld --version || {
+            echo "[-] /opt/llvm/bin/ld.lld cannot run (missing shared library?)"
+            ldd /opt/llvm/bin/ld.lld || true
+            false
+          }
 
       - name: 📥 Clone luk kernel
         run: |
@@ -359,7 +386,15 @@ jobs:
           fi
           echo "[+] CONFIG_MODULE_SIG_FORCE 未启用 (允许加载原厂已签名模块)"
 
+          # pipefail: 不加的话 make 失败会被 tee 的 0 掩盖，step 依旧显示绿色，
+          # 真正报错要等到后面 dtb/modules 步骤才炸（很难定位）。
+          set -o pipefail
           make -j$(nproc) O=out $MAKE_OPTS $TOPTS CC="ccache clang" 2>&1 | tee error.log
+          test -f out/arch/arm64/boot/Image || {
+            echo "[-] out/arch/arm64/boot/Image not produced; tail of error.log:"
+            tail -40 error.log
+            false
+          }
 
       - name: 🧩 Collect & strip kernel modules
         run: |
