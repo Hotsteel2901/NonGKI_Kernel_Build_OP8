@@ -48,6 +48,8 @@ runs:
                   echo "SYSTEM_VERSION=older" >> $GITHUB_ENV
               elif [ "$VERSION_ID" = "24.04" ]; then
                   echo "SYSTEM_VERSION=newer" >> $GITHUB_ENV
+              elif [ "$VERSION_ID" = "26.04" ]; then
+                  echo "SYSTEM_VERSION=latest" >> $GITHUB_ENV
               else
                   echo "[-] Not supported ubuntu version: $VERSION_ID."
                   false
@@ -60,7 +62,7 @@ runs:
           fi
 
       - name: Free Disk Space (Ubuntu)
-        if: env.FREE_MORE_SPACE == 'true' && env.SYSTEM_VERSION == 'newer' || env.SYSTEM_VERSION == 'older'
+        if: env.FREE_MORE_SPACE == 'true' && (env.SYSTEM_VERSION == 'newer' || env.SYSTEM_VERSION == 'older' || env.SYSTEM_VERSION == 'latest')
         uses: jlumbroso/free-disk-space@main
         with:
           # this might remove tools that are actually needed,
@@ -77,7 +79,7 @@ runs:
           swap-storage: true
 
       - name: Remove useless tools
-        if: env.SYSTEM_VERSION == 'newer' || env.SYSTEM_VERSION == 'older'
+        if: env.SYSTEM_VERSION == 'newer' || env.SYSTEM_VERSION == 'older' || env.SYSTEM_VERSION == 'latest'
         shell: bash
         run: |
           sudo rm -rf /opt/hostedtoolcache
@@ -240,6 +242,62 @@ runs:
 
             fi
 
+          elif [ "${{ env.SYSTEM_VERSION }}" == "latest" ]; then
+            echo "::group::[+] Starting install base packages..."
+            sudo apt update
+            sudo apt install git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler cpio lz4 libz3-4 elfutils -y
+            sudo apt-get install zstd libc6 binutils libc6-dev-i386 gcc g++ p7zip p7zip-full -y
+            echo "::endgroup::"
+            echo "[+] The base packages is installed."
+
+            # Install Coccinelle
+            echo "::group::[+] Starting build coccinelle..."
+            sudo apt-get install coccinelle -y
+            echo "::endgroup::"
+            echo "[+] Coccinelle is installed."
+
+            # Install Libtinfo5
+            ${{ env.CURLX }} https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb libtinfo5.deb
+            sudo apt install ./libtinfo5.deb
+            rm -f libtinfo5.deb
+
+            # Get MKDTBO tool to System
+            git clone --depth=1 https://android.googlesource.com/platform/system/libufdt $GITHUB_WORKSPACE/mkdtbo
+            mv $GITHUB_WORKSPACE/mkdtbo/utils/src/* $GITHUB_WORKSPACE/mkdtbo/
+            chmod +x "$GITHUB_WORKSPACE/mkdtbo/mkdtboimg.py"
+            sudo ln -sfn "$GITHUB_WORKSPACE/mkdtbo/mkdtboimg.py" /usr/bin/mkdtboimg
+            sudo ln -sfn "$GITHUB_WORKSPACE/mkdtbo/mkdtboimg.py" /usr/bin/mkdtimg
+            test -x /usr/bin/mkdtimg
+            cd $GITHUB_WORKSPACE
+
+            if [ "${{ env.PYTHON_VERSION }}" == "3" ]; then
+                sudo apt install python3 -y
+                sudo rm -rf /usr/bin/python
+                sudo ln -s /usr/bin/python3 /usr/bin/python
+                echo "[+] Python version: $(python -V)"
+
+            elif [ "${{ env.PYTHON_VERSION }}" == "2" ]; then
+                echo "::group::[+] Starting build Python 2..."
+                wget https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz
+                tar -xvf Python-2.7.18.tgz
+                cd Python-2.7.18
+                ./configure
+                make -j$(nproc)
+                sudo make install
+                curl https://bootstrap.pypa.io/pip/2.7/get-pip.py -o get-pip.py
+                sudo python2.7 get-pip.py
+                sudo update-alternatives --install /usr/bin/python python /usr/local/bin/python2.7 1
+                cd ../
+                rm -rf Python-2.7.18 Python-2.7.18.tgz
+                echo "::endgroup::"
+                echo "[+] Python version: $(python -V)"
+
+            else
+                echo "[-] You need choose a vaild python version!"
+                false
+
+            fi
+
           elif [ "${{ env.SYSTEM_VERSION }}" == "arch" ]; then
             echo "::group::[+] Starting install base packages..."
             pacman-key --init
@@ -289,7 +347,7 @@ runs:
         if: env.GCC_GNU == 'true'
         shell: bash
         run: |
-          if [ "${{ env.SYSTEM_VERSION }}" == "newer" ] || [ "${{ env.SYSTEM_VERSION }}" == "older" ] || [ "${{ env.SYSTEM_VERSION }}" == "oldest" ]; then
+          if [ "${{ env.SYSTEM_VERSION }}" == "newer" ] || [ "${{ env.SYSTEM_VERSION }}" == "older" ] || [ "${{ env.SYSTEM_VERSION }}" == "oldest" ] || [ "${{ env.SYSTEM_VERSION }}" == "latest" ]; then
             echo "::group::[+] Starting install GNU GCC..."
             sudo apt install binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu
             sudo apt install gcc-arm-linux-gnueabi -y
