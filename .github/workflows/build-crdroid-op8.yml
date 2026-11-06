@@ -149,20 +149,28 @@ jobs:
           sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
             device-tree-compiler ccache cpio rsync zip unzip bc python3 \
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi libxml2
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
 
-          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2；26.04 没有这个
-          # soname 时会在 vdso 阶段报 "ld.lld: error while loading shared
-          # libraries: libxml2.so.2" + Error 127。缺则从 24.04 取 compat 库。
+          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2；26.04 既没有这个
+          # soname（vdso 阶段报 "ld.lld: error while loading shared libraries"），
+          # 包名也换成了 libxml2-16。先按两种名字试装，缺 libxml2.so.2 时
+          # 再从 24.04(noble) 取 compat 库，单独放 /opt/llvm-compat 不动系统库。
+          sudo -E apt-get install -y -qq libxml2-16 || sudo -E apt-get install -y -qq libxml2 || true
+
           if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
             echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
             sudo mkdir -p /opt/llvm-compat/lib
-            curl -fsSL --retry 3 -o /tmp/libxml2.deb \
-              http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3_amd64.deb
+            BASE=http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/
+            FILE=$(curl -fsSL "$BASE" | grep -o 'libxml2_2\.9\.14[^"]*_amd64\.deb' | sort -uV | tail -n1)
+            test -n "$FILE" || { echo "[-] cannot resolve libxml2 deb name"; false; }
+            echo "[i] using $FILE"
+            curl -fsSL --retry 3 -o /tmp/libxml2.deb "$BASE$FILE"
             dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
             sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
             echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
-            echo "[+] compat libxml2 installed"
+            echo "[+] compat libxml2 installed: $(ls /opt/llvm-compat/lib)"
+          else
+            echo "[+] libxml2.so.2 present"
           fi
 
       - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
@@ -358,20 +366,28 @@ jobs:
           sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
             device-tree-compiler ccache cpio rsync zip unzip bc python3 \
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi libxml2
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
 
-          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2；26.04 没有这个
-          # soname 时会在 vdso 阶段报 "ld.lld: error while loading shared
-          # libraries: libxml2.so.2" + Error 127。缺则从 24.04 取 compat 库。
+          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2；26.04 既没有这个
+          # soname（vdso 阶段报 "ld.lld: error while loading shared libraries"），
+          # 包名也换成了 libxml2-16。先按两种名字试装，缺 libxml2.so.2 时
+          # 再从 24.04(noble) 取 compat 库，单独放 /opt/llvm-compat 不动系统库。
+          sudo -E apt-get install -y -qq libxml2-16 || sudo -E apt-get install -y -qq libxml2 || true
+
           if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
             echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
             sudo mkdir -p /opt/llvm-compat/lib
-            curl -fsSL --retry 3 -o /tmp/libxml2.deb \
-              http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3_amd64.deb
+            BASE=http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/
+            FILE=$(curl -fsSL "$BASE" | grep -o 'libxml2_2\.9\.14[^"]*_amd64\.deb' | sort -uV | tail -n1)
+            test -n "$FILE" || { echo "[-] cannot resolve libxml2 deb name"; false; }
+            echo "[i] using $FILE"
+            curl -fsSL --retry 3 -o /tmp/libxml2.deb "$BASE$FILE"
             dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
             sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
             echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
-            echo "[+] compat libxml2 installed"
+            echo "[+] compat libxml2 installed: $(ls /opt/llvm-compat/lib)"
+          else
+            echo "[+] libxml2.so.2 present"
           fi
 
       - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
@@ -644,20 +660,28 @@ jobs:
           sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
             device-tree-compiler ccache cpio rsync zip unzip bc python3 \
             coccinelle gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi libxml2
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
 
-          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2；26.04 没有这个
-          # soname 时会在 vdso 阶段报 "ld.lld: error while loading shared
-          # libraries: libxml2.so.2" + Error 127。缺则从 24.04 取 compat 库。
+          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2；26.04 既没有这个
+          # soname（vdso 阶段报 "ld.lld: error while loading shared libraries"），
+          # 包名也换成了 libxml2-16。先按两种名字试装，缺 libxml2.so.2 时
+          # 再从 24.04(noble) 取 compat 库，单独放 /opt/llvm-compat 不动系统库。
+          sudo -E apt-get install -y -qq libxml2-16 || sudo -E apt-get install -y -qq libxml2 || true
+
           if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
             echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
             sudo mkdir -p /opt/llvm-compat/lib
-            curl -fsSL --retry 3 -o /tmp/libxml2.deb \
-              http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3_amd64.deb
+            BASE=http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/
+            FILE=$(curl -fsSL "$BASE" | grep -o 'libxml2_2\.9\.14[^"]*_amd64\.deb' | sort -uV | tail -n1)
+            test -n "$FILE" || { echo "[-] cannot resolve libxml2 deb name"; false; }
+            echo "[i] using $FILE"
+            curl -fsSL --retry 3 -o /tmp/libxml2.deb "$BASE$FILE"
             dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
             sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
             echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
-            echo "[+] compat libxml2 installed"
+            echo "[+] compat libxml2 installed: $(ls /opt/llvm-compat/lib)"
+          else
+            echo "[+] libxml2.so.2 present"
           fi
 
       - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
