@@ -33,9 +33,9 @@ on:
         default: true
 
       # ─────────────────────────────────────────────────────────────────────
-      # VFS 路径重定向后端（三选一，互斥！）
+      # VFS 路径重定向后端（二选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
-      # HybridMount / NoMount / ZeroMount 都劫持同一层 VFS，且各自使用
+      # HybridMount / NoMount 都劫持同一层 VFS，且各自使用
       # 独立不兼容的 keyring 协议，最多只能开一个。这里的值会透传给
       # build-kernel.yml，再传给 build-oneplus-8-los23-a16.yml 做互斥校验。
       vfs_hybridmount:
@@ -45,11 +45,6 @@ on:
         default: true
       vfs_nomount:
         description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥)'
-        required: true
-        type: boolean
-        default: false
-      vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
         required: true
         type: boolean
         default: false
@@ -66,7 +61,6 @@ jobs:
       susfs_enable: ${{ inputs.susfs_enable }}
       vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
       vfs_nomount: ${{ inputs.vfs_nomount }}
-      vfs_zeromount: ${{ inputs.vfs_zeromount }}
 
   release-kernel:
     name: "Step Release Kernel"

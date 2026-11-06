@@ -39,8 +39,6 @@
 | `0002-stage2-susfs.patch` | SUSFS v2.3.0 全部内核侧代码（17 文件；含 `fs/susfs.c`、`include/linux/susfs.h`、`susfs_def.h` 三个核心文件） | 4026 |
 | `0003-stage3-droidspaces.patch` | cgroup 前缀隐藏 + droidspaces.config | 16 |
 | `0004-hybridmount-vfs.patch` | Hybrid Mount VFS 后端子系统（`fs/hybridmount/`，fork 自 NoMount，keyring 驱动）built-in 集成（7 文件：`fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}`） | 3155 |
-| `0005-zeromount-vfs.patch` | ZeroMount VFS 后端子系统（`fs/zeromount.c` + `include/linux/zeromount.h`，自带 `/dev/zeromount` 字符设备 + ioctl 协议，不依赖 keyring）built-in 自研 4.19 移植（12 文件） | 2357 |
-| `zeromount.config` | ZeroMount 编译开关（`CONFIG_ZEROMOUNT=y`） | 20 |
 | `droidspaces.config` | DroidSpaces Non-GKI 内核配置（含 USER_NS 等） | 98 |
 | `hybridmount.config` | Hybrid Mount 编译开关（`CONFIG_HYBRIDMOUNT=y` + 显式 `CONFIG_KEYS=y` / `CONFIG_ASSOCIATIVE_ARRAY=y`） | 34 |
 | `nomount.config` | NoMount 编译开关（`CONFIG_NOMOUNT=y` + 显式 `CONFIG_KEYS=y` / `CONFIG_ASSOCIATIVE_ARRAY=y`） | 40 |
@@ -48,7 +46,7 @@
 
 ## VFS 后端三选一（互斥，`stage2` / `stage3` 生效）
 
-HybridMount / NoMount / ZeroMount 三者都劫持同一层 VFS
+HybridMount / NoMount 两者都劫持同一层 VFS
 （`inode_operations` / `file_operations` / `dentry_operations`），且各自使用**互不兼容的
 keyring 协议**，**同期最多只能开一个**。两个 stage 开头的校验步骤会在开启多个时直接 fail。
 
@@ -56,7 +54,6 @@ keyring 协议**，**同期最多只能开一个**。两个 stage 开头的校�
 |---|---|---|---|
 | Hybrid Mount VFS | `VFS_HYBRIDMOUNT` | 开 | `0004-hybridmount-vfs.patch` + `hybridmount.config` |
 | NoMount VFS | `VFS_NOMOUNT` | 关 | 无本地补丁（走上游 `kernel/setup.sh`）+ `nomount.config` |
-| ZeroMount VFS | `VFS_ZEROMOUNT` | 关 | `0005-zeromount-vfs.patch` + `zeromount.config` |
 
 > `stage1` 仅集成 BakaSU，不含任何 VFS 后端，跳过该校验。
 >

@@ -16,7 +16,7 @@ permissions:
 # 两种情况都通过 with: 把开关透传给 build-oneplus-8-los23-a16.yml。
 #
 # 注: 本分支另有独立入口 build-crdroid-op8.yml（crDroid 16.0 三段式构建），
-#     其 VFS 开关同样为 vfs_hybridmount / vfs_nomount / vfs_zeromount。
+#     其 VFS 开关同样为 vfs_hybridmount / vfs_nomount。
 # ============================================================================
 on:
   workflow_call:
@@ -36,11 +36,6 @@ on:
         required: false
         type: boolean
         default: false
-      vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
-        required: false
-        type: boolean
-        default: false
     # 透传下层 build-oneplus-8-los23-a16.yml 导出的「实际构建 commit」，
     # 供 build-release.yml 把 tag 精确打在该 commit 上。
     outputs:
@@ -55,9 +50,9 @@ on:
         type: boolean
         default: true
       # ─────────────────────────────────────────────────────────────────────
-      # VFS 路径重定向后端（三选一，互斥！）
+      # VFS 路径重定向后端（二选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
-      # HybridMount / NoMount / ZeroMount 都劫持同一层 VFS
+      # HybridMount / NoMount 都劫持同一层 VFS
       # (inode_operations / file_operations / dentry_operations)，
       # 且各自使用独立不兼容的 keyring 协议（"hm1" / "NOMOUNT" / 自有）。
       # 上游 Hybrid Mount 的 Kconfig 明确写了与 NoMount 的元模块
@@ -69,11 +64,6 @@ on:
         default: true
       vfs_nomount:
         description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥)'
-        required: true
-        type: boolean
-        default: false
-      vfs_zeromount:
-        description: 'VFS 后端: ZeroMount (4.19 自研移植, 与另两个互斥)'
         required: true
         type: boolean
         default: false
@@ -94,4 +84,3 @@ jobs:
       susfs_enable: ${{ inputs.susfs_enable }}
       vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
       vfs_nomount: ${{ inputs.vfs_nomount }}
-      vfs_zeromount: ${{ inputs.vfs_zeromount }}
