@@ -243,48 +243,82 @@ runs:
             fi
 
           elif [ "${{ env.SYSTEM_VERSION }}" == "latest" ]; then
-            echo "::group::[+] Starting install base packages..."
-            sudo apt update
-            sudo apt install git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler cpio lz4 libz3-4 elfutils -y
-            sudo apt-get install zstd libc6 binutils libc6-dev-i386 gcc g++ p7zip p7zip-full -y
-            echo "::endgroup::"
+            # ── Ubuntu 26.04 (ubuntu-latest) ────────────────────────────────
+            # 26.04 的 apt 会弹 needrestart / conffile 询问；CI 里没有 tty，
+            # 等输入 = 静默挂死（表现为该 step 几十分钟没有任何输出）。
+            # 所以这里统一走 APT 前缀：-y 假定同意、noninteractive 关掉 debconf、
+            # NEEDRESTART_MODE=a 直接重启受影响服务、confdef/confold 保留现配置。
+            export DEBIAN_FRONTEND=noninteractive
+            export NEEDRESTART_MODE=a
+            export APT_LISTCHANGES_FRONTEND=none
+            APT="sudo -E apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+            step() { echo "[$(date -u +%H:%M:%S)] $*"; }
+
+            step "apt update"
+            $APT update
+
+            step "install base packages"
+            $APT install git ccache automake flex lzop bison gperf build-essential \
+              zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 \
+              libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev make optipng \
+              maven libssl-dev pwgen libswitch-perl policycoreutils minicom \
+              libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 libx11-dev \
+              lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler cpio lz4
+
+            # 这几个是"锦上添花"：26.04 把 libz3-4 改名成 libz3-4t64，缺失就跳过，
+            # 不因为一个可选包让整个构建死掉。
+            step "install optional packages (non-fatal)"
+            $APT install zstd libc6 binutils libc6-dev-i386 gcc g++ p7zip p7zip-full elfutils || true
+            $APT install libz3-4 || $APT install libz3-4t64 || true
             echo "[+] The base packages is installed."
 
-            # Install Coccinelle
-            echo "::group::[+] Starting build coccinelle..."
-            sudo apt-get install coccinelle -y
-            echo "::endgroup::"
-            echo "[+] Coccinelle is installed."
+            # Install Coccinelle (26.04 源里有包，别再花 10 分钟从源码编译)
+            step "install coccinelle"
+            $APT install coccinelle
 
-            # Install Libtinfo5
-            ${{ env.CURLX }} https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb libtinfo5.deb
-            sudo apt install ./libtinfo5.deb
+            # Install Libtinfo5 —— 26.04 仓库已无此包，从 22.04 的归档直取。
+            # 网络不稳时 timeout 兜底，拿不到就跳过（只在 menuconfig 之类场景才需要）。
+            step "install libtinfo5 (non-fatal)"
+            if timeout 180 ${{ env.CURLX }} https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb libtinfo5.deb \
+               && [ -s libtinfo5.deb ] && file libtinfo5.deb | grep -q "Debian binary package"; then
+              $APT install ./libtinfo5.deb || true
+            else
+              echo "[!] libtinfo5 not installed (download failed or package gone)."
+            fi
             rm -f libtinfo5.deb
 
             # Get MKDTBO tool to System
-            git clone --depth=1 https://android.googlesource.com/platform/system/libufdt $GITHUB_WORKSPACE/mkdtbo
-            mv $GITHUB_WORKSPACE/mkdtbo/utils/src/* $GITHUB_WORKSPACE/mkdtbo/
-            chmod +x "$GITHUB_WORKSPACE/mkdtbo/mkdtboimg.py"
-            sudo ln -sfn "$GITHUB_WORKSPACE/mkdtbo/mkdtboimg.py" /usr/bin/mkdtboimg
-            sudo ln -sfn "$GITHUB_WORKSPACE/mkdtbo/mkdtboimg.py" /usr/bin/mkdtimg
-            test -x /usr/bin/mkdtimg
-            cd $GITHUB_WORKSPACE
+            step "get mkdtboimg"
+            rm -rf "$GITHUB_WORKSPACE/mkdtbo"
+            if timeout 240 git clone --depth=1 https://android.googlesource.com/platform/system/libufdt "$GITHUB_WORKSPACE/mkdtbo"; then
+              mv "$GITHUB_WORKSPACE"/mkdtbo/utils/src/* "$GITHUB_WORKSPACE"/mkdtbo/
+              chmod +x "$GITHUB_WORKSPACE/mkdtbo/mkdtboimg.py"
+              sudo ln -sfn "$GITHUB_WORKSPACE/mkdtbo/mkdtboimg.py" /usr/bin/mkdtboimg
+              sudo ln -sfn "$GITHUB_WORKSPACE/mkdtbo/mkdtboimg.py" /usr/bin/mkdtimg
+              test -x /usr/bin/mkdtimg && echo "[+] mkdtboimg installed."
+            else
+              echo "[!] mkdtboimg clone failed; DTB regeneration will fail if NEED_DTBO=true."
+            fi
+            cd "$GITHUB_WORKSPACE"
 
             if [ "${{ env.PYTHON_VERSION }}" == "3" ]; then
-                sudo apt install python3 -y
-                sudo rm -rf /usr/bin/python
-                sudo ln -s /usr/bin/python3 /usr/bin/python
+                step "ensure python3"
+                $APT install python3
+                # 只有 /usr/bin/python 不存在时才建软链，避免破坏系统自带 python
+                if [ ! -e /usr/bin/python ]; then
+                    sudo ln -s /usr/bin/python3 /usr/bin/python
+                fi
                 echo "[+] Python version: $(python -V)"
 
             elif [ "${{ env.PYTHON_VERSION }}" == "2" ]; then
                 echo "::group::[+] Starting build Python 2..."
-                wget https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz
+                wget -q https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz
                 tar -xvf Python-2.7.18.tgz
                 cd Python-2.7.18
                 ./configure
                 make -j$(nproc)
                 sudo make install
-                curl https://bootstrap.pypa.io/pip/2.7/get-pip.py -o get-pip.py
+                curl -fsSL https://bootstrap.pypa.io/pip/2.7/get-pip.py -o get-pip.py
                 sudo python2.7 get-pip.py
                 sudo update-alternatives --install /usr/bin/python python /usr/local/bin/python2.7 1
                 cd ../
