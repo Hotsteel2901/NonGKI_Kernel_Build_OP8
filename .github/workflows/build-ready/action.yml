@@ -65,7 +65,13 @@ runs:
               git clone "${{ env.AK3_SOURCE }}" -b "${{ env.AK3_BRANCH }}" Anykernel3 --depth=1
 
             fi
-          elif [[ "${{ env.PACK_METHOD }}" == "MKBOOTIMG" ]] || [ "${{ env.DEFCONFIG_FROM_BOOT }}" == "true" ]; then
+          elif [[ "${{ env.PACK_METHOD }}" == "HotSPatch1" ]]; then
+            # HotSPatch1 是纯 Python 的 boot.img 重打包器（只用标准库），
+            # 不需要 AnyKernel3 / mkbootimg / magiskboot 任何外部工具。
+            cd $GITHUB_WORKSPACE/device_kernel
+            echo "[+] PACK_METHOD=HotSPatch1: no external packing tools needed."
+
+          elif [[ "${{ env.PACK_METHOD }}" == "MKBOOTIMG" ]] || [ "${{ env.DEFCONFIG_FROM_BOOT }}" == "true" ]]; then
             cd $GITHUB_WORKSPACE
             git clone https://android.googlesource.com/platform/system/tools/mkbootimg $GITHUB_WORKSPACE/mkboottools -b main-kernel-build-2024 --depth=1
             ${{ env.CURLX }} ${{ env.BOOT_SOURCE }} $GITHUB_WORKSPACE/boot_source_${{ env.DEVICE_NAME }}.img
