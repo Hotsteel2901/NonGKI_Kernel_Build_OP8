@@ -7,7 +7,7 @@
 
 | 组件 | 说明 |
 |---|---|
-| BakaSU | KernelSU 分支 (原 ReSukiSU), CONFIG_KSU_SUSFS (inline hook) 模式 |
+| KernelSU (backslashxx) | **[backslashxx/KernelSU](https://github.com/backslashxx/KernelSU)** master, 固定 `4e6e9ff`。该分支**上游不支持 SUSFS**, 内核侧是**本仓库手写的桥接**, 不是 BakaSU 的官方 inline hook 那套。 |
 | SUSFS v2.3.0 | 官方 gki v2.3.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` 4.19 内置移植 (keyring 魔数 `"hm1"`), **默认开启** |
 | NoMount VFS | `fs/nomount` 内置集成, 走上游 `kernel/setup.sh` (keyring 魔数 `"NOMOUNT"`), 默认关闭 |
@@ -26,17 +26,19 @@
    - 重启进入系统
    - 仅替换内核镜像, **不会清空** `/data`; 刷入前建议**备份原厂 `boot.img`** 以便回滚
    - 本包**与 Magisk 不兼容**, 请勿与 Magisk 一起刷入
-5. 安装 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** 并验证: 显示 **SUSFS 2.3.0**, 授权/模块功能正常.
+5. 安装 **[KernelSU Manager](https://github.com/tiann/KernelSU/releases)** (官方管理器, backslashxx/KernelSU 走它的协议) 并验证: root 正常, 模块可挂载, `ksu_susfs` 报告 SUSFS **2.3.0**.
 
-> 上游 ReSukiSU 项目已更名/迁移为 **[BakaSU](https://github.com/Baka-SU/BakaSU)** (原 `ReSukiSU/ReSukiSU`
-> 组织已归档; GitHub 保留永久重定向, 旧地址仍可访问)。本仓库现已直接指向新地址。
+> 与 `master` / `ReSuki_Luk` / `crdroid_Resuki` (BakaSU, 官方 SUSFS inline hook) 不同, 本分支跟的是
+> **[backslashxx/KernelSU](https://github.com/backslashxx/KernelSU)** —— 更精简、不支持 SUSFS,
+> 所以内核侧由本仓库手写桥接。
 
 ## 补丁说明 (Patches/)
 
 | 文件 | 内容 | 应用时机 |
 |---|---|---|
 | `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
-| `Patches/Patch/resukisu_inline_hooks.patch` | BakaSU SUSFS inline 模式官方内联钩子: exec / open / read_write / stat / input / reboot / setresuid (另含 fs/stat.c SUS_KSTAT 与 kernel/sys.c uname 伪装片段) | 工作流自定义步骤 |
+| `Patches/Patch/backslashxx_manual_hooks.patch` | backslashxx 的静态调用点钩子: `ksu_handle_execveat/faccessat/stat/newfstat_ret/fstat64_ret/sys_reboot` (另含 fs/stat.c SUS_KSTAT 与 kernel/sys.c uname 伪装片段) | 工作流自定义步骤 |
+| `Patches/Patch/backslashxx_susfs_bridge.patch` | SUSFS 命令分发接入 backslashxx: `ksu_handle_susfs_cmd()` / `SUSFS_MAGIC` 路由 / `susfs_init()` / sdcard 监控 / `susfs_set_current_proc_umounted()` | 工作流自定义步骤 (受 `SUSFS_ENABLE` 控制) |
 | `Patches/Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS 子系统 (`fs/hybridmount`, keyring 魔数 `"hm1"`) | 工作流自定义步骤 (受 `VFS_HYBRIDMOUNT` 控制) |
 | *(NoMount)* | 本仓库无补丁文件, 直接拉上游 `kernel/setup.sh` | 工作流自定义步骤 (受 `VFS_NOMOUNT` 控制) |
 | `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
@@ -48,12 +50,19 @@
 > git diff <新base> -- <susfs相关文件> > Patches/Patch/susfs_patch_to_4.19.patch
 > ```
 >
-> 内联钩子与 Jack 的官方 `susfs_inline_hook_patches.sh` (SUSFS v2.3.00+ 官方内联钩子) 对齐:
-> 7 个钩子均通过 BakaSU `inline_hook_check.mk` 的编译期校验 (static_key 门控)。
-> 因 4.19 的 `__do_execve_file()` 成功路径在 `out_free:` 之前提前返回, `ksu_handle_post_execveat_sucompat`
-> 钩子置于 exec 成功路径 (su fd 必须在 exec 进 ksud 之后安装; 与官方 5.10 `do_execveat_common` 布局语义等价)。
+> ⚠️ **本分支的钩子是自己写的, 不是 BakaSU 那套。** BakaSU 官方支持 SUSFS inline hook
+> (`CONFIG_KSU_SUSFS` + `inline_hook_check.mk`); backslashxx/KernelSU 两者都没有, 所以上面两份补丁
+> 由本仓库维护, 上游一动就得重新对齐。
+>
+> `build-oneplus-8-los23-a16.yml` 里的 `KERNELSU_PIN` 把 KernelSU 钉在核对过的 SHA 上,
+> 补丁与源码树永远对得上。升上游流程: 改 `KERNELSU_PIN` → 对新 SHA 重生成
+> `backslashxx_susfs_bridge.patch` → 让 `🔎 Verify KernelSU hook symbols` 步骤确认每个钩子签名没变。
+>
+> `backslashxx_manual_hooks.patch` 要求 `sucompat.c` 的钩子保持**外部可见**, 也就是
+> `CONFIG_KSU_TAMPER_SYSCALL_TABLE` 与 `CONFIG_KSU_HACK_ARM64_BRANCH_LINK` 必须都是 `n`
+> (否则 `SUCOMPAT_HOOK_TYPE` 退化成 `static __always_inline`)。defconfig 步骤已把这两个钉死。
 
-## VFS 路径重定向后端（三选一）
+## VFS 路径重定向后端（二选一）
 
 本仓库支持三种路径重定向后端。它们全部工作在**同一个 VFS 层**
 （劫持 `inode_operations` / `file_operations` / `dentry_operations`），且各自使用
@@ -116,19 +125,20 @@
 - `KERNEL_SOURCE/Branch`: LineageOS 官方仓库 `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **必须保留** (schgm-flash.c 需要 CONFIG_OPLUS_SM8250_CHARGER)
 - `VFS_HYBRIDMOUNT / VFS_NOMOUNT` — 互斥, 详见上一节
-- `KERNELSU_AUTO_FORK: resukisu` — 自动获取最新 BakaSU
+- `KERNELSU_AUTO_FORK: xxksu` + `KERNELSU_PIN: 4e6e9ff` — 取 backslashxx/KernelSU 并**钉在该 SHA**
+  (手写补丁就是按它对齐的, 不钉的话补丁和源码树会对不上)
 - dtb: 构建后自定义步骤拼接 `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img` (与官方 DTB_SZ 一致)
 - dtbo: 不打包 (NEED_DTBO=false, 沿用系统分区的 dtbo)
 
 ## 与 Jack 原版格式的差异（有意为之）
 
-- `patch-no-kprobe` 步骤/动作未采用: 其 `susfs_inline_hook_patches.sh` 即 Jack 的官方内联钩子实现
-  (SUSFS v2.3.00+, 与 BakaSU inline 模式兼容), 本仓库以等价内容固化为
-  `resukisu_inline_hooks.patch` (保持补丁化流程、便于审查与固定应用顺序);
-  该脚本的 selinuxfs 静态符号移除部分因本内核 CONFIG_KALLSYMS_ALL=y 会跳过, 无实际作用
+- `patch-no-kprobe` 步骤/动作未采用: 其 `susfs_inline_hook_patches.sh` 是给 BakaSU 官方 inline hook
+  用的, backslashxx 没有那套 API; 本分支改为自己的 `backslashxx_manual_hooks.patch` +
+  `backslashxx_susfs_bridge.patch`; 该脚本的 selinuxfs 静态符号移除部分因本内核
+  CONFIG_KALLSYMS_ALL=y 会跳过, 无实际作用
 - 仅保留 4.19 版本的 susfs 补丁 (设备内核版本固定, 无需 4.4/4.9/5.4 等)
 - ReKernel-X 4.19 直接用补丁集成 (内置), 替换原 Re:Kernel v8.5
-- HOOK_METHOD 变量保留但无实际作用: BakaSU inline 钩子由 resukisu_inline_hooks.patch 提供
+- HOOK_METHOD 变量保留但无实际作用: 钩子是 backslashxx_manual_hooks.patch 里的静态调用点
 
 ## 补丁记录存档 (Patches/Archive/)
 

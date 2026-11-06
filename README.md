@@ -7,7 +7,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Integrations
 | Component | Note |
 |---|---|
-| BakaSU | KernelSU fork (formerly ReSukiSU), CONFIG_KSU_SUSFS (inline hook) mode |
+| KernelSU (backslashxx) | **[backslashxx/KernelSU](https://github.com/backslashxx/KernelSU)** master, pinned to `4e6e9ff`. This fork has **no upstream SUSFS support**, so the kernel side is a **hand-written bridge maintained in this repo** — not BakaSU's official inline-hook set. |
 | SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
 | NoMount VFS | `fs/nomount` built-in via upstream `kernel/setup.sh` (keyring magic `"NOMOUNT"`), off by default |
@@ -24,17 +24,18 @@ Chinese docs: [README_cn.md](README_cn.md)
    - Reboot to **System**
    - The kernel image is the only thing replaced — `/data` is **not** wiped. Back up your stock `boot.img` first so you can roll back.
    - **Magisk is NOT compatible** with these builds.
-4. Install **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** and verify in it: SUSFS version **2.3.0**, allowlist & modules working.
+4. Install the **[KernelSU Manager](https://github.com/tiann/KernelSU/releases)** (official manager; backslashxx/KernelSU speaks its protocol) and verify: root works, modules mount, `ksu_susfs` reports SUSFS **2.3.0**.
 
-> The upstream ReSukiSU project has been renamed/migrated to **[BakaSU](https://github.com/Baka-SU/BakaSU)** (the old
-> `ReSukiSU/ReSukiSU` org is archived; GitHub keeps permanent redirects, so old URLs still resolve). This repo now
-> points at the new address directly.
+> Unlike the `master` / `ReSuki_Luk` / `crdroid_Resuki` branches (BakaSU, official SUSFS inline hooks), this branch
+> tracks **[backslashxx/KernelSU](https://github.com/backslashxx/KernelSU)** — a leaner fork without SUSFS support,
+> hence the hand-written bridge below.
 
 ## Patches (Patches/)
 | File | Content | Applied by |
 |---|---|---|
 | `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
-| `Patch/resukisu_inline_hooks.patch` | BakaSU SUSFS inline hooks: exec / open / read_write / stat / input / reboot / setresuid (+ SUS_KSTAT / SPOOF_UNAME bits) | custom workflow step |
+| `Patch/backslashxx_manual_hooks.patch` | Static call-site hooks for backslashxx (`ksu_handle_execveat/faccessat/stat/newfstat_ret/fstat64_ret/sys_reboot` + SUS_KSTAT / SPOOF_UNAME bits) | custom workflow step |
+| `Patch/backslashxx_susfs_bridge.patch` | SUSFS command dispatch into backslashxx: `ksu_handle_susfs_cmd()`, `SUSFS_MAGIC` routing, `susfs_init()`, sdcard monitor, `susfs_set_current_proc_umounted()` | custom workflow step (gated by `SUSFS_ENABLE`) |
 | `Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS subsystem (`fs/hybridmount`, keyring magic `"hm1"`) | custom workflow step (gated by `VFS_HYBRIDMOUNT`) |
 | *(NoMount)* | no in-repo patch — pulled from upstream `kernel/setup.sh` | custom workflow step (gated by `VFS_NOMOUNT`) |
 | `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
@@ -47,15 +48,21 @@ Chinese docs: [README_cn.md](README_cn.md)
 > git diff <new-base> -- <susfs-files> > Patches/Patch/susfs_patch_to_4.19.patch
 > ```
 >
-> The inline hooks match Jack's official `susfs_inline_hook_patches.sh` (official SUSFS v2.3.00+ inline hooks):
-> all 7 hooks pass BakaSU's compile-time `inline_hook_check.mk` (static_key gated).
-> On 4.19 `__do_execve_file()` returns early (before `out_free:`) on the success path, so
-> `ksu_handle_post_execveat_sucompat` sits on the exec-success path (the su fd must be installed after the
-> exec into ksud - semantically the same spot as in the official 5.10 `do_execveat_common` layout).
+> ⚠️ **This branch's hooks are hand-written, not BakaSU's.** BakaSU ships official SUSFS inline hooks
+> (`CONFIG_KSU_SUSFS` + `inline_hook_check.mk`); backslashxx/KernelSU has neither, so the two patches above
+> are maintained here and must be re-anchored whenever upstream moves.
+>
+> `KERNELSU_PIN` in `build-oneplus-8-los23-a16.yml` pins KernelSU to the audited SHA, so the patches and the
+> source tree always match. To bump: change `KERNELSU_PIN` → regenerate `backslashxx_susfs_bridge.patch`
+> against the new SHA → let the `🔎 Verify KernelSU hook symbols` step confirm every hook signature is unchanged.
+>
+> `backslashxx_manual_hooks.patch` needs the `sucompat.c` hooks to stay **externally visible**, which means
+> `CONFIG_KSU_TAMPER_SYSCALL_TABLE` and `CONFIG_KSU_HACK_ARM64_BRANCH_LINK` must both stay `n`
+> (`SUCOMPAT_HOOK_TYPE` degrades to `static __always_inline` otherwise). The defconfig step pins both.
 
 ## VFS backends (pick at most ONE)
 
-Three path-redirection backends are supported. They all hijack **the same VFS layer**
+Two path-redirection backends are supported. They both hijack **the same VFS layer**
 (`inode_operations` / `file_operations` / `dentry_operations`) and each speaks its own
 **incompatible keyring protocol**, so **exactly one may be enabled at a time**. Enabling
 two makes the drivers fight over the same hooks: the userspace metamodule cannot handshake
@@ -120,14 +127,14 @@ Two things here are deliberate and easy to get wrong:
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **required** (schgm-flash.c needs CONFIG_OPLUS_SM8250_CHARGER)
 - `VFS_HYBRIDMOUNT / VFS_NOMOUNT` — mutually exclusive, see the section above
-- BakaSU stays **latest** (setup.sh git pull each run)
+- KernelSU is **pinned** to `KERNELSU_PIN` (`4e6e9ff`) — the hand-written patches are anchored to it, so the build is reproducible
 - dtb: custom step concatenates `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img`; dtbo not packed (stock partition used)
 
 ## Deviations from Jack's original (intentional)
-- `patch-no-kprobe` not used: its `susfs_inline_hook_patches.sh` is Jack's official inline-hook implementation (SUSFS v2.3.00+, compatible with BakaSU inline); the repo ships the equivalent content as `resukisu_inline_hooks.patch` (patch-based flow, reviewable, fixed apply order). Its selinuxfs static-symbol removal is skipped anyway (CONFIG_KALLSYMS_ALL=y)
+- `patch-no-kprobe` not used: its `susfs_inline_hook_patches.sh` targets BakaSU's official inline-hook API, which backslashxx does not have; this branch ships its own `backslashxx_manual_hooks.patch` + `backslashxx_susfs_bridge.patch` instead. Its selinuxfs static-symbol removal is skipped anyway (CONFIG_KALLSYMS_ALL=y)
 - Only the 4.19 susfs patch is kept (fixed device kernel version)
 - ReKernel-X 4.19 in-tree port via patch (replaces Re:Kernel v8.5)
-- HOOK_METHOD kept but inert: BakaSU inline hooks come from resukisu_inline_hooks.patch
+- HOOK_METHOD kept but inert: backslashxx hooks are static call sites from backslashxx_manual_hooks.patch
 
 ## Patch Record Archive (Patches/Archive/)
 
