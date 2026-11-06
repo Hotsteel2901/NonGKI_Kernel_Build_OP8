@@ -330,7 +330,7 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
    CONFIG_KSU=y + CONFIG_KSU_SUSFS=y (全部 SUSFS 子选项), CONFIG_REKERNEL=y (NETWORK=n),
    Non-GKI DroidSpaces 配置, CONFIG_BBG=y, CONFIG_LSM="...,bpf,baseband_guard"
 
-## 6. 可选 VFS 后端（三选一，见仓库主 README 的 "VFS backends" 一节）
+## 6. 可选 VFS 后端（二选一，见仓库主 README 的 "VFS backends" 一节）
    以下三个后端都劫持同一层 VFS + 使用互不兼容的 keyring/ioctl 协议，**同时只能开一个**:
 
    - Hybrid Mount:  Patches/Patch/hybridmount_patch_to_4.19.patch   (默认开)
