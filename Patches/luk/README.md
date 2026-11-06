@@ -140,7 +140,7 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 >
 > `0004-hybridmount-vfs.patch` 与 master / KSU 分支的
 > `Patches/Patch/hybridmount_patch_to_4.19.patch` 是**同一份内容**
-> (md5 `fefe83d6fc4e0b8c36f6f2455c0e9314`), 仅文件名按本目录的编号约定重命名。
+> (md5 `e309939041d9dadd50bac861f1fab59a`，2026-11-06 同步至上游 dev), 仅文件名按本目录的编号约定重命名。
 >
 > 已同步上游 `Hybrid-Mount/meta-hybrid_mount` **`dev`** 分支 (v6.2.3-rc.3) 的内核侧
 > `module/vfs/src/hybridmount.{c,h}`：包含 `parent_path` 生命周期固定（防止被劫持 inode
