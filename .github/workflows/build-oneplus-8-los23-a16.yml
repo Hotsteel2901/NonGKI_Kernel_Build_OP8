@@ -324,6 +324,54 @@ jobs:
             echo "[+] KernelSU syscall hooks patched (in-tree SUSFS disabled)."
           fi
 
+      - name: 🏷️ Strip "-dirty" from KernelSU version string
+        run: |
+          # BakaSU 的 kernel/Kbuild 用下面这段判断工作区是否干净：
+          #   ifneq ($(shell cd $(KSU_SRC); git diff-index --quiet HEAD; echo $$?),0)
+          #   KSU_COMMIT_SHA := $(KSU_COMMIT_SHA)-dirty
+          #   endif
+          # 我们的流程是「clone BakaSU -> symlink 进内核树 -> 打 inline hooks /
+          # 删 susfs_compat.mk 的 $(error)」，因此 git 必然判定为 dirty，
+          # 管理器里就会显示 "v4.2.0-rc3-xxxxxxxx-dirty"，观感很差。
+          #
+          # 这里只删掉这段**纯显示层**的判断：版本码 KSU_VERSION 由
+          # `git rev-list --count HEAD` 派生，完全不受影响；内核侧功能、
+          # SUSFS/钩子逻辑也不读 KSU_COMMIT_SHA。删掉后版本串变成
+          # "v4.2.0-rc3-xxxxxxxx"，与管理器版本仍能正常对应。
+          #
+          # 兼容性：Kbuild 若改版（找不到这三行连续结构）就跳过，不报错，
+          # 最差结果只是继续显示 -dirty，绝不会让构建失败。
+          KSU_KBUILD="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/Kbuild"
+          if [ ! -f "$KSU_KBUILD" ]; then
+            echo "[i] $KSU_KBUILD not found (no KernelSU in this build) - skip."
+            exit 0
+          fi
+
+          LINE=$(grep -n 'KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)-dirty' "$KSU_KBUILD" | cut -d: -f1 | head -1)
+          if [ -z "$LINE" ]; then
+            echo "[i] -dirty marker not found (already clean / upstream changed) - skip."
+            exit 0
+          fi
+
+          PREV=$(sed -n "$((LINE - 1))p" "$KSU_KBUILD")
+          NEXT=$(sed -n "$((LINE + 1))p" "$KSU_KBUILD")
+          if ! printf '%s' "$PREV" | grep -q 'diff-index --quiet HEAD'; then
+            echo "[-] unexpected Kbuild layout: previous line is not the diff-index check."
+            echo "    prev: $PREV"
+            echo "[i] leave Kbuild untouched."
+            exit 0
+          fi
+          if [ "$(printf '%s' "$NEXT" | tr -d '[:space:]')" != "endif" ]; then
+            echo "[-] unexpected Kbuild layout: next line is not 'endif'."
+            echo "    next: $NEXT"
+            echo "[i] leave Kbuild untouched."
+            exit 0
+          fi
+
+          sed -i "$((LINE - 1)),$((LINE + 1))d" "$KSU_KBUILD"
+          echo "[+] Stripped -dirty from BakaSU version string (KSU_VERSION unchanged)."
+          grep -n "KSU_COMMIT_SHA" "$KSU_KBUILD" || true
+
       - name: 🧩 Patch Hybrid Mount VFS Subsystem
         if: inputs.vfs_hybridmount == true
         run: |
