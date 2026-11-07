@@ -24,6 +24,22 @@ index 70ffffea3e58..cc1e6927ec2b 100644
  #ifdef OPLUS_FEATURE_SAUPWK
  	if(oplus_sync_saupwk_event)
          oplus_sync_saupwk_event(type, code, value);
+diff --git a/fs/namei.c b/fs/namei.c
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -2554,7 +2554,11 @@
+ 	return err;
+ }
+ 
+-static int filename_lookup(int dfd, struct filename *name, unsigned flags,
++/* 非 static：KSU inline hooks 在 fs/open.c / fs/stat.c 里跨文件调用。
++ * 注意本树（OOS stock 衍生）第 5 个参数是 struct path *root，
++ * 主线 4.19 是 struct nameidata *nd，调用处传 NULL 即可。
++ */
++int filename_lookup(int dfd, struct filename *name, unsigned flags,
+ 			   struct path *path, struct path *root)
+ {
+ 	int retval;
 diff --git a/fs/exec.c b/fs/exec.c
 index eef84ebcac53..f13fb1b879fa 100644
 --- a/fs/exec.c
@@ -98,7 +114,6 @@ index eef84ebcac53..f13fb1b879fa 100644
  	kfree(pathbuf);
  	if (filename)
 diff --git a/fs/open.c b/fs/open.c
-index 13d70db567e0..c0e893df1558 100644
 --- a/fs/open.c
 +++ b/fs/open.c
 @@ -32,6 +32,10 @@
@@ -110,9 +125,9 @@ index 13d70db567e0..c0e893df1558 100644
 +#endif
 +
  #include "internal.h"
- #include <trace/hooks/syscall_check.h>
  
-@@ -354,6 +358,13 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
+ int do_truncate2(struct vfsmount *mnt, struct dentry *dentry, loff_t length,
+@@ -353,6 +357,18 @@
   * We do this by temporarily clearing all FS-related capabilities and
   * switching the fsuid/fsgid around to the real ones.
   */
@@ -121,12 +136,17 @@ index 13d70db567e0..c0e893df1558 100644
 +extern bool __ksu_is_allow_uid_for_current(uid_t uid);
 +extern int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode,
 +				int *flags);
++/* 本树的 filename_lookup() 原本是 static，且第 5 个参数是 struct path *root，
++ * 这里跨文件调用，故在 fs/namei.c 去掉 static 并在此声明。
++ */
++extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
++			   struct path *path, struct path *root);
 +#endif
 +
  long do_faccessat(int dfd, const char __user *filename, int mode)
  {
  	const struct cred *old_cred;
-@@ -363,6 +374,9 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+@@ -362,6 +378,9 @@
  	struct vfsmount *mnt;
  	int res;
  	unsigned int lookup_flags = LOOKUP_FOLLOW;
@@ -136,7 +156,7 @@ index 13d70db567e0..c0e893df1558 100644
  
  	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
  		return -EINVAL;
-@@ -405,7 +419,23 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+@@ -404,7 +423,23 @@
  
  	old_cred = override_creds(override_cred);
  retry:
@@ -183,7 +203,6 @@ index ec2d20ddd766..df80acd730f9 100644
  }
  
 diff --git a/fs/stat.c b/fs/stat.c
-index 376543199b5a..aafaec209593 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
 @@ -21,6 +21,16 @@
@@ -203,7 +222,7 @@ index 376543199b5a..aafaec209593 100644
  /**
   * generic_fillattr - Fill in the basic attributes from the inode struct
   * @inode: Inode to use as the source
-@@ -75,9 +85,54 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
+@@ -75,9 +85,54 @@
  	stat->result_mask |= STATX_BASIC_STATS;
  	request_mask &= STATX_ALL;
  	query_flags &= KSTAT_QUERY_FLAGS;
@@ -259,7 +278,7 @@ index 376543199b5a..aafaec209593 100644
  
  	generic_fillattr(inode, stat);
  	return 0;
-@@ -129,6 +184,10 @@ EXPORT_SYMBOL(vfs_getattr);
+@@ -129,6 +184,10 @@
   *
   * 0 will be returned on success, and a -ve error code if unsuccessful.
   */
@@ -270,7 +289,7 @@ index 376543199b5a..aafaec209593 100644
  int vfs_statx_fd(unsigned int fd, struct kstat *stat,
  		 u32 request_mask, unsigned int query_flags)
  {
-@@ -142,6 +201,10 @@ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
+@@ -142,6 +201,10 @@
  	if (f.file) {
  		error = vfs_getattr(&f.file->f_path, stat,
  				    request_mask, query_flags);
@@ -281,7 +300,7 @@ index 376543199b5a..aafaec209593 100644
  		fdput(f);
  	}
  	return error;
-@@ -163,12 +226,20 @@ EXPORT_SYMBOL(vfs_statx_fd);
+@@ -163,12 +226,22 @@
   *
   * 0 will be returned on success, and a -ve error code if unsuccessful.
   */
@@ -289,6 +308,8 @@ index 376543199b5a..aafaec209593 100644
 +extern struct static_key_true ksu_su_compat_enabled;
 +extern bool __ksu_is_allow_uid_for_current(uid_t uid);
 +extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
++extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
++			   struct path *path, struct path *root);
 +#endif
  int vfs_statx(int dfd, const char __user *filename, int flags,
  	      struct kstat *stat, u32 request_mask)
@@ -302,7 +323,7 @@ index 376543199b5a..aafaec209593 100644
  
  	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
  		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
-@@ -182,7 +253,23 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
+@@ -182,7 +255,23 @@
  		lookup_flags |= LOOKUP_EMPTY;
  
  retry:
