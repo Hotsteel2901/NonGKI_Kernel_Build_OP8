@@ -456,3 +456,34 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
        探测, 找不到则跳过 dtb.img (AK3 保留原机 dtb), 不再中断构建。
      - BRAND_SHOW_FLAG=oneplus 由 OplusKernelEnvConfig.mk 第 18 行 export,
        顶层 Makefile -include 该文件; 缺了会走 else 分支编到 oplus/其它 project。
+
+### TropsPK 首次构建通过 (2026-11-07)
+
+   run 42357460736 / release TropsPK-v35257-1794042704
+   instantnoodle-tropsi_a16-20261107091057-Anykernel3.zip (24.6 MB)
+
+   补丁链在 CI 上按 SUSFS -> inline hooks -> HybridMount 顺序全部应用成功,
+   日志中可见 "Using susfs_patch_to_4.19_trop.patch" /
+   "Using hybridmount_patch_to_4.19_trop.patch"。
+
+   第五轮修掉的链接期错误 (编译能过, vmlinux 链接失败):
+     fs/open.o: do_faccessat -> undefined reference to `filename_lookup'
+     fs/stat.o: vfs_statx    -> undefined reference to `filename_lookup'
+   原因: KSU inline hooks 把 user_path_at() 换成 filename_lookup(),
+   而本树里它是
+     static int filename_lookup(int dfd, struct filename *name,
+                                unsigned flags, struct path *path,
+                                struct path *root)
+   (第 5 参数是 root 而非 mainline 4.19 的 struct nameidata *nd)。
+   处理: fs/namei.c 去 static, fs/open.c / fs/stat.c 的 extern 块补声明;
+   函数体不动 (root 传 NULL 走普通查找, 末尾 putname(name) 与补丁注释一致)。
+   注意: 这个错只在链接期暴露, 是因为 KCFLAGS 把
+   -Werror=implicit-function-declaration 降级成了 warning。
+
+   产物形态:
+     Image (未压缩) + dtbo.img, 无 dtb.img
+     -> Generate DTB 步骤走 else 分支跳过 dtb.img,
+        AK3 打包时 "Found Image !" / "Found dtbo.img !",
+        dtb 由 AK3 从原机 boot.img 里保留。
+   打包标题: 原来固定写死 "+ ReKernel-X + DroidSpaces + Baseband Guard",
+   与 REKERNEL_ENABLE=false 不符; 改为按三个开关运行时拼接。

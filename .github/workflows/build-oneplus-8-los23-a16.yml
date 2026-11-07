@@ -73,7 +73,6 @@ env:
   # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
   # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
   AK3_TITLE_PREFIX: "BakaSU (TropsPK) + SUSFS v2.3.0"
-  AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
   # Tropsi-X（OOS stock 衍生）保留了大量 OPPO/QTI 老式 C 代码，而 clang 19 对
@@ -282,11 +281,17 @@ jobs:
           if [ "$HM" = "true" ]; then VFS_LABEL="Hybrid Mount VFS"; fi
           if [ "$NM" = "true" ]; then VFS_LABEL="NoMount VFS"; fi
 
+          # 集成项也按开关拼，避免标题写着 ReKernel-X 但实际没编进去。
+          EXTRA_LABEL=""
+          if [ "${{ env.REKERNEL_ENABLE }}" = "true" ]; then EXTRA_LABEL="$EXTRA_LABEL + ReKernel-X"; fi
+          if [ "${{ env.DROIDSPACES_ENABLE }}" = "true" ]; then EXTRA_LABEL="$EXTRA_LABEL + DroidSpaces"; fi
+          if [ "${{ env.BASEBAND_GUARD_ENABLE }}" = "true" ]; then EXTRA_LABEL="$EXTRA_LABEL + Baseband Guard"; fi
+
           TITLE="${{ env.AK3_TITLE_PREFIX }}"
           if [ -n "$VFS_LABEL" ]; then
             TITLE="$TITLE + $VFS_LABEL"
           fi
-          TITLE="$TITLE + ${{ env.AK3_TITLE_SUFFIX }}"
+          TITLE="$TITLE$EXTRA_LABEL Built By hotsteel"
 
           echo "AK3_TITLE=$TITLE" >> $GITHUB_ENV
           echo "[+] AK3 title will be: $TITLE"
