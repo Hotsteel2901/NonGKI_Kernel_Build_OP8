@@ -411,3 +411,48 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
    - ~/android_kernel_oneplus_sm8250_KSUN_SUSFS : wagamy 的 v2.1.0 4.19 backport 参考 (同 base 4238ee49a84b,
      KernelSU-Next v3.1.0 + SUSFS v2.1.0, squash 提交 ac5f7e57d3f1; 注意其独立 IDA 方式已被 v2.2.0 废弃)
    - ~/ReSukiSU_DOC, ~/ReKernel-X, ~/Droidspaces-OSS, ~/Baseband-guard
+
+## TropsPK 分支 (2026-11-07)
+
+   内核源: TropsPk/Tropsi_X_Kernel_SM8250 @ Staging (4.19.157, SM8250/kona)
+   分支名: Trop -> TropsPK (旧 Trop 已删除, 远端仅保留 TropsPK)
+   关系: 由 master 复制, 差异只在 KERNEL_SOURCE/KERNEL_BRANCH/ROM_TEXT/
+         BUILD_OTHER_CONFIG=false (该树无 vendor/oplus.config) 与三份补丁变体
+
+   不做 Re:Kernel-X (REKERNEL_ENABLE=false):
+     该树 kona-perf_defconfig 与 oplus-stock_defconfig 均为 CONFIG_OPLUS_HANS=y,
+     NoActive 会自动 hook HANS; rkx 的 binder 异步事务清理与之功能重叠,
+     叠加可能互相干扰, 故本分支刻意不集成。已确认 BakaSU 在 CONFIG_KSU_SUSFS 下
+     调用 susfs_init() (kernel/core/init.c:123), in-tree SUSFS 不依赖 rkx。
+
+   三份上下文适配补丁 (通用版在 Trop 树上 hunk 无法匹配):
+     Patches/Patch/susfs_patch_to_4.19_trop.patch
+       fs/super.c 无 fs_context (security_sb_set_mnt_opts 旧 API)、
+       fs/namespace.c 无 mmap_read_lock_killable/vfs_create_mount、
+       fs/notify/fdinfo.c 无 inotify_mark_user_mask、
+       fs/proc/task_mmu.c 用 down_read_killable(&mm->mmap_sem)
+     Patches/Patch/resukisu_inline_hooks_trop.patch
+       drivers/input/input.c 的 input_handle_event() 多了
+       OPLUS_FEATURE_SAUPWK 弱符号分支, 插入点重锚 (其余 6 文件不变)
+     Patches/Patch/hybridmount_patch_to_4.19_trop.patch
+       fs/Makefile 尾部是 OPLUS exfat 条件块 (无裸 erofs 行), 追加点改到文件末尾;
+       fs/Kconfig 同样补 context
+     工作流检测到 *_trop.patch 存在时自动优先使用; 其它分支无该文件, 行为不变。
+
+   本地组合验证 (SUSFS -> inline hooks -> HybridMount):
+     0 rejected hunks; 3 处 fuzz 已人工核对落点正确
+     (fs/open.c include / fs/Kconfig source / mm/memory.c SUS_MAP 判断)。
+
+   已知编译坑:
+     - arch/arm64/kernel/rootguard/oplus_guard_general.c:86
+       `static void __exit boot_state_exit()` 缺 void 原型,
+       顶层 Makefile 第 1044 行 -Werror=strict-prototypes -> clang 19 报错。
+       处理: EXTRA_CMDS 追加 KCFLAGS=-Wno-error=strict-prototypes
+       (Makefile 第 1075 行才追加 $(KCFLAGS), 顺序在后可覆盖;
+        其它 -Werror 保持开启)。
+     - dts 为 overlay-only (CONFIG_BUILD_ARM64_DT_OVERLAY=y):
+       各 project 的 Makefile 只编 kona-mtp-overlay.dtbo, 不产 kona.dtb/
+       kona-v2.dtb/kona-v2.1.dtb。Generate DTB 改为 oplus -> 19811 -> 19805
+       探测, 找不到则跳过 dtb.img (AK3 保留原机 dtb), 不再中断构建。
+     - BRAND_SHOW_FLAG=oneplus 由 OplusKernelEnvConfig.mk 第 18 行 export,
+       顶层 Makefile -include 该文件; 缺了会走 else 分支编到 oplus/其它 project。
