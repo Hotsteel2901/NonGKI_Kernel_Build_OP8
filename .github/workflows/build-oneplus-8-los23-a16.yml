@@ -76,11 +76,15 @@ env:
   AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
-  # Tropsi-X（OOS stock 衍生）里 arch/arm64/kernel/rootguard/oplus_guard_general.c
-  # 用 `static void __exit boot_state_exit()` 这种无原型声明，而顶层 Makefile
-  # 带 `-Werror=strict-prototypes`（clang 19 起默认告警），会把这类老代码
-  # 直接编译失败。这里只把该告警降级，其他 -Werror 保持不变。
-  EXTRA_CMDS : "KCFLAGS=-Wno-error=strict-prototypes"
+  # Tropsi-X（OOS stock 衍生）保留了大量 OPPO 老式 C 代码，而顶层 Makefile
+  # 第 1044-1053 行带一组 -Werror=...（strict-prototypes / implicit-int /
+  # incompatible-pointer-types / designated-init 等），clang 19 起这些默认告警，
+  # 会直接把老代码判为编译错误（已实测两处：
+  #   rootguard/oplus_guard_general.c:86  无原型声明
+  #   zram/hybridswap/hybridswap_eswap.c:544 缺返回类型）
+  # 这里把 clang 新版对老代码新增的几类告警降级（不关闭，仍是 warning），
+  # 其余 -Werror 保持开启。Makefile 第 1075 行才追加 $(KCFLAGS)，顺序在后可覆盖。
+  EXTRA_CMDS : "KCFLAGS='-Wno-error=strict-prototypes -Wno-error=implicit-int -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=int-conversion'"
 
   # Tropsi-X 内核（TropsPk）：4.19.157 / SM8250(kona)，一套代码覆盖
   # OnePlus 8 (19811) / 8 Pro (19805) / 8T (19821) / 9R (19855)。

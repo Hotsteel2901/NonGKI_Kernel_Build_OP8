@@ -1195,7 +1195,7 @@ diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
  		last_vma_end = vma->vm_end;
  	}
  
-@@ -1569,11 +1624,17 @@
+@@ -1569,6 +1624,9 @@
  	struct mm_struct *mm = file->private_data;
  	struct pagemapread pm;
  	struct mm_walk pagemap_walk = {};
@@ -1205,15 +1205,7 @@ diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
  	unsigned long src;
  	unsigned long svpfn;
  	unsigned long start_vaddr;
- 	unsigned long end_vaddr;
- 	int ret = 0, copied = 0;
-+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-+	struct vm_area_struct *vma;
-+#endif
- 
- 	if (!mm || !mmget_not_zero(mm))
- 		goto out;
-@@ -1632,7 +1693,15 @@
+@@ -1632,7 +1690,15 @@
  		ret = down_read_killable(&mm->mmap_sem);
  		if (ret)
  			goto out_free;
