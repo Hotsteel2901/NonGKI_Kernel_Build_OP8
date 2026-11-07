@@ -76,15 +76,15 @@ env:
   AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
-  # Tropsi-X（OOS stock 衍生）保留了大量 OPPO 老式 C 代码，而顶层 Makefile
-  # 第 1044-1053 行带一组 -Werror=...（strict-prototypes / implicit-int /
-  # incompatible-pointer-types / designated-init 等），clang 19 起这些默认告警，
-  # 会直接把老代码判为编译错误（已实测两处：
-  #   rootguard/oplus_guard_general.c:86  无原型声明
-  #   zram/hybridswap/hybridswap_eswap.c:544 缺返回类型）
-  # 这里把 clang 新版对老代码新增的几类告警降级（不关闭，仍是 warning），
-  # 其余 -Werror 保持开启。Makefile 第 1075 行才追加 $(KCFLAGS)，顺序在后可覆盖。
-  EXTRA_CMDS : "KCFLAGS='-Wno-error=strict-prototypes -Wno-error=implicit-int -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=int-conversion'"
+  # Tropsi-X（OOS stock 衍生）保留了大量 OPPO/QTI 老式 C 代码，而 clang 19 对
+  # 这些写法新增/收紧了大量告警，配合树里自带的 -Werror（顶层 Makefile
+  # 1041-1053 行的 -Werror=implicit-int / strict-prototypes / date-time /
+  # incompatible-pointer-types / designated-init，以及
+  # drivers/vservices/Makefile、oplus/kernel_4.19/audio/codecs/tfa98xx-v6/Kbuild
+  # 里的裸 -Werror）会成片变成编译错误。
+  # 这里按**类别**降级（-Wno-error=X 对之后的 -Werror 同样有效，已实测），
+  # 告警照常打印，只是不再中断构建；其余错误保持原样。
+  EXTRA_CMDS : "KCFLAGS='-Wno-error=strict-prototypes -Wno-error=implicit-int -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=incompatible-pointer-types-discards-qualifiers -Wno-error=int-conversion -Wno-error=unused-but-set-variable -Wno-error=unused-variable -Wno-error=unused-function -Wno-error=unused-const-variable -Wno-error=misleading-indentation -Wno-error=uninitialized -Wno-error=format -Wno-error=address -Wno-error=array-bounds -Wno-error=enum-conversion -Wno-error=constant-conversion -Wno-error=literal-conversion -Wno-error=date-time -Wno-error=return-type -Wno-error=sizeof-pointer-memaccess -Wno-error=tautological-pointer-compare -Wno-error=shift-negative-value'"
 
   # Tropsi-X 内核（TropsPk）：4.19.157 / SM8250(kona)，一套代码覆盖
   # OnePlus 8 (19811) / 8 Pro (19805) / 8T (19821) / 9R (19855)。
