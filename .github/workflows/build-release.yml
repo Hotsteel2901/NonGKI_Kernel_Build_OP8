@@ -72,6 +72,8 @@ jobs:
       REPO_OWNER: Hotsteel2901
       REPO_NAME: NonGKI_Kernel_Build_OP8
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 包格式：仅用于 release 文案里的「Build info」区块，和实际打包保持一致。
+      PACK_METHOD: "Anykernel3"
       # 构建 job 实际编译的 commit；拿不到时回退到本 job 的 checkout HEAD。
       BUILD_SHA: ${{ needs.build-kernel.outputs.build_sha }}
       # Release 标题格式：管理器（分支名） + 时间，例如 "KernelSU (KSU) 2026-10-05 10:47"。
@@ -81,15 +83,17 @@ jobs:
       RELEASE_NOTES: |
         ### English
 
-        Below is the codename reference table. Please pick the image / archive you need based on it.
-
-        | Device Name | Codename | Kernel | System | Android | Method | KernelSU | SuSFS | Re:Kernel | BBG | DroidSpace |
+        | Device | Codename | Kernel | System | Android | Package | Root | SuSFS | Re:Kernel | BBG | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 | Lineage Based OS | 16 | AnyKernel3 | KernelSU (backslashxx) | ✓ | ✓ | ✓ | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19 (`lineage-23.2`) | LineageOS 23.2 / AOSP-based | 16 | AnyKernel3 | KernelSU (backslashxx) | v2.3.0 (hand-written bridge) | ✓ | ✓ | ✓ |
 
-        - Specific device information: [Supported List](Supported_list.md).
-        - The KernelSU version is for reference only. The KernelSU version embedded in a SUSFS build is normally lower than upstream HEAD.
-        - This build integrates **backslashxx's KernelSU fork** (`xxksu`) with manual hooks — it is **not** the BakaSU/ReSukiSU line.
+        **What is inside**
+
+        - **Kernel source**: `LineageOS/android_kernel_oneplus_sm8250` @ `lineage-23.2`
+        - **Root**: **backslashxx's KernelSU fork** (`xxksu`) with manual hooks, pinned to `4e6e9ff` (reported in Manager as version `32717`). This is **not** the BakaSU / ReSukiSU line.
+        - **SuSFS**: v2.3.0. The KernelSU side is a **hand-written bridge** maintained in this repo (not an upstream-provided hook), so it is re-ported against every KernelSU bump.
+        - **VFS backend**: **Hybrid Mount** *or* **NoMount** — mutually exclusive, only one is compiled in; printed in the installer title.
+        - **Extras**: Re:Kernel-X, DroidSpaces, Baseband Guard (BBG)
 
         #### Installation
 
@@ -100,28 +104,31 @@ jobs:
            adb sideload NonGKI_Kernel_<codename>_<build>.zip
            ```
         4. Reboot to **System**.
-        5. Install a **KernelSU Manager** to manage root — use the manager matching this fork (backslashxx's KernelSU), **not BakaSU Manager**.
+        5. Install a **KernelSU Manager** and grant root — use the manager build that matches this fork (backslashxx's KernelSU), **not BakaSU Manager**.
 
-        > **Note**
-        > - **Manager differs from the other branches.** This kernel uses backslashxx's KernelSU fork, so pair it with the corresponding KernelSU Manager build. BakaSU Manager is for the BakaSU branches only.
-        > - **SUSFS runs kernel-side only here.** Unlike the BakaSU branches, this fork's manager has no SUSFS-version detection — the manager will **not** display a SUSFS version. That is expected, not a failed integration. SUSFS is active as long as the `ksu_susfs` tool works.
-        > - This is an **AnyKernel3** package: it only replaces the kernel image. Your `/data` is NOT wiped.
-        > - Please **back up your stock `boot.img`** before flashing, so you can roll back.
-        > - **Magisk is NOT compatible** with these builds — do not flash Magisk alongside them.
+        > **Notes**
+        > - **The Manager differs from the other branches.** BakaSU Manager is for the BakaSU branches only.
+        > - **SuSFS is kernel-side only here.** This fork's manager has no SuSFS version detection, so Manager will **not** display a SuSFS version. That is expected, not a failed integration — SuSFS is active as long as the `ksu_susfs` tool works.
+        > - This is an **AnyKernel3** package: only the kernel image is replaced, `/data` is untouched.
+        > - Back up your stock `boot.img` before flashing so you can roll back.
+        > - **Magisk is NOT compatible** with this build — do not flash Magisk on top of it.
+        > - First boot may take a few minutes while ART re-optimises apps.
 
         ---
 
         ### 中文
 
-        以下为设备代号对照表，请根据此表选择你需要的镜像或压缩包。
-
-        | 设备名称 | 代号 | 内核 | 系统 | Android | 方式 | KernelSU | SuSFS | Re:Kernel | BBG | DroidSpace |
+        | 设备 | 代号 | 内核 | 系统 | Android | 包格式 | Root | SuSFS | Re:Kernel | BBG | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 | 基于 Lineage 的系统 | 16 | AnyKernel3 | KernelSU (backslashxx) | ✓ | ✓ | ✓ | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19（`lineage-23.2`） | LineageOS 23.2 / 类原生 | 16 | AnyKernel3 | KernelSU（backslashxx） | v2.3.0（手写桥接） | ✓ | ✓ | ✓ |
 
-        - 具体设备信息见 [Supported List](Supported_list.md)。
-        - KernelSU 版本号仅供参考。集成了 SUSFS 的构建，其内置的 KernelSU 版本通常低于上游最新提交。
-        - 本构建集成的是 **backslashxx 的 KernelSU 分支**（`xxksu`）+ 手动钩子，**不是** BakaSU/ReSukiSU 那条线。
+        **包含内容**
+
+        - **内核源码**：`LineageOS/android_kernel_oneplus_sm8250` @ `lineage-23.2`
+        - **Root**：**backslashxx 的 KernelSU 分支**（`xxksu`）+ 手动钩子，钉在 `4e6e9ff`（管理器里显示版本 `32717`）。**不是** BakaSU / ReSukiSU 那条线。
+        - **SuSFS**：v2.3.0。KernelSU 侧是本仓库**手写的桥接**（不是上游自带钩子），每次跟进 KernelSU 都要成对重移植。
+        - **VFS 后端**：**Hybrid Mount** 或 **NoMount**，二者互斥，内核里只会编进其中一个，实际以刷机包标题为准。
+        - **附加组件**：Re:Kernel-X、DroidSpaces、Baseband Guard（BBG）
 
         #### 安装说明
 
@@ -132,14 +139,15 @@ jobs:
            adb sideload NonGKI_Kernel_<代号>_<构建号>.zip
            ```
         4. 重启进入 **系统**。
-        5. 安装 **KernelSU 管理器** 以管理 root —— 请使用与本分支 fork 对应的管理器（backslashxx 的 KernelSU），**不要用 BakaSU Manager**。
+        5. 安装 **KernelSU 管理器** 并授予 root —— 请使用与本分支 fork 对应的管理器（backslashxx 的 KernelSU），**不要用 BakaSU Manager**。
 
         > **注意**
-        > - **管理器与其它分支不同。** 本内核使用 backslashxx 的 KernelSU 分支，请搭配对应的 KernelSU 管理器。BakaSU Manager 仅适用于 BakaSU 各分支。
-        > - **本分支的 SUSFS 仅在内核侧工作。** 与 BakaSU 分支不同，该 fork 的管理器没有 SUSFS 版本检测 —— 管理器**不会显示** SUSFS 版本。这是预期行为，不代表集成失败；只要 `ksu_susfs` 工具可用，SUSFS 即已生效。
-        > - 本包为 **AnyKernel3** 格式：仅替换内核镜像，**不会清空**你的 `/data`。
+        > - **管理器与其它分支不同。** BakaSU Manager 仅适用于 BakaSU 各分支。
+        > - **本分支的 SuSFS 仅在内核侧工作。** 该 fork 的管理器没有 SuSFS 版本检测，管理器**不会显示** SuSFS 版本。这是预期行为，不代表集成失败；只要 `ksu_susfs` 工具可用，SuSFS 即已生效。
+        > - 本包为 **AnyKernel3** 格式：仅替换内核镜像，**不会清空** `/data`。
         > - 刷入前请**备份原厂 `boot.img`**，以便回滚。
-        > - 这些构建**与 Magisk 不兼容**，请勿与 Magisk 一起刷入。
+        > - 本构建**与 Magisk 不兼容**，请勿在其之上再刷 Magisk。
+        > - 刷完首次开机可能需要几分钟（ART 重新优化应用）。
 
     steps:
       # Checkout the code
@@ -238,14 +246,35 @@ jobs:
           git push origin "refs/tags/$NEW_TAG"
 
           # Input release note
+          # 实际集成的是哪个 VFS 后端：取本次构建的 UI 选择，写进 Build info，
+          # 避免用户只能靠刷机包标题猜。
+          if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
+            VFS_LABEL="Hybrid Mount"
+          elif [ "${{ inputs.vfs_nomount }}" = "true" ]; then
+            VFS_LABEL="NoMount"
+          else
+            VFS_LABEL="none"
+          fi
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
           echo "$RELEASE_NOTES" >> $GITHUB_ENV
-          echo "[KernelSU-xxksu](https://github.com/backslashxx/KernelSU) Version: $KSU_XXKSU_VERSION  " >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "---" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "**Build info / 构建信息**" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "- Branch / 分支: \`$BRANCH\`" >> $GITHUB_ENV
+          echo "- Kernel commit / 内核提交: \`$TAG_TARGET\`" >> $GITHUB_ENV
+          echo "- Package format / 包格式: \`$PACK_METHOD\`" >> $GITHUB_ENV
+          echo "- VFS backend / VFS 后端: \`$VFS_LABEL\`" >> $GITHUB_ENV
+          echo "- KernelSU pin / KernelSU 钉版本: \`4e6e9ff\` (version 32717)" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "**Reference versions / 参考版本**" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "[KernelSU-xxksu](https://github.com/backslashxx/KernelSU) Upstream HEAD version: $KSU_XXKSU_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-rsuntk](https://github.com/rsuntk/KernelSU) Version: $KSU_RSUNTK_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-SukiSU-Ultra](https://github.com/ShirkNeko/SukiSU-Ultra) Version: $KSU_SUKISU_ULTRA_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) Version: $KSU_NEXT_VERSION  " >> $GITHUB_ENV
           echo "[BakaSU](https://github.com/Baka-SU/BakaSU) Version: $KSU_BAKASU_VERSION  " >> $GITHUB_ENV
-          echo "[BakaSU-CI](https://github.com/cctv18/ReSukiSU_CI) Version: $KSU_BAKASU_VERSION  " >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
       # Create GitHub Release and upload files if make_release is true
