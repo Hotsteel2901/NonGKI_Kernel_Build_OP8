@@ -74,6 +74,8 @@ jobs:
       REPO_OWNER: Hotsteel2901
       REPO_NAME: NonGKI_Kernel_Build_OP8
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 包格式：仅用于 release 文案里的「Build info」区块，和实际打包保持一致。
+      PACK_METHOD: "Anykernel3"
       # Release 标题格式：管理器（分支名） + 时间，例如 "BakaSU (crdroid) 2026-10-05 10:47"。
       # 本分支面向 crDroid 16.0 内核源码，三段式构建（stage1/2/3）共用同一个 release，
       # 因此标题里不体现 stage，只标分支名 crdroid。
@@ -82,61 +84,87 @@ jobs:
       RELEASE_NOTES: |
         ### English
 
-        Below is the codename reference table. Please pick the image / archive you need based on it.
+        | Device | Codename | Kernel | System | Android | Package | Root | SuSFS | VFS | DroidSpace |
+        |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
+        | OnePlus 8 | instantnoodle | 4.19 (`crdroid-16.0`) | crDroid 16 / LineageOS-based | 16 | AnyKernel3 | BakaSU | v2.3.0 (stage2/3) | Hybrid Mount / NoMount (stage2/3) | ✓ (stage3) |
 
-        | Device Name | Codename | Kernel | System | Android | Method | KernelSU | SuSFS | Re:Kernel | BBG | DroidSpace |
-        |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 | crDroid 16 / Lineage based | 16 | AnyKernel3 | BakaSU | ✓ | ✓ | ✓ | ✓ |
+        **Which file do I need?**
 
-        - Specific device information: [Supported List](Supported_list.md).
-        - The KernelSU version is for reference only. The KernelSU version embedded in a SUSFS build is normally lower than upstream HEAD.
-        - This branch targets the **crDroid 16.0** kernel source (`crdroidandroid/android_kernel_oneplus_sm8250`). It is built in three progressive stages (stage1 = BakaSU only, stage2 = +SUSFS, stage3 = +DroidSpaces).
+        This branch builds in **three progressive stages** — pick the one that matches what you want:
+
+        | Stage | File suffix | Contains |
+        |----------|----------|----------|
+        | stage1 | `-stage1-` | BakaSU only (manual/syscall hooks, no SuSFS, no VFS) |
+        | stage2 | `-stage2-` | stage1 + SuSFS v2.3.0 + one VFS backend |
+        | stage3 | `-stage3-` | stage2 + DroidSpaces (**recommended**) |
+
+        **What is inside (stage3)**
+
+        - **Kernel source**: `crdroidandroid/android_kernel_oneplus_sm8250` @ `16.0`
+        - **Root**: BakaSU — pair it with **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
+        - **SuSFS**: v2.3.0, compiled into the kernel (stage2/stage3)
+        - **VFS backend**: **Hybrid Mount** *or* **NoMount** — mutually exclusive, only one is compiled in; printed in the installer title (stage2/stage3)
+        - **Extras**: DroidSpaces (stage3). *This branch does **not** include Re:Kernel-X or Baseband Guard.*
 
         #### Installation
 
-        1. Download the `*.zip` matching your device codename (`instantnoodle`).
+        1. Download the `*.zip` you want (`stage1` / `stage2` / `stage3`) for codename `instantnoodle`.
         2. Reboot into **Recovery** (crDroid Recovery / TWRP / Lineage Recovery).
         3. Choose **Apply update** → **Apply from ADB**, then run:
            ```bash
            adb sideload NonGKI_Kernel_<codename>_<build>.zip
            ```
         4. Reboot to **System**.
-        5. Install **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** to manage root, and verify SUSFS is active (BakaSU Manager → Settings → SUSFS).
+        5. Install **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** and verify root; on stage2/stage3 also check Manager → Settings → SuSFS.
 
-        > **Note**
-        > - This is an **AnyKernel3** package: it only replaces the kernel image. Your `/data` is NOT wiped.
-        > - Please **back up your stock `boot.img`** before flashing, so you can roll back.
-        > - **Magisk is NOT compatible** with these builds — do not flash Magisk alongside them.
+        > **Notes**
+        > - This is an **AnyKernel3** package: only the kernel image is replaced, `/data` is untouched.
+        > - Back up your stock `boot.img` before flashing so you can roll back.
+        > - **Magisk is NOT compatible** with this build — do not flash Magisk on top of it.
+        > - First boot may take a few minutes while ART re-optimises apps.
 
         ---
 
         ### 中文
 
-        以下为设备代号对照表，请根据此表选择你需要的镜像或压缩包。
+        | 设备 | 代号 | 内核 | 系统 | Android | 包格式 | Root | SuSFS | VFS | DroidSpace |
+        |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
+        | OnePlus 8 | instantnoodle | 4.19（`crdroid-16.0`） | crDroid 16 / 基于 LineageOS | 16 | AnyKernel3 | BakaSU | v2.3.0（stage2/3） | Hybrid Mount / NoMount（stage2/3） | ✓（stage3） |
 
-        | 设备名称 | 代号 | 内核 | 系统 | Android | 方式 | KernelSU | SuSFS | Re:Kernel | BBG | DroidSpace |
-        |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 | crDroid 16 / 基于 Lineage | 16 | AnyKernel3 | BakaSU | ✓ | ✓ | ✓ | ✓ |
+        **该下哪个包？**
 
-        - 具体设备信息见 [Supported List](Supported_list.md)。
-        - KernelSU 版本号仅供参考。集成了 SUSFS 的构建，其内置的 KernelSU 版本通常低于上游最新提交。
-        - 本分支面向 **crDroid 16.0** 内核源码（`crdroidandroid/android_kernel_oneplus_sm8250`），采用三段式渐进构建（stage1 = 仅 BakaSU，stage2 = +SUSFS，stage3 = +DroidSpaces）。
+        本分支按 **三个渐进阶段** 构建，按需选择：
+
+        | 阶段 | 文件名标识 | 包含内容 |
+        |----------|----------|----------|
+        | stage1 | `-stage1-` | 仅 BakaSU（手动/syscall 钩子，无 SuSFS、无 VFS） |
+        | stage2 | `-stage2-` | stage1 + SuSFS v2.3.0 + 一个 VFS 后端 |
+        | stage3 | `-stage3-` | stage2 + DroidSpaces（**推荐**） |
+
+        **包含内容（stage3）**
+
+        - **内核源码**：`crdroidandroid/android_kernel_oneplus_sm8250` @ `16.0`
+        - **Root**：BakaSU —— 请搭配 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
+        - **SuSFS**：v2.3.0，直接编进内核（stage2/stage3）
+        - **VFS 后端**：**Hybrid Mount** 或 **NoMount**，二者互斥，内核里只会编进其中一个，实际以刷机包标题为准（stage2/stage3）
+        - **附加组件**：DroidSpaces（stage3）。*本分支**不含** Re:Kernel-X 与 Baseband Guard。*
 
         #### 安装说明
 
-        1. 下载与你的设备代号（`instantnoodle`）匹配的 `*.zip`。
+        1. 下载你需要的 `*.zip`（`stage1` / `stage2` / `stage3`），代号 `instantnoodle`。
         2. 重启进入 **Recovery**（crDroid Recovery / TWRP / Lineage Recovery）。
         3. 选择 **Apply update（应用更新）** → **Apply from ADB（从 ADB 应用）**，然后执行：
            ```bash
            adb sideload NonGKI_Kernel_<代号>_<构建号>.zip
            ```
         4. 重启进入 **系统**。
-        5. 安装 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** 以管理 root，并确认 SUSFS 已生效（BakaSU Manager → 设置 → SUSFS）。
+        5. 安装 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** 并确认 root 已生效；stage2/stage3 再检查 管理器 → 设置 → SuSFS。
 
         > **注意**
-        > - 本包为 **AnyKernel3** 格式：仅替换内核镜像，**不会清空**你的 `/data`。
+        > - 本包为 **AnyKernel3** 格式：仅替换内核镜像，**不会清空** `/data`。
         > - 刷入前请**备份原厂 `boot.img`**，以便回滚。
-        > - 这些构建**与 Magisk 不兼容**，请勿与 Magisk 一起刷入。
+        > - 本构建**与 Magisk 不兼容**，请勿在其之上再刷 Magisk。
+        > - 刷完首次开机可能需要几分钟（ART 重新优化应用）。
 
     steps:
       # Checkout the code
@@ -220,8 +248,29 @@ jobs:
           git push origin "refs/tags/$NEW_TAG"
 
           # Input release note
+          # 实际集成的是哪个 VFS 后端：取本次构建的 UI 选择，写进 Build info，
+          # 避免用户只能靠刷机包标题猜。
+          if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
+            VFS_LABEL="Hybrid Mount"
+          elif [ "${{ inputs.vfs_nomount }}" = "true" ]; then
+            VFS_LABEL="NoMount"
+          else
+            VFS_LABEL="none"
+          fi
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
           echo "$RELEASE_NOTES" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "---" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "**Build info / 构建信息**" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "- Branch / 分支: \`$BRANCH\`" >> $GITHUB_ENV
+          echo "- Kernel commit / 内核提交: \`$TAG_TARGET\`" >> $GITHUB_ENV
+          echo "- Package format / 包格式: \`$PACK_METHOD\`" >> $GITHUB_ENV
+          echo "- VFS backend / VFS 后端: \`$VFS_LABEL\`" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "**Component versions / 组件版本**" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
           echo "[KernelSU-xxksu](https://github.com/backslashxx/KernelSU) Version: $KSU_XXKSU_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-rsuntk](https://github.com/rsuntk/KernelSU) Version: $KSU_RSUNTK_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-SukiSU-Ultra](https://github.com/ShirkNeko/SukiSU-Ultra) Version: $KSU_SUKISU_ULTRA_VERSION  " >> $GITHUB_ENV

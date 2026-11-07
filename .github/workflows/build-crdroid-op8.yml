@@ -218,6 +218,24 @@ jobs:
             printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
           grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
             sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+          # 去掉版本串里的 "-dirty"（仅显示层，KSU_VERSION 不受影响）：
+          # BakaSU 的 kernel/Kbuild 用 `git diff-index --quiet HEAD` 判断工作区，
+          # 我们后面要打 stage1/stage2 补丁，git 必然判 dirty，管理器就会显示
+          # "v4.2.0-rc3-xxxxxxxx-dirty"。删掉 ifneq / ...-dirty / endif 三行即可；
+          # 找不到该结构（上游改版）就跳过，绝不让构建失败。
+          KSU_KBUILD="drivers/kernelsu/Kbuild"
+          if [ -f "$KSU_KBUILD" ]; then
+            LINE=$(grep -n 'KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)-dirty' "$KSU_KBUILD" | cut -d: -f1 | head -1)
+            if [ -n "$LINE" ] \
+               && sed -n "$((LINE - 1))p" "$KSU_KBUILD" | grep -q 'diff-index --quiet HEAD' \
+               && [ "$(sed -n "$((LINE + 1))p" "$KSU_KBUILD" | tr -d '[:space:]')" = "endif" ]; then
+              sed -i "$((LINE - 1)),$((LINE + 1))d" "$KSU_KBUILD"
+              echo "[+] Stripped -dirty from BakaSU version string."
+            else
+              echo "[i] -dirty marker not found (already clean / upstream changed) - skip."
+            fi
+          fi
           echo "[+] BakaSU wired."
 
       - name: 🔗 Apply Stage1 patch (BakaSU inline hooks)
@@ -446,6 +464,24 @@ jobs:
             printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
           grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
             sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+          # 去掉版本串里的 "-dirty"（仅显示层，KSU_VERSION 不受影响）：
+          # BakaSU 的 kernel/Kbuild 用 `git diff-index --quiet HEAD` 判断工作区，
+          # 我们后面要打 stage1/stage2 补丁，git 必然判 dirty，管理器就会显示
+          # "v4.2.0-rc3-xxxxxxxx-dirty"。删掉 ifneq / ...-dirty / endif 三行即可；
+          # 找不到该结构（上游改版）就跳过，绝不让构建失败。
+          KSU_KBUILD="drivers/kernelsu/Kbuild"
+          if [ -f "$KSU_KBUILD" ]; then
+            LINE=$(grep -n 'KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)-dirty' "$KSU_KBUILD" | cut -d: -f1 | head -1)
+            if [ -n "$LINE" ] \
+               && sed -n "$((LINE - 1))p" "$KSU_KBUILD" | grep -q 'diff-index --quiet HEAD' \
+               && [ "$(sed -n "$((LINE + 1))p" "$KSU_KBUILD" | tr -d '[:space:]')" = "endif" ]; then
+              sed -i "$((LINE - 1)),$((LINE + 1))d" "$KSU_KBUILD"
+              echo "[+] Stripped -dirty from BakaSU version string."
+            else
+              echo "[i] -dirty marker not found (already clean / upstream changed) - skip."
+            fi
+          fi
 
       - name: 🔗 Apply Stage1 patch
         run: cd device_kernel && patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
@@ -751,6 +787,24 @@ jobs:
             printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
           grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
             sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+          # 去掉版本串里的 "-dirty"（仅显示层，KSU_VERSION 不受影响）：
+          # BakaSU 的 kernel/Kbuild 用 `git diff-index --quiet HEAD` 判断工作区，
+          # 我们后面要打 stage1/stage2 补丁，git 必然判 dirty，管理器就会显示
+          # "v4.2.0-rc3-xxxxxxxx-dirty"。删掉 ifneq / ...-dirty / endif 三行即可；
+          # 找不到该结构（上游改版）就跳过，绝不让构建失败。
+          KSU_KBUILD="drivers/kernelsu/Kbuild"
+          if [ -f "$KSU_KBUILD" ]; then
+            LINE=$(grep -n 'KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)-dirty' "$KSU_KBUILD" | cut -d: -f1 | head -1)
+            if [ -n "$LINE" ] \
+               && sed -n "$((LINE - 1))p" "$KSU_KBUILD" | grep -q 'diff-index --quiet HEAD' \
+               && [ "$(sed -n "$((LINE + 1))p" "$KSU_KBUILD" | tr -d '[:space:]')" = "endif" ]; then
+              sed -i "$((LINE - 1)),$((LINE + 1))d" "$KSU_KBUILD"
+              echo "[+] Stripped -dirty from BakaSU version string."
+            else
+              echo "[i] -dirty marker not found (already clean / upstream changed) - skip."
+            fi
+          fi
 
       - name: 🔗 Apply Stage1 patch
         run: cd device_kernel && patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
