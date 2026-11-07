@@ -12,7 +12,7 @@
 | `Pure` | 同 `master` | **无** | **HotSPatch1**（电脑端替换 boot.img，不是 AK3） | 同 `master`，之后自行用 Magisk / APatch 修补 |
 | `ReSuki_Luk` | [luk1337/android_kernel_oneplus_sm8250](https://github.com/luk1337/android_kernel_oneplus_sm8250) @ `luk` | BakaSU | AnyKernel3 | 类原生 **与** OOS |
 | `crdroid_Resuki` | [crdroidandroid/android_kernel_oneplus_sm8250](https://github.com/crdroidandroid/android_kernel_oneplus_sm8250) @ `16.0` | BakaSU | AnyKernel3 | crDroid 16（stage1/2/3） |
-| `Trop` | [TropsPk/Tropsi_X_Kernel_SM8250](https://github.com/TropsPk/Tropsi_X_Kernel_SM8250) @ `Staging` | BakaSU + SuSFS v2.3.0（内置） | AnyKernel3 | 类原生 **与** OOS / ColorOS |
+| `TropsPK` | [TropsPk/Tropsi_X_Kernel_SM8250](https://github.com/TropsPk/Tropsi_X_Kernel_SM8250) @ `Staging` | BakaSU + SuSFS v2.3.0（内置） | AnyKernel3 | 类原生 **与** OOS / ColorOS |
 
 ## 集成内容
 
@@ -22,7 +22,7 @@
 | SUSFS v2.3.0 | 官方 gki v2.3.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` 4.19 内置移植 (keyring 魔数 `"hm1"`), **默认开启** |
 | NoMount VFS | `fs/nomount` 内置集成, 走上游 `kernel/setup.sh` (keyring 魔数 `"NOMOUNT"`), 默认关闭 |
-| ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
+| ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y。**`TropsPK` 分支不集成**：该内核自带 OPLUS HANS，NoActive 会自动 hook，rkx 与之间功能重叠 |
 | DroidSpaces | cgroup 前缀隐藏 + Non-GKI 配置 (含 USER_NS) |
 | Baseband Guard | 分区写保护 LSM |
 
@@ -50,7 +50,7 @@
 | `Patches/Patch/resukisu_inline_hooks.patch` | BakaSU SUSFS inline 模式官方内联钩子: exec / open / read_write / stat / input / reboot / setresuid (另含 fs/stat.c SUS_KSTAT 与 kernel/sys.c uname 伪装片段) | 工作流自定义步骤 |
 | `Patches/Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS 子系统 (`fs/hybridmount`, keyring 魔数 `"hm1"`) | 工作流自定义步骤 (受 `VFS_HYBRIDMOUNT` 控制) |
 | *(NoMount)* | 本仓库无补丁文件, 直接拉上游 `kernel/setup.sh` | 工作流自定义步骤 (受 `VFS_NOMOUNT` 控制) |
-| `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作 |
+| `Patches/RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (drivers/rekernel_x/ + binder + signal + genl,自带 Kconfig/Makefile 注册) | patch-rekernel 动作（`TropsPK` 分支关闭） |
 | `Patches/Droidspaces/*` | droidspaces.config (配置) + cgroup 前缀 cocci + xt_qtaguid panic 修复 cocci | patch-droidspaces 动作 |
 
 > 说明: 补丁基于生成时 lineage-23.2 最新提交 (当前 `66e230426430`) 生成; 工作流使用**最新**内核源码
@@ -72,6 +72,12 @@
 > 本仓库不再维护 `hm_snapshot_qstr()` shim；仅保留 in-tree 化的 Makefile（`-std=gnu11`
 > `-Wno-declaration-after-statement` `-Wno-error`）。
 > 该上游内核源由官方 `module/vfs/setup.sh` 在 `dev` 分支提供，本仓库仅做 built-in 化。
+
+> **仅 `TropsPK` 分支**：该内核树由 OOS stock 内核衍生，`fs/super.c`、`fs/namespace.c`、`fs/notify/fdinfo.c`、
+> `fs/proc/task_mmu.c`、`drivers/input/input.c` 的 API 与上下文跟 lineage 树不同，因此额外提供三份适配补丁 ——
+> `susfs_patch_to_4.19_trop.patch`、`resukisu_inline_hooks_trop.patch`、`hybridmount_patch_to_4.19_trop.patch`。
+> 工作流检测到 `*_trop.patch` 时自动优先使用，其它分支行为不变。
+
 
 ## VFS 路径重定向后端（二选一，互斥）
 

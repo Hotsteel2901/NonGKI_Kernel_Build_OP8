@@ -13,7 +13,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 | `Pure` | same as `master` | **none** | **HotSPatch1** (PC-side boot.img patcher, not AK3) | same as `master`, patch with Magisk / APatch afterwards |
 | `ReSuki_Luk` | [luk1337/android_kernel_oneplus_sm8250](https://github.com/luk1337/android_kernel_oneplus_sm8250) @ `luk` | BakaSU | AnyKernel3 | Custom ROMs **and** OOS |
 | `crdroid_Resuki` | [crdroidandroid/android_kernel_oneplus_sm8250](https://github.com/crdroidandroid/android_kernel_oneplus_sm8250) @ `16.0` | BakaSU | AnyKernel3 | crDroid 16 (stage1/2/3) |
-| `Trop` | [TropsPk/Tropsi_X_Kernel_SM8250](https://github.com/TropsPk/Tropsi_X_Kernel_SM8250) @ `Staging` | BakaSU + SuSFS v2.3.0 (in-tree) | AnyKernel3 | Custom ROMs **and** OOS / ColorOS |
+| `TropsPK` | [TropsPk/Tropsi_X_Kernel_SM8250](https://github.com/TropsPk/Tropsi_X_Kernel_SM8250) @ `Staging` | BakaSU + SuSFS v2.3.0 (in-tree) | AnyKernel3 | Custom ROMs **and** OOS / ColorOS |
 
 ## Integrations
 | Component | Note |
@@ -22,7 +22,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 | SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
 | NoMount VFS | `fs/nomount` built-in via upstream `kernel/setup.sh` (keyring magic `"NOMOUNT"`), off by default |
-| ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
+| ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y。**`TropsPK` 分支不集成**：该内核自带 OPLUS HANS，NoActive 会自动 hook，rkx 与之间功能重叠 |
 | DroidSpaces | cgroup prefix hiding + Non-GKI configs (incl. USER_NS) |
 | Baseband Guard | partition write protection LSM |
 
@@ -48,7 +48,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 | `Patch/resukisu_inline_hooks.patch` | BakaSU SUSFS inline hooks: exec / open / read_write / stat / input / reboot / setresuid (+ SUS_KSTAT / SPOOF_UNAME bits) | custom workflow step |
 | `Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS subsystem (`fs/hybridmount`, keyring magic `"hm1"`) | custom workflow step (gated by `VFS_HYBRIDMOUNT`) |
 | *(NoMount)* | no in-repo patch — pulled from upstream `kernel/setup.sh` | custom workflow step (gated by `VFS_NOMOUNT`) |
-| `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action |
+| `RekernelX/rkx-4.19.patch` | ReKernel-X 4.19 移植 (driver + binder + signal + genl) | patch-rekernel action（`TropsPK` 分支关闭） |
 | `Droidspaces/*` | droidspaces.config + 2 cocci scripts | patch-droidspaces action |
 
 > Patches are generated against the then-current lineage-23.2 tip (now `66e230426430`); the workflow uses the
@@ -157,6 +157,12 @@ Complete patch records from local development:
 
 > Note: the workflows actually use the patches under `Patches/Patch/` and `Patches/Rekernel/`;
 > `Archive/` is for record only and is not used in builds.
+
+> **`TropsPK` branch only**: this kernel tree derives from the OOS stock kernel, so `fs/super.c`, `fs/namespace.c`,
+> `fs/notify/fdinfo.c`, `fs/proc/task_mmu.c` and `drivers/input/input.c` differ from the lineage tree.
+> Three context-adapted patches are provided — `susfs_patch_to_4.19_trop.patch`, `resukisu_inline_hooks_trop.patch`,
+> `hybridmount_patch_to_4.19_trop.patch`. The workflow prefers `*_trop.patch` when present; other branches are unaffected.
+
 
 ## Credits
 [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) · [BakaSU](https://github.com/Baka-SU/BakaSU) · [SuSFS](https://gitlab.com/simonpunk/susfs4ksu) · [Re:Kernel](https://github.com/Sakion-Team/Re-Kernel) · [Droidspaces](https://github.com/ravindu644/Droidspaces-OSS) · [Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)

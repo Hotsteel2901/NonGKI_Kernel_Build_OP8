@@ -72,7 +72,7 @@ env:
   # 这里只给静态部分（不含 VFS），避免标题与实际集成内容不一致。
   # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
   # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
-  AK3_TITLE_PREFIX: "BakaSU (Trop) + SUSFS v2.3.0"
+  AK3_TITLE_PREFIX: "BakaSU (TropsPK) + SUSFS v2.3.0"
   AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
@@ -153,7 +153,11 @@ env:
   SUSFS_FOLDER_FIXED: ""
   SUSFS_PATCH_FIXED: ""
 
-  REKERNEL_ENABLE: "true"
+  # Tropsi-X 内核自带 OPLUS HANS（kona-perf 与 oplus-stock 两份 defconfig
+  # 都有 CONFIG_OPLUS_HANS=y），且 NoActive 会自动 hook 到 HANS 上，
+  # 因此本分支**不再集成 Re:Kernel-X**（rkx 的 binder 异步事务清理与之功能重叠，
+  # 叠加反而可能互相干扰）。
+  REKERNEL_ENABLE: "false"
   DROIDSPACES_ENABLE: "true"
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -301,9 +305,16 @@ jobs:
           if [ "${{ env.SUSFS_ENABLE }}" = "true" ]; then
             # SUSFS 开启：BakaSU 官方 SUSFS inline 模式的内联钩子
             # (#ifdef CONFIG_KSU_SUSFS 门控)
-            cp /tmp/Patches/Patch/resukisu_inline_hooks.patch ./
-            patch -p1 < resukisu_inline_hooks.patch || true
-            rm -f resukisu_inline_hooks.patch
+            # Tropsi-X 的 drivers/input/input.c 在 input_handle_event() 里
+            # 多了 OPLUS_FEATURE_SAUPWK 的弱符号调用，原补丁的上下文匹配不上，
+            # 用本分支专用版本（差异仅 input.c 一处 hunk）。
+            KSU_HOOK_PATCH="resukisu_inline_hooks.patch"
+            if [ -f "/tmp/Patches/Patch/resukisu_inline_hooks_trop.patch" ]; then
+              KSU_HOOK_PATCH="resukisu_inline_hooks_trop.patch"
+            fi
+            cp "/tmp/Patches/Patch/$KSU_HOOK_PATCH" ./
+            patch -p1 < "$KSU_HOOK_PATCH" || { echo "::error::$KSU_HOOK_PATCH failed to apply"; exit 1; }
+            rm -f "$KSU_HOOK_PATCH"
             echo "[+] BakaSU SUSFS inline hooks patched."
 
             # 解锁 BakaSU 对 in-tree SUSFS 的 suspend（commit 48fa4bb，2026-10）：
@@ -391,9 +402,19 @@ jobs:
           # 预编译 .ko，4.19 一个候选都匹配不到，所以必须 built-in 集成。
           # 本子系统与 SUSFS / BakaSU 完全解耦（不引用任何 ksu_/susfs_ 符号），
           # 与 SUSFS 补丁仅在 fs/Makefile 尾部追加处有交集，补丁顺序对结果无影响。
-          cp /tmp/Patches/Patch/hybridmount_patch_to_4.19.patch ./
-          patch -p1 < hybridmount_patch_to_4.19.patch || true
-          rm -f hybridmount_patch_to_4.19.patch
+          #
+          # Trop 的 Tropsi-X 树里 fs/Makefile 尾部是 OPLUS 的
+          # `ifeq ($(CONFIG_OPLUS_FEATURE_EROFS),y)` + exfat 块，没有裸的
+          # `obj-$(CONFIG_EROFS_FS) += erofs/` 行，通用补丁的上下文匹配不上，
+          # 因此单独准备了一份把追加点挪到文件末尾的 *_trop.patch。
+          HM_PATCH="hybridmount_patch_to_4.19.patch"
+          if [ -f "/tmp/Patches/Patch/hybridmount_patch_to_4.19_trop.patch" ]; then
+            HM_PATCH="hybridmount_patch_to_4.19_trop.patch"
+          fi
+          echo "[+] Using $HM_PATCH"
+          cp "/tmp/Patches/Patch/$HM_PATCH" ./
+          patch -p1 < "$HM_PATCH" || true
+          rm -f "$HM_PATCH"
 
           # patch -p1 加了 || true，若真有 hunk 打不上这里必须报出来
           if [ -n "$(find . -name '*.rej')" ]; then

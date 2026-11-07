@@ -75,10 +75,29 @@ runs:
             echo "SUSFS_SKIP=true" >> $GITHUB_ENV
 
           else
-            cp /tmp/Patches/Patch/susfs_patch_to_${{ env.KERNEL_VERSION }}.patch ./
+            # Trop 分支的内核树（Tropsi-X，OOS stock 衍生）在 fs/super.c、
+            # fs/namespace.c、fs/notify/fdinfo.c、fs/proc/task_mmu.c 上用的是
+            # 更老的 4.19 API（没有 fs_context / mmap_read_lock_killable /
+            # inotify_mark_user_mask / vfs_create_mount），通用补丁的上下文
+            # 匹配不上，需要一份做过上下文适配的变体。
+            # 存在 *_trop.patch 时优先使用；其它分支没有该文件，行为不变。
+            SUSFS_PATCH="susfs_patch_to_${{ env.KERNEL_VERSION }}.patch"
+            if [ -f "/tmp/Patches/Patch/susfs_patch_to_${{ env.KERNEL_VERSION }}_trop.patch" ]; then
+              SUSFS_PATCH="susfs_patch_to_${{ env.KERNEL_VERSION }}_trop.patch"
+            fi
+            echo "[+] Using $SUSFS_PATCH"
+            cp "/tmp/Patches/Patch/$SUSFS_PATCH" ./
 
-            patch -p1 < susfs_patch_to_${{ env.KERNEL_VERSION }}.patch || true
+            patch -p1 < "$SUSFS_PATCH" || true
             echo "[+] SuSFS Patch completed."
+
+            # 补丁必须完整落地。留下 .rej 说明内核树与补丁不匹配，
+            # 继续构建会产出「标着 SUSFS 但实际半残」的内核，直接失败更安全。
+            if [ -n "$(find . -name '*.rej' -print -quit)" ]; then
+              echo "[-] SuSFS patch left rejected hunks:"
+              find . -name '*.rej' -exec sh -c 'echo "=== $1 ==="; cat "$1"' _ {} \;
+              false
+            fi
 
           fi
 
