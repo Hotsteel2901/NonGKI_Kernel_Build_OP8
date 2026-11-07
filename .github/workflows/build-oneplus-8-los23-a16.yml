@@ -617,8 +617,26 @@ jobs:
       - name: 🖼️ Generate DTB (kona + kona-v2 + kona-v2.1)
         run: |
           cd $GITHUB_WORKSPACE/device_kernel
-          cat out/arch/arm64/boot/dts/vendor/oplus/kona.dtb out/arch/arm64/boot/dts/vendor/oplus/kona-v2.dtb out/arch/arm64/boot/dts/vendor/oplus/kona-v2.1.dtb > out/arch/arm64/boot/dtb.img
-          echo "[+] Generated dtb.img"
+          # 不同内核树里 dtb 的落点不同：
+          #   lineage / luk / crdroid 树 -> arch/arm64/boot/dts/vendor/oplus
+          #   Tropsi-X（OOS stock 衍生）-> arch/arm64/boot/dts/vendor/<project>
+          # 且 Tropsi-X 默认 CONFIG_BUILD_ARM64_DT_OVERLAY=y，各 project 的
+          # dts Makefile 只编 kona-mtp-overlay.dtbo，不产出 kona.dtb。
+          # 此时跳过 dtb.img，让 AnyKernel3 保留设备原有 dtb（否则 cat 失败会中断构建）。
+          DTB_SRC=""
+          for d in \
+            out/arch/arm64/boot/dts/vendor/oplus \
+            out/arch/arm64/boot/dts/vendor/19811 \
+            out/arch/arm64/boot/dts/vendor/19805; do
+            if [ -f "$d/kona.dtb" ]; then DTB_SRC="$d"; break; fi
+          done
+          if [ -n "$DTB_SRC" ]; then
+            cat "$DTB_SRC"/kona.dtb "$DTB_SRC"/kona-v2.dtb "$DTB_SRC"/kona-v2.1.dtb > out/arch/arm64/boot/dtb.img
+            echo "[+] Generated dtb.img from $DTB_SRC"
+          else
+            echo "[-] No kona.dtb produced by this kernel tree (overlay-only dts build)."
+            echo "[-] Skipping dtb.img - AnyKernel3 keeps the device's existing dtb."
+          fi
 
       - name: 🔩 Pack Process
         uses: ./.github/workflows/pack-process
