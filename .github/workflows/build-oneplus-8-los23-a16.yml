@@ -1,7 +1,7 @@
-name: Build Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
+name: Build Oneplus 8 (Tropsi-X Kernel A16) (BakaSU+SUSFS Kernel)
 
 # ============================================================================
-# 可复用构建工作流（OnePlus 8 / LineageOS 23.2 A16）
+# 可复用构建工作流（OnePlus 8 / Tropsi-X Kernel / Android 16）
 #
 # 由 build-kernel.yml 通过 workflow_call 调用，3 个 VFS 后端开关以
 # inputs.* 传入（UI 控件定义在 build-kernel.yml / build-release.yml）。
@@ -72,14 +72,19 @@ env:
   # 这里只给静态部分（不含 VFS），避免标题与实际集成内容不一致。
   # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
   # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
-  AK3_TITLE_PREFIX: "BakaSU (Master) + SUSFS v2.3.0"
+  AK3_TITLE_PREFIX: "BakaSU (Trop) + SUSFS v2.3.0"
   AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
   EXTRA_CMDS : ""
 
-  KERNEL_SOURCE : "https://github.com/LineageOS/android_kernel_oneplus_sm8250.git"
-  KERNEL_BRANCH : "lineage-23.2"
+  # Tropsi-X 内核（TropsPk）：4.19.157 / SM8250(kona)，一套代码覆盖
+  # OnePlus 8 (19811) / 8 Pro (19805) / 8T (19821) / 9R (19855)。
+  # 该树是 OOS stock 树衍生物：顶层 Makefile `-include OplusKernelEnvConfig.mk`
+  # 会 export BRAND_SHOW_FLAG=oneplus，dts Makefile 才会编 19811 等 oneplus
+  # project（否则落到 else 分支编别的机型），这一点不能动。
+  KERNEL_SOURCE : "https://github.com/TropsPk/Tropsi_X_Kernel_SM8250.git"
+  KERNEL_BRANCH : "Staging"
 
   CLANG_SOURCE : "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/LLVM-19.1.7-Linux-X64.tar.xz"
   CLANG_BRANCH : ""
@@ -132,7 +137,7 @@ env:
   NEED_DTBO : false
   NEED_SAFE_DTBO : false
 
-  ROM_TEXT : "lineage23.2_a16"
+  ROM_TEXT : "tropsi_a16"
 
   # Other env
   PYTHON_VERSION: "3"
@@ -189,14 +194,18 @@ env:
   BUILD_DEBUGGER: "false"
   SKIP_PATCH: "false"
 
-  BUILD_OTHER_CONFIG: "true" # Merge config files.
-  MERGE_CONFIG_FILES: "vendor/oplus.config"
+  # Tropsi-X 自带完整 kona-perf_defconfig（含全量 OPLUS_FEATURE_* 与驱动），
+  # 仓库里**没有** vendor/oplus.config，强行 merge 会因文件不存在失败。
+  # 因此关闭额外 merge，直接用 defconfig 本身；DroidSpaces 仍在 build-process
+  # 里单独 merge 自己的 droidspaces.config，不受影响。
+  BUILD_OTHER_CONFIG: "false" # Merge config files.
+  MERGE_CONFIG_FILES: ""
 
   FREE_MORE_SPACE: "false"
 
 jobs:
   build-kernel:
-    name: Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
+    name: Oneplus 8 (Tropsi-X Kernel A16) (BakaSU+SUSFS Kernel)
     runs-on: ubuntu-latest
     outputs:
       build_sha: ${{ steps.build_sha.outputs.build_sha }}

@@ -4,6 +4,17 @@ Automated kernel build for **OnePlus 8 (instantnoodle, 4.19.325-cip132-st16)** w
 Formatted after [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) (sample branch).
 Chinese docs: [README_cn.md](README_cn.md)
 
+## Branches
+
+| Branch | Kernel source | Root | Package | Target |
+|---|---|---|---|---|
+| `master` | [LineageOS/android_kernel_oneplus_sm8250](https://github.com/LineageOS/android_kernel_oneplus_sm8250) @ `lineage-23.2` | BakaSU + SuSFS v2.3.0 (in-tree) | AnyKernel3 | LineageOS 23.2 / AOSP-based Android 16 |
+| `KSU` | same as `master` | backslashxx's KernelSU (`4e6e9ff`) + hand-written SuSFS bridge | AnyKernel3 | same as `master` |
+| `Pure` | same as `master` | **none** | **HotSPatch1** (PC-side boot.img patcher, not AK3) | same as `master`, patch with Magisk / APatch afterwards |
+| `ReSuki_Luk` | [luk1337/android_kernel_oneplus_sm8250](https://github.com/luk1337/android_kernel_oneplus_sm8250) @ `luk` | BakaSU | AnyKernel3 | Custom ROMs **and** OOS |
+| `crdroid_Resuki` | [crdroidandroid/android_kernel_oneplus_sm8250](https://github.com/crdroidandroid/android_kernel_oneplus_sm8250) @ `16.0` | BakaSU | AnyKernel3 | crDroid 16 (stage1/2/3) |
+| `Trop` | [TropsPk/Tropsi_X_Kernel_SM8250](https://github.com/TropsPk/Tropsi_X_Kernel_SM8250) @ `Staging` | BakaSU + SuSFS v2.3.0 (in-tree) | AnyKernel3 | Custom ROMs **and** OOS / ColorOS |
+
 ## Integrations
 | Component | Note |
 |---|---|

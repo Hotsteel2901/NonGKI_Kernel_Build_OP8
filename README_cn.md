@@ -3,6 +3,17 @@
 基于 [JackA1ltman/NonGKI_Kernel_Build_2nd](https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd) 的 sample 分支格式，
 为 **OnePlus 8 (instantnoodle, 4.19.325-cip132-st16)** 的 **LineageOS 23.2 (Android 16)** 内核提供自动化编译。
 
+## 分支一览
+
+| 分支 | 内核源码 | Root | 包格式 | 目标系统 |
+|---|---|---|---|---|
+| `master` | [LineageOS/android_kernel_oneplus_sm8250](https://github.com/LineageOS/android_kernel_oneplus_sm8250) @ `lineage-23.2` | BakaSU + SuSFS v2.3.0（内置） | AnyKernel3 | LineageOS 23.2 / 类原生 Android 16 |
+| `KSU` | 同 `master` | backslashxx 的 KernelSU（`4e6e9ff`）+ 手写 SuSFS 桥接 | AnyKernel3 | 同 `master` |
+| `Pure` | 同 `master` | **无** | **HotSPatch1**（电脑端替换 boot.img，不是 AK3） | 同 `master`，之后自行用 Magisk / APatch 修补 |
+| `ReSuki_Luk` | [luk1337/android_kernel_oneplus_sm8250](https://github.com/luk1337/android_kernel_oneplus_sm8250) @ `luk` | BakaSU | AnyKernel3 | 类原生 **与** OOS |
+| `crdroid_Resuki` | [crdroidandroid/android_kernel_oneplus_sm8250](https://github.com/crdroidandroid/android_kernel_oneplus_sm8250) @ `16.0` | BakaSU | AnyKernel3 | crDroid 16（stage1/2/3） |
+| `Trop` | [TropsPk/Tropsi_X_Kernel_SM8250](https://github.com/TropsPk/Tropsi_X_Kernel_SM8250) @ `Staging` | BakaSU + SuSFS v2.3.0（内置） | AnyKernel3 | 类原生 **与** OOS / ColorOS |
+
 ## 集成内容
 
 | 组件 | 说明 |
@@ -62,7 +73,7 @@
 > `-Wno-declaration-after-statement` `-Wno-error`）。
 > 该上游内核源由官方 `module/vfs/setup.sh` 在 `dev` 分支提供，本仓库仅做 built-in 化。
 
-## VFS 路径重定向后端（三选一）
+## VFS 路径重定向后端（二选一，互斥）
 
 本仓库支持三种路径重定向后端。它们全部工作在**同一个 VFS 层**
 （劫持 `inode_operations` / `file_operations` / `dentry_operations`），且各自使用

@@ -5,7 +5,7 @@ permissions:
   actions: write
 
 # ============================================================================
-# UI 入口工作流（OnePlus 8 / LineageOS 23.2 A16）
+# UI 入口工作流（OnePlus 8 / Tropsi-X Kernel / Android 16）
 #
 # 这里是 GitHub Actions 「Run workflow」下拉菜单真正渲染控件的地方。
 # 只有 workflow_dispatch.inputs 才会出现在 UI 上；workflow 级 env: 不会。
@@ -78,7 +78,7 @@ on:
 jobs:
   # OnePlus 8 (LineageOS 23.2)
   build-oneplus-8-lineageos23-a16:
-    name: "OnePlus 8 (LineageOS 23.2 Android 16) (BakaSU+SUSFS v2.3.0)"
+    name: "OnePlus 8 (Tropsi-X Android 16) (BakaSU+SUSFS v2.3.0)"
     strategy:
       fail-fast: true
     uses: ./.github/workflows/build-oneplus-8-los23-a16.yml

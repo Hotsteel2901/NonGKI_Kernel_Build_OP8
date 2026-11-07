@@ -83,19 +83,21 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # 包格式：仅用于 release 文案里的「Build info」区块，和实际打包保持一致。
       PACK_METHOD: "Anykernel3"
-      # Release 标题格式：管理器（分支名） + 时间，例如 "BakaSU (Master) 2026-10-05 10:47"。
+      # Release 标题格式：管理器（分支名） + 时间，例如 "BakaSU (Trop) 2026-11-07 12:00"。
       # 时间由 ${TIME} 在运行时拼接，这里只写前缀部分。
-      RELEASE_NAME: "BakaSU (Master)"
+      RELEASE_NAME: "BakaSU (Trop)"
       RELEASE_NOTES: |
         ### English
 
         | Device | Codename | Kernel | System | Android | Package | Root | SuSFS | Re:Kernel | BBG | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 (`lineage-23.2`) | LineageOS 23.2 / AOSP-based | 16 | AnyKernel3 | BakaSU | v2.3.0 (in-tree) | ✓ | ✓ | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19.157 (`Tropsi-X` @ `Staging`) | Custom ROMs **and** OOS / ColorOS | 16 | AnyKernel3 | BakaSU | v2.3.0 (in-tree) | ✓ | ✓ | ✓ |
 
         **What is inside**
 
-        - **Kernel source**: `LineageOS/android_kernel_oneplus_sm8250` @ `lineage-23.2`
+        - **Kernel source**: `TropsPk/Tropsi_X_Kernel_SM8250` @ `Staging` (4.19.157, SM8250/kona)
+          This tree is derived from the OOS kernel and **keeps the full OPLUS driver set** (`oplus/`, `techpack/`, `oplus-stock_defconfig`), while `kona-perf_defconfig` is used for the AOSP/perf build — so **one artifact is intended to work on both custom ROMs and OOS**.
+          Device projects included: 19811 (OnePlus 8), 19805 (8 Pro), 19821 (8T), 19855 (9R).
         - **Root**: BakaSU, built in with its official SuSFS inline hooks — pair it with **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
         - **SuSFS**: v2.3.0, compiled into the kernel (not a loadable module)
         - **VFS backend**: **Hybrid Mount** *or* **NoMount** — mutually exclusive, only one is compiled in. The backend actually included is printed in the installer title.
@@ -116,6 +118,7 @@ jobs:
         > - This is an **AnyKernel3** package: only the kernel image is replaced, `/data` is untouched.
         > - Back up your stock `boot.img` before flashing so you can roll back.
         > - **Magisk is NOT compatible** with this build — do not flash Magisk on top of it.
+        > - On OOS, flash with a kernel manager / `dd` to the boot partition if your recovery cannot sideload.
         > - First boot may take a few minutes while ART re-optimises apps.
 
         ---
@@ -124,11 +127,13 @@ jobs:
 
         | 设备 | 代号 | 内核 | 系统 | Android | 包格式 | Root | SuSFS | Re:Kernel | BBG | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19（`lineage-23.2`） | LineageOS 23.2 / 类原生 | 16 | AnyKernel3 | BakaSU | v2.3.0（内置） | ✓ | ✓ | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19.157（`Tropsi-X` @ `Staging`） | 类原生 **与** OOS / ColorOS | 16 | AnyKernel3 | BakaSU | v2.3.0（内置） | ✓ | ✓ | ✓ |
 
         **包含内容**
 
-        - **内核源码**：`LineageOS/android_kernel_oneplus_sm8250` @ `lineage-23.2`
+        - **内核源码**：`TropsPk/Tropsi_X_Kernel_SM8250` @ `Staging`（4.19.157，SM8250/kona）
+          该树由 OOS 内核衍生，**保留完整的 OPLUS 驱动集**（`oplus/`、`techpack/`、`oplus-stock_defconfig`），而构建走 `kona-perf_defconfig` 的 AOSP/性能配置 —— 因此**同一份产物面向类原生与 OOS 双系统**。
+          包含的机型 project：19811（OnePlus 8）、19805（8 Pro）、19821（8T）、19855（9R）。
         - **Root**：BakaSU，使用其官方 SuSFS inline 钩子内置集成 —— 请搭配 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
         - **SuSFS**：v2.3.0，直接编进内核（不是外置模块）
         - **VFS 后端**：**Hybrid Mount** 或 **NoMount**，二者互斥，内核里只会编进其中一个。实际集成的是哪个，请以刷机包标题为准。
@@ -149,6 +154,7 @@ jobs:
         > - 本包为 **AnyKernel3** 格式：仅替换内核镜像，**不会清空** `/data`。
         > - 刷入前请**备份原厂 `boot.img`**，以便回滚。
         > - 本构建**与 Magisk 不兼容**，请勿在其之上再刷 Magisk。
+        > - 在 OOS 上如果你的 Recovery 不支持 sideload，可用内核管理器或 `dd` 直接写入 boot 分区。
         > - 刷完首次开机可能需要几分钟（ART 重新优化应用）。
 
     steps:
