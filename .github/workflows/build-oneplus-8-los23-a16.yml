@@ -76,7 +76,11 @@ env:
   AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
-  EXTRA_CMDS : ""
+  # Tropsi-X（OOS stock 衍生）里 arch/arm64/kernel/rootguard/oplus_guard_general.c
+  # 用 `static void __exit boot_state_exit()` 这种无原型声明，而顶层 Makefile
+  # 带 `-Werror=strict-prototypes`（clang 19 起默认告警），会把这类老代码
+  # 直接编译失败。这里只把该告警降级，其他 -Werror 保持不变。
+  EXTRA_CMDS : "KCFLAGS=-Wno-error=strict-prototypes"
 
   # Tropsi-X 内核（TropsPk）：4.19.157 / SM8250(kona)，一套代码覆盖
   # OnePlus 8 (19811) / 8 Pro (19805) / 8T (19821) / 9R (19855)。
