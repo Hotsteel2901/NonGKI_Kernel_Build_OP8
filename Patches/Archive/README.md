@@ -487,3 +487,46 @@ Base commit: 4238ee49a84b (techpack: audio: tfa98xx-v6: Prevent node being creat
         dtb 由 AK3 从原机 boot.img 里保留。
    打包标题: 原来固定写死 "+ ReKernel-X + DroidSpaces + Baseband Guard",
    与 REKERNEL_ENABLE=false 不符; 改为按三个开关运行时拼接。
+
+## SUSFS v2.4.0 升级 (2026-11-13)
+
+   上游: JackA1ltman/NonGKI_Kernel_Build_2nd mainline
+         Patches/Patch/susfs_patch_to_4.19.patch  167863 B  (v2.4.0)
+         Patches/susfs_inline_hook_patches.sh     20251120
+   发布: TropsPK-v35259-1794574005 (run 43426945035, 构建 8 min)
+
+   版本变化 v2.3.0 -> v2.4.0:
+     - 新增 block/ioprio.c / fs/stat.c / kernel/sys.c 三个钩子点
+       * fs/stat.c: SUS_KSTAT 从 inline hooks 移入主补丁
+       * kernel/sys.c: 新增 SUSFS_PRIORITY_UID_FILTER + SPOOF_UNAME
+       * block/ioprio.c: SUSFS_PRIORITY_UID_FILTER (ioprio_set/get)
+     - fs/statfs.c: susfs_statfs_by_dentry() 增加 mnt 参数,
+       f_flags 改由 calculate_f_flags() 统一处理; 新增两个 wrapper
+       (statfs_by_dentry_wrapper / calculate_f_flags_wrapper)
+     - fs/proc/task_mmu.c: vma 声明位置调整 (顺带解决了 2.3.0 时
+       我们手工修的重复声明问题, 现在直接用上游)
+
+   Trop 适配 (仅两处, 比 2.3.0 少):
+     - fs/namespace.c include 区: 本树 internal.h 之后还有
+       CONFIG_OPLUS_SECURE_GUARD 的 include 块, 重锚插入点。
+     - fs/notify/fdinfo.c hunk#4: 本树无 inotify_mark_user_mask()
+       (旧 fsnotify API), 改为 mark->mask & IN_ALL_EVENTS。
+       另: SUS_MOUNT 下 show_fdinfo 回调带 file 参数, 上游只改了
+       inotify_fdinfo, 本树 fanotify 调用点也传三参数, 故给
+       fanotify_fdinfo 补上 file 形参。
+
+   inline hooks 去重 (关键):
+     2.4.0 主补丁已含 fs/stat.c 的 SUS_KSTAT 与 kernel/sys.c 的
+     uname 伪装, 保留会重复插入 -> 从 inline hooks 中删除这两段,
+     只留 KSU 自己的钩子 (exec/open/read_write/vfs_statx/input/
+     reboot/setresuid)。Trop 版继续保留 filename_lookup 去 static
+     + open.c/stat.c 声明。
+
+   踩坑记录:
+     - fdinfo 适配时从 2.3.0 版本拷贝代码块, 截断处丢了
+       `#endif // CONFIG_KSU_SUSFS_SUS_MOUNT`, CI 报
+       "fs/notify/fdinfo.c:23 unterminated conditional directive"。
+       现在验证脚本会逐文件检查 #if/#endif 配平。
+     - 版本号出现在: build-kernel job 名 / AK3_TITLE_PREFIX /
+       release 表格与说明 / patch-susfs 的 SUSFS_VERSION /
+       README(en+cn), 已全部改为 2.4.0。
