@@ -249,8 +249,8 @@ jobs:
         run: |
           cd device_kernel
           export PATH=/opt/llvm/bin:$PATH
-          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
-          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+          MAKE_OPTS="ARCH=arm64 LLVM=1 LLVM_IAS=0"
+          make O=out $MAKE_OPTS CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/vendor/oplus.config
@@ -260,11 +260,11 @@ jobs:
           sed -i '/^CONFIG_KSU_SUSFS=/d' out/.config
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
           echo "CONFIG_KSU_SUSFS=n" >> out/.config
-          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+          make O=out $MAKE_OPTS CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           # pipefail: 否则 make 失败被 tee 的 0 掩盖，报错会漂到后面的步骤
           set -o pipefail
-          make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+          make -j$(nproc) O=out $MAKE_OPTS CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
           SIZE=$(stat -c%s out/arch/arm64/boot/Image)
           echo "image_size=$SIZE" >> $GITHUB_OUTPUT
@@ -549,8 +549,8 @@ jobs:
         run: |
           cd device_kernel
           export PATH=/opt/llvm/bin:$PATH
-          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
-          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+          MAKE_OPTS="ARCH=arm64 LLVM=1 LLVM_IAS=0"
+          make O=out $MAKE_OPTS CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/vendor/oplus.config
@@ -572,11 +572,11 @@ jobs:
             echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
             echo "CONFIG_KSU_SUSFS=n" >> out/.config
           fi
-          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+          make O=out $MAKE_OPTS CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           # pipefail: 否则 make 失败被 tee 的 0 掩盖，报错会漂到后面的步骤
           set -o pipefail
-          make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+          make -j$(nproc) O=out $MAKE_OPTS CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
           echo "image_size=$(stat -c%s out/arch/arm64/boot/Image)" >> $GITHUB_OUTPUT
 
@@ -879,8 +879,8 @@ jobs:
         run: |
           cd device_kernel
           export PATH=/opt/llvm/bin:$PATH
-          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
-          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+          MAKE_OPTS="ARCH=arm64 LLVM=1 LLVM_IAS=0"
+          make O=out $MAKE_OPTS CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
           ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
             arch/arm64/configs/vendor/oplus.config
@@ -904,11 +904,11 @@ jobs:
             echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
             echo "CONFIG_KSU_SUSFS=n" >> out/.config
           fi
-          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+          make O=out $MAKE_OPTS CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           # pipefail: 否则 make 失败被 tee 的 0 掩盖，报错会漂到后面的步骤
           set -o pipefail
-          make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+          make -j$(nproc) O=out $MAKE_OPTS CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
           echo "image_size=$(stat -c%s out/arch/arm64/boot/Image)" >> $GITHUB_OUTPUT
 
