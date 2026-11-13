@@ -517,30 +517,33 @@ jobs:
           grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
           echo "[+] Hybrid Mount VFS applied (built-in)."
 
-      - name: 🕳️ Apply NoMount VFS patch
-        if: inputs.vfs_nomount == true
+      - name: 🕳️ Apply NoMount VFS
+        if: inputs.vfs_nomount
         run: |
           cd device_kernel
-          # NoMount 与 HybridMount 是同源不同家的方案：hybridmount 子系统就是从
-          # NoMount fork 出来的，但**重命名了符号、换了自己的 wire magic**
-          # （HybridMount 用 "HYBRIDMO"），因此两套元模块与工具链互不通用。
-          # 二者只能选一个，stage 开头的互斥校验会拦截同时开启的情况。
+          # NoMount 与 HybridMount 同源不同家：hybridmount 就是从 NoMount fork 出来的，
+          # 但重命名了符号、换了自己的 wire magic（"HYBRIDMO"），两套元模块与工具链
+          # 互不通用。二者只能选一个，构建开头的互斥校验会拦截同时开启。
           #
-          # NoMount 官方仓库自带 kernel/setup.sh，做的是通用内核集成
-          # （把 NoMount 源码 symlink 到 fs/nomount，并往 fs/Makefile + fs/Kconfig
-          #  接线），不依赖具体内核版本 —— 上游预编译 .ko 只覆盖 5.10+，
-          # 4.19 这类 legacy 内核必须源码集成，这个脚本正是干这个的。
-          # 集成方式与上游 JackA1ltman/NonGKI_Kernel_Build_2nd 的 patch-nomount 一致。
+          # NoMount 官方自带 kernel/setup.sh，做通用内核集成：
+          #   1) git clone 到内核树内的 NoMount/（内部 checkout dev，git pull 更新）
+          #   2) 在 fs/ 下建 symlink  fs/nomount -> ../NoMount/kernel/src
+          #   3) 往 fs/Makefile 追加 obj-$(CONFIG_NOMOUNT) += nomount/
+          #   4) 在 fs/Kconfig 的最后一个 endmenu 前插入 source "fs/nomount/Kconfig"
+          # 不依赖内核版本。4.19 这类 legacy 内核无法用上游预编译 .ko，必须源码集成。
+          # 与 master/KSU 分支的集成方式一致，同上游 JackA1ltman 项目的用法。
+          #
+          # 注意（2026-11 上游变更）：源码目录从 kernel/ 下移到 kernel/src/，
+          # setup.sh 同时自己完成 Makefile/Kconfig 接线；下面的自检按新布局校验。
           curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
 
-          # setup.sh 的失败不一定反映到管道的退出码（curl | bash 只取 bash 的），
-          # 所以这里做集成结果自检。
-          test -d fs/nomount || { echo "[-] fs/nomount missing (symlink not created)"; exit 1; }
-          test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; exit 1; }
-          grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
-          grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
-          echo "[+] NoMount VFS applied (built-in)."
-
+          # curl | bash 只反映 bash 的退出码，这里补上集成结果自检。
+          test -L fs/nomount || { echo "[-] fs/nomount is not a symlink (setup.sh did not run?)"; false; }
+          test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; false; }
+          test -f fs/nomount/Kconfig || { echo "[-] fs/nomount/Kconfig missing"; false; }
+          grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
+          grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
+          echo "[+] NoMount VFS applied (built-in, $(readlink fs/nomount))."
       - name: 🚀 Build kernel (Stage2)
         id: build
         run: |
@@ -829,23 +832,33 @@ jobs:
           grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
           echo "[+] Hybrid Mount VFS applied (built-in)."
 
-      - name: 🕳️ Apply NoMount VFS patch
-        if: inputs.vfs_nomount == true
+      - name: 🕳️ Apply NoMount VFS
+        if: inputs.vfs_nomount
         run: |
           cd device_kernel
-          # NoMount 与 HybridMount 是同源不同家的方案：hybridmount 子系统就是从
-          # NoMount fork 出来的，但重命名了符号、换了自己的 wire magic
-          # （HybridMount 用 "HYBRIDMO"），两套元模块与工具链互不通用。
-          # 二者只能选一个，stage 开头的互斥校验会拦截同时开启的情况。
-          # 走官方 kernel/setup.sh 源码集成（4.19 无预编译 .ko），
-          # 与上游 JackA1ltman/NonGKI_Kernel_Build_2nd 的用法一致。
+          # NoMount 与 HybridMount 同源不同家：hybridmount 就是从 NoMount fork 出来的，
+          # 但重命名了符号、换了自己的 wire magic（"HYBRIDMO"），两套元模块与工具链
+          # 互不通用。二者只能选一个，构建开头的互斥校验会拦截同时开启。
+          #
+          # NoMount 官方自带 kernel/setup.sh，做通用内核集成：
+          #   1) git clone 到内核树内的 NoMount/（内部 checkout dev，git pull 更新）
+          #   2) 在 fs/ 下建 symlink  fs/nomount -> ../NoMount/kernel/src
+          #   3) 往 fs/Makefile 追加 obj-$(CONFIG_NOMOUNT) += nomount/
+          #   4) 在 fs/Kconfig 的最后一个 endmenu 前插入 source "fs/nomount/Kconfig"
+          # 不依赖内核版本。4.19 这类 legacy 内核无法用上游预编译 .ko，必须源码集成。
+          # 与 master/KSU 分支的集成方式一致，同上游 JackA1ltman 项目的用法。
+          #
+          # 注意（2026-11 上游变更）：源码目录从 kernel/ 下移到 kernel/src/，
+          # setup.sh 同时自己完成 Makefile/Kconfig 接线；下面的自检按新布局校验。
           curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
-          test -d fs/nomount || { echo "[-] fs/nomount missing (symlink not created)"; exit 1; }
-          test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; exit 1; }
-          grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
-          grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
-          echo "[+] NoMount VFS applied (built-in)."
 
+          # curl | bash 只反映 bash 的退出码，这里补上集成结果自检。
+          test -L fs/nomount || { echo "[-] fs/nomount is not a symlink (setup.sh did not run?)"; false; }
+          test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; false; }
+          test -f fs/nomount/Kconfig || { echo "[-] fs/nomount/Kconfig missing"; false; }
+          grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
+          grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
+          echo "[+] NoMount VFS applied (built-in, $(readlink fs/nomount))."
       - name: 💿 Apply Stage3 DroidSpaces (cocci + config)
         run: |
           cd device_kernel
