@@ -119,7 +119,7 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 | 文件 | 内容 | 行数 |
 |---|---|---|
 | `0001-resukisu-inline-hooks.patch` | ReSukiSU SUSFS inline 模式官方 7 个内联钩子 (exec / open / read_write / stat / input / reboot / setresuid) + fs/stat.c 的 SUS_KSTAT 片段 + kernel/sys.c uname 伪装片段 | 401 |
-| `0002-susfs-v2.3.0.patch` | SUSFS v2.3.0 全部内核侧代码 (18 个文件: `fs/susfs.c`、`include/linux/susfs.h`、`susfs_def.h`、namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | 4184 |
+| `0002-susfs-v2.4.0.patch` | SUSFS v2.4.0 全部内核侧代码 (21 个文件: `fs/susfs.c`、`include/linux/susfs.h`、`susfs_def.h`、namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline/stat/ioprio/sys 等) | 5057 |
 | `0003-netprio-cgroup-css-id.patch` | 修复 luk 树 `net_prio` 使用 `css->cgroup->id` (该树 `struct cgroup` 无 `id` 成员) → `css->id`, 5 处; 仅当 DroidSpaces 打开 `CONFIG_CGROUP_NET_PRIO` 时需要 | 54 |
 | `0004-hybridmount-vfs.patch` | Hybrid Mount 的 VFS 后端子系统 (`fs/hybridmount/`, fork 自 NoMount, 通过 keyring 驱动) built-in 集成; 7 文件: `fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}` | 3155 |
 | `susfs.config` | KSU + SUSFS 编译开关 (merge_config 片段); 同时负责关闭 `CONFIG_MODULE_SIG_FORCE` 以保证 OOS 原厂模块可加载 | 40 |
@@ -135,7 +135,7 @@ OOS 的 userspace 仍按原厂路径加载 `oplus_connectivity_routerboost.ko`, 
 > git diff <新base> -- drivers/input/input.c fs/exec.c fs/open.c fs/read_write.c fs/stat.c \
 >   kernel/reboot.c kernel/sys.c > Patches/luk/0001-resukisu-inline-hooks.patch
 > git diff <新base> -- fs include/linux/susfs.h include/linux/susfs_def.h kernel/kallsyms.c \
->   mm/memory.c security/selinux/avc.c > Patches/luk/0002-susfs-v2.3.0.patch
+>   mm/memory.c security/selinux/avc.c > Patches/luk/0002-susfs-v2.4.0.patch
 > ```
 >
 > `0004-hybridmount-vfs.patch` 与 master / KSU 分支的
@@ -221,14 +221,14 @@ OOS 的 `oplus_connectivity_routerboost.ko` 等模块以 `=m` 产出,
 > (`kernel: suspend susfs build`, 2026-10-10) 起在
 > `kernel/tools/susfs_compat.mk` 末尾无条件 `$(error)`, 等待 SUSFS 上游同步。
 > 因此工作流在 `susfs_enable=true` 且未指定 `ksu_ref` 时会自动锁定
-> **`v4.2.0-rc3`** (与本目录 SUSFS v2.3.0 补丁配套的最后一个稳定版本)。
+> **`v4.2.0-rc3`** (与本目录 SUSFS v2.4.0 补丁配套的最后一个稳定版本)。
 > `susfs_enable=false` (默认) 走 `CONFIG_KSU_MANUAL_HOOK`, 完全不受该限制影响。
 
 | 检查项 | 结果 |
 |---|---|
 | 补丁应用 (纯净 luk 树, `patch -p1`) | 0001: 7 文件 0 reject; 0002: 18 文件 0 reject (若干 hunk 带偏移); 0004: 7 文件 0 reject |
 | ReSukiSU 编译期钩子校验 (`inline_hook_check.mk`) | 7/7 通过: setresuid / execveat / faccessat / sys_read / stat / sys_reboot / input |
-| SUSFS 版本识别 | `SUSFS_VERSION: v2.3.0` (`kernel/Kbuild` 自动读取) |
+| SUSFS 版本识别 | `SUSFS_VERSION: v2.4.0` (`kernel/Kbuild` 自动读取) |
 | KSU 内核类型判定 | `KERNEL_TYPE: Non-GKI`, `using SuSFS Inline hook` |
 | 完整编译 (stage1: ReSukiSU+SUSFS) | `Image` 56.5 MB + `dtb.img` 1.53 MB, BUILD_EXIT=0 |
 | 完整编译 (stage2: +DroidSpaces) | `Image` 58.6 MB + `dtb.img` 1.53 MB, BUILD_EXIT=0 |

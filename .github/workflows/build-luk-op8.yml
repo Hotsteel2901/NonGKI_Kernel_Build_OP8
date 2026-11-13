@@ -12,7 +12,7 @@ name: Build OnePlus 8 luk Kernel (BakaSU + NoMount + DroidSpaces)
 #
 # 集成组件: BakaSU (原 ReSukiSU; root 实现)
 #           -> 默认 syscall 手动钩子 (CONFIG_KSU_MANUAL_HOOK)
-#           -> SUSFS v2.3.0 可选 (susfs_enable=true, inline hook 模式)
+#           -> SUSFS v2.4.0 可选 (susfs_enable=true, inline hook 模式)
 #           -> NoMount VFS 默认开启 (可切 Hybrid Mount)
 #           -> DroidSpaces (可选, cgroup 前缀 + USER_NS 配置)
 #
@@ -137,7 +137,7 @@ jobs:
 
           TITLE="${{ env.AK3_TITLE_PREFIX }}"
           if [ "${{ inputs.susfs_enable }}" = "true" ]; then
-            TITLE="$TITLE + SUSFS v2.3.0"
+            TITLE="$TITLE + SUSFS v2.4.0"
           fi
           if [ -n "$VFS_LABEL" ]; then
             TITLE="$TITLE + $VFS_LABEL"
@@ -240,7 +240,7 @@ jobs:
           # BakaSU main 自 2026-10-10 的 48fa4bb7 ("kernel: suspend susfs build")
           # 起在 kernel/tools/susfs_compat.mk 末尾无条件 $(error)，等待 SUSFS
           # 上游同步；直接拉 main 会在编译驱动阶段直接失败。v4.2.0-rc3 是
-          # 与该 SUSFS v2.3.0 补丁配套的最后一个稳定版本。
+          # 与该 SUSFS v2.4.0 补丁配套的最后一个稳定版本。
           # 无 SUSFS (CONFIG_KSU_MANUAL_HOOK) 时该文件根本不会被 include，
           # 因此保持 main 最新即可。
           KSU_REF="${{ inputs.ksu_ref }}"
@@ -292,14 +292,14 @@ jobs:
             echo "[+] KernelSU syscall hooks applied (SUSFS disabled)."
           fi
 
-      - name: 🪝 Apply SUSFS v2.3.0 patch
+      - name: 🪝 Apply SUSFS v2.4.0 patch
         if: inputs.susfs_enable
         run: |
           cd device_kernel
-          patch -p1 < ../Patches/luk/0002-susfs-v2.3.0.patch
-          grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
+          patch -p1 < ../Patches/luk/0002-susfs-v2.4.0.patch
+          grep -q 'SUSFS_VERSION "v2.4.0"' include/linux/susfs.h
           grep -q "p->state = 0" fs/namei.c && echo "[+] p->state=0 present."
-          echo "[+] SUSFS v2.3.0 applied."
+          echo "[+] SUSFS v2.4.0 applied."
 
       - name: 🧩 Apply Hybrid Mount VFS patch
         if: inputs.vfs_hybridmount
@@ -475,7 +475,7 @@ jobs:
           nm out/vmlinux | grep -q "ksu_handle_execveat" || { echo "[-] KSU 符号缺失"; exit 1; }
           if [ "${{ inputs.susfs_enable }}" = "true" ]; then
             grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS 未生效"; exit 1; }
-            grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS 版本异常"; exit 1; }
+            grep -q 'SUSFS_VERSION "v2.4.0"' include/linux/susfs.h || { echo "[-] SUSFS 版本异常"; exit 1; }
             nm out/vmlinux | grep -q "susfs_" || { echo "[-] SUSFS 符号缺失"; exit 1; }
           else
             echo "[i] SUSFS disabled — skipped SUSFS symbol checks."

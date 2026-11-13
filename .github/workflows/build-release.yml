@@ -84,14 +84,14 @@ jobs:
 
         | Device | Codename | Kernel | System | Android | Package | Root | SuSFS | VFS | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 (`luk1337/luk`) | Custom ROMs **and** OOS / ColorOS | 16 | AnyKernel3 | BakaSU | optional (v2.3.0) | Hybrid Mount / NoMount | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19 (`luk1337/luk`) | Custom ROMs **and** OOS / ColorOS | 16 | AnyKernel3 | BakaSU | optional (v2.4.0) | Hybrid Mount / NoMount | ✓ |
 
         **What is inside**
 
         - **Kernel source**: `luk1337/android_kernel_oneplus_sm8250` @ `luk`
           This tree ships the **full OPLUS/OOS configuration**, so **one artifact works on both custom ROMs (LineageOS / crDroid / …) and OOS (Hydrogen/Oxygen)** — no separate builds needed.
         - **Root**: BakaSU — pair it with **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
-        - **SuSFS**: optional. When built with `susfs_enable=true` it is compiled in (v2.3.0, inline hooks); the default build uses KernelSU manual (syscall) hooks instead.
+        - **SuSFS**: optional. When built with `susfs_enable=true` it is compiled in (v2.4.0, inline hooks); the default build uses KernelSU manual (syscall) hooks instead.
         - **VFS backend**: **NoMount** by default, **Hybrid Mount** optional — mutually exclusive, only one is compiled in. The backend actually included is printed in the installer title.
         - **Extras**: DroidSpaces. *This branch does **not** include Re:Kernel-X or Baseband Guard.*
 
@@ -119,14 +119,14 @@ jobs:
 
         | 设备 | 代号 | 内核 | 系统 | Android | 包格式 | Root | SuSFS | VFS | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19（`luk1337/luk`） | 类原生 **与** OOS / ColorOS | 16 | AnyKernel3 | BakaSU | 可选（v2.3.0） | Hybrid Mount / NoMount | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19（`luk1337/luk`） | 类原生 **与** OOS / ColorOS | 16 | AnyKernel3 | BakaSU | 可选（v2.4.0） | Hybrid Mount / NoMount | ✓ |
 
         **包含内容**
 
         - **内核源码**：`luk1337/android_kernel_oneplus_sm8250` @ `luk`
           该内核树自带**完整的 OPLUS/OOS 配置**，因此**同一份产物同时适用于类原生（LineageOS / crDroid 等）与 OOS（氢/氧）**，无需分别编译。
         - **Root**：BakaSU —— 请搭配 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
-        - **SuSFS**：可选。构建时 `susfs_enable=true` 才会编进内核（v2.3.0，inline 钩子）；默认构建走 KernelSU 手动（syscall）钩子。
+        - **SuSFS**：可选。构建时 `susfs_enable=true` 才会编进内核（v2.4.0，inline 钩子）；默认构建走 KernelSU 手动（syscall）钩子。
         - **VFS 后端**：默认 **NoMount**，可选 **Hybrid Mount**，二者互斥，内核里只会编进其中一个。实际集成的是哪个，请以刷机包标题为准。
         - **附加组件**：DroidSpaces。*本分支**不含** Re:Kernel-X 与 Baseband Guard。*
 
