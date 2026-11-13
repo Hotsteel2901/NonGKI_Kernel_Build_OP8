@@ -332,20 +332,27 @@ jobs:
           # （HybridMount 用 "HYBRIDMO"），因此两套元模块与工具链互不通用。
           # 二者只能选一个，构建开头的互斥校验会拦截同时开启的情况。
           #
-          # NoMount 官方仓库自带 kernel/setup.sh，做的是通用内核集成
-          # （把 NoMount 源码 symlink 到 fs/nomount，并往 fs/Makefile + fs/Kconfig
-          #  接线），不依赖具体内核版本 —— 上游文档说明 4.19 这类 legacy 内核
-          # 无法用预编译 .ko，必须源码集成，这个脚本正是干这个的。
+          # NoMount 官方仓库自带 kernel/setup.sh，做的是通用内核集成：
+          #   1) git clone 到内核树内的 NoMount/（内部 checkout dev，git pull 更新）
+          #   2) 在 fs/ 下建 symlink  fs/nomount -> ../NoMount/kernel/src
+          #   3) 往 fs/Makefile 追加 obj-$(CONFIG_NOMOUNT) += nomount/
+          #   4) 在 fs/Kconfig 的**最后一个** endmenu 前插入 source "fs/nomount/Kconfig"
+          # 不依赖具体内核版本 —— 上游文档说明 4.19 这类 legacy 内核无法用
+          # 预编译 .ko，必须源码集成，这个脚本正是干这个的。
           # 集成方式与上游 JackA1ltman/NonGKI_Kernel_Build_2nd 的 patch-nomount 一致。
+          #
+          # 注意（2026-11 上游变更）：源码目录从 kernel/ 下移到 kernel/src/，
+          # setup.sh 同时自己完成 Makefile/Kconfig 接线；下面的自检按新布局校验。
           curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
 
           # setup.sh 的失败不一定反映到管道的退出码（curl | bash 只取 bash 的），
           # 所以这里做集成结果自检。
-          test -d fs/nomount || { echo "[-] fs/nomount missing (symlink not created)"; false; }
+          test -L fs/nomount || { echo "[-] fs/nomount is not a symlink (setup.sh did not run?)"; false; }
           test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; false; }
+          test -f fs/nomount/Kconfig || { echo "[-] fs/nomount/Kconfig missing"; false; }
           grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
           grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
-          echo "[+] NoMount VFS subsystem patched (built-in)."
+          echo "[+] NoMount VFS subsystem patched (built-in, $(readlink fs/nomount))."
 
       - name: ⚙️ Enable NoMount VFS in DEFCONFIG
         if: inputs.vfs_nomount == true
