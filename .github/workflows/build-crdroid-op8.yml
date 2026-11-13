@@ -4,7 +4,7 @@ name: Build crDroid OnePlus 8 Kernel (BakaSU + SUSFS + DroidSpaces)
 # crDroid 独占工作流
 #
 # 目标内核: crdroidandroid/android_kernel_oneplus_sm8250 @ 16.0
-# 集成组件: BakaSU (原 ReSukiSU) -> SUSFS v2.3.0 -> DroidSpaces (循序渐进, 用 stage 控制)
+# 集成组件: BakaSU (原 ReSukiSU) -> SUSFS v2.4.0 -> DroidSpaces (循序渐进, 用 stage 控制)
 #
 # 本工作流与仓库中原有的 LineageOS 工作流完全独立:
 #   - 不修改、不引用 build-kernel.yml / build-release.yml / 任何 composite action
@@ -73,9 +73,9 @@ env:
   #
   # Stage1 不含 VFS（仅 BakaSU），故无 PREFIX/SUFFIX 拆分，标题为固定值。
   AK3_TITLE_STAGE1: "BakaSU (crdroid) Built By hotsteel"
-  AK3_TITLE_STAGE2_PREFIX: "BakaSU (crdroid) + SUSFS v2.3.0"
+  AK3_TITLE_STAGE2_PREFIX: "BakaSU (crdroid) + SUSFS v2.4.0"
   AK3_TITLE_STAGE2_SUFFIX: "Built By hotsteel"
-  AK3_TITLE_STAGE3_PREFIX: "BakaSU (crdroid) + SUSFS v2.3.0"
+  AK3_TITLE_STAGE3_PREFIX: "BakaSU (crdroid) + SUSFS v2.4.0"
   AK3_TITLE_STAGE3_SUFFIX: "+ DroidSpaces Built By hotsteel"
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -324,10 +324,10 @@ jobs:
           if-no-files-found: error
 
   # --------------------------------------------------------------------------
-  # Stage 2: BakaSU + SUSFS v2.3.0
+  # Stage 2: BakaSU + SUSFS v2.4.0
   # --------------------------------------------------------------------------
   stage2-susfs:
-    name: "Stage2: BakaSU + SUSFS v2.3.0"
+    name: "Stage2: BakaSU + SUSFS v2.4.0"
     # 钉 24.04：本工作流用官方 LLVM 19.1.7 预编译包，其动态依赖是 noble 时代的
     # ABI（libxml2.so.2 / libicuuc.so.74）。26.04 上 ld.lld 直接起不来。
     runs-on: ubuntu-24.04
@@ -486,7 +486,7 @@ jobs:
       - name: 🔗 Apply Stage1 patch
         run: cd device_kernel && patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
 
-      - name: 🪝 Apply Stage2 patch (SUSFS v2.3.0)
+      - name: 🪝 Apply Stage2 patch (SUSFS v2.4.0)
         if: inputs.susfs_enable
         run: |
           cd device_kernel
@@ -588,7 +588,7 @@ jobs:
           cd device_kernel
           if [ "${{ inputs.susfs_enable }}" = "true" ]; then
             grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
-            grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h || { echo "[-] SUSFS version mismatch"; exit 1; }
+            grep -q 'SUSFS_VERSION "v2.4.0"' include/linux/susfs.h || { echo "[-] SUSFS version mismatch"; exit 1; }
             nm out/vmlinux | grep -q "susfs" || { echo "[-] susfs symbols missing"; exit 1; }
           else
             grep -q "^CONFIG_KSU_SUSFS=y" out/.config && { echo "[-] SUSFS 未按预期关闭"; exit 1; } || true
@@ -606,7 +606,7 @@ jobs:
           else
             echo "[i] No VFS backend enabled, skipping VFS symbol checks."
           fi
-          echo "[+] Stage2 verified OK (SUSFS v2.3.0 + VFS backend check done)."
+          echo "[+] Stage2 verified OK (SUSFS v2.4.0 + VFS backend check done)."
 
       - name: 📦 Package AnyKernel3
         run: |
@@ -647,7 +647,7 @@ jobs:
           if-no-files-found: error
 
   # --------------------------------------------------------------------------
-  # Stage 3: BakaSU + SUSFS v2.3.0 + DroidSpaces
+  # Stage 3: BakaSU + SUSFS v2.4.0 + DroidSpaces
   # --------------------------------------------------------------------------
   stage3-droidspaces:
     name: "Stage3: + DroidSpaces"

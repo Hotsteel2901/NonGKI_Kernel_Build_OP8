@@ -86,7 +86,7 @@ jobs:
 
         | Device | Codename | Kernel | System | Android | Package | Root | SuSFS | VFS | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 (`crdroid-16.0`) | crDroid 16 / LineageOS-based | 16 | AnyKernel3 | BakaSU | v2.3.0 (stage2/3) | Hybrid Mount / NoMount (stage2/3) | ✓ (stage3) |
+        | OnePlus 8 | instantnoodle | 4.19 (`crdroid-16.0`) | crDroid 16 / LineageOS-based | 16 | AnyKernel3 | BakaSU | v2.4.0 (stage2/3) | Hybrid Mount / NoMount (stage2/3) | ✓ (stage3) |
 
         **Which file do I need?**
 
@@ -95,14 +95,14 @@ jobs:
         | Stage | File suffix | Contains |
         |----------|----------|----------|
         | stage1 | `-stage1-` | BakaSU only (manual/syscall hooks, no SuSFS, no VFS) |
-        | stage2 | `-stage2-` | stage1 + SuSFS v2.3.0 + one VFS backend |
+        | stage2 | `-stage2-` | stage1 + SuSFS v2.4.0 + one VFS backend |
         | stage3 | `-stage3-` | stage2 + DroidSpaces (**recommended**) |
 
         **What is inside (stage3)**
 
         - **Kernel source**: `crdroidandroid/android_kernel_oneplus_sm8250` @ `16.0`
         - **Root**: BakaSU — pair it with **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
-        - **SuSFS**: v2.3.0, compiled into the kernel (stage2/stage3)
+        - **SuSFS**: v2.4.0, compiled into the kernel (stage2/stage3)
         - **VFS backend**: **Hybrid Mount** *or* **NoMount** — mutually exclusive, only one is compiled in; printed in the installer title (stage2/stage3)
         - **Extras**: DroidSpaces (stage3). *This branch does **not** include Re:Kernel-X or Baseband Guard.*
 
@@ -129,7 +129,7 @@ jobs:
 
         | 设备 | 代号 | 内核 | 系统 | Android | 包格式 | Root | SuSFS | VFS | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19（`crdroid-16.0`） | crDroid 16 / 基于 LineageOS | 16 | AnyKernel3 | BakaSU | v2.3.0（stage2/3） | Hybrid Mount / NoMount（stage2/3） | ✓（stage3） |
+        | OnePlus 8 | instantnoodle | 4.19（`crdroid-16.0`） | crDroid 16 / 基于 LineageOS | 16 | AnyKernel3 | BakaSU | v2.4.0（stage2/3） | Hybrid Mount / NoMount（stage2/3） | ✓（stage3） |
 
         **该下哪个包？**
 
@@ -138,14 +138,14 @@ jobs:
         | 阶段 | 文件名标识 | 包含内容 |
         |----------|----------|----------|
         | stage1 | `-stage1-` | 仅 BakaSU（手动/syscall 钩子，无 SuSFS、无 VFS） |
-        | stage2 | `-stage2-` | stage1 + SuSFS v2.3.0 + 一个 VFS 后端 |
+        | stage2 | `-stage2-` | stage1 + SuSFS v2.4.0 + 一个 VFS 后端 |
         | stage3 | `-stage3-` | stage2 + DroidSpaces（**推荐**） |
 
         **包含内容（stage3）**
 
         - **内核源码**：`crdroidandroid/android_kernel_oneplus_sm8250` @ `16.0`
         - **Root**：BakaSU —— 请搭配 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
-        - **SuSFS**：v2.3.0，直接编进内核（stage2/stage3）
+        - **SuSFS**：v2.4.0，直接编进内核（stage2/stage3）
         - **VFS 后端**：**Hybrid Mount** 或 **NoMount**，二者互斥，内核里只会编进其中一个，实际以刷机包标题为准（stage2/stage3）
         - **附加组件**：DroidSpaces（stage3）。*本分支**不含** Re:Kernel-X 与 Baseband Guard。*
 

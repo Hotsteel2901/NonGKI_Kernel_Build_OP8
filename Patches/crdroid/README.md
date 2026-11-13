@@ -26,7 +26,7 @@
 | Stage | 组件 | 本地验证结果 |
 |---|---|---|
 | `stage1` | BakaSU（manual hook 模式） | ✅ Image **54,820,880 B**，0 错误，30 个 ksu 符号 |
-| `stage2` | + SUSFS v2.3.0 | ✅ Image **54,824,976 B**，0 错误，64 个 susfs 符号 |
+| `stage2` | + SUSFS v2.4.0 | ✅ Image **54,824,976 B**，0 错误，64 个 susfs 符号 |
 | `stage3` | + DroidSpaces | ✅ Image **54,845,456 B**，0 错误，dtb.img **1,428,199 B** |
 
 > `dtb.img` 字节数与参考项目记录完全一致（1428199），可作为正确性佐证。
@@ -36,7 +36,7 @@
 | 文件 | 内容 | 行数 |
 |---|---|---|
 | `0001-stage1-resukisu.patch` | BakaSU inline hooks（8 文件）+ defconfig + Makefile/Kconfig 接线 | 433 |
-| `0002-stage2-susfs.patch` | SUSFS v2.3.0 全部内核侧代码（17 文件；含 `fs/susfs.c`、`include/linux/susfs.h`、`susfs_def.h` 三个核心文件） | 4026 |
+| `0002-stage2-susfs.patch` | SUSFS v2.4.0 全部内核侧代码（21 文件；含 `fs/susfs.c`、`include/linux/susfs.h`、`susfs_def.h` 三个核心文件） | 5057 |
 | `0003-stage3-droidspaces.patch` | cgroup 前缀隐藏 + droidspaces.config | 16 |
 | `0004-hybridmount-vfs.patch` | Hybrid Mount VFS 后端子系统（`fs/hybridmount/`，fork 自 NoMount，keyring 驱动）built-in 集成（7 文件：`fs/Kconfig`、`fs/Makefile` 接线 + `fs/hybridmount/{Kconfig,LICENSE,Makefile,hybridmount.c,hybridmount.h}`） | 3602 |
 | `droidspaces.config` | DroidSpaces Non-GKI 内核配置（含 USER_NS 等） | 98 |
@@ -148,7 +148,7 @@ make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=a
 
 ## 已知限制
 
-- SUSFS v2.3.0 的 `OPEN_REDIRECT` 实际重定向在 4.19 上不生效（架构限制，与官方一致）
+- SUSFS v2.4.0 的 `OPEN_REDIRECT` 实际重定向在 4.19 上不生效（架构限制，与官方一致）
 - SUSFS 与 DroidSpaces 共存时上游有兼容性警告，本分支 stage3 已验证可正常编译
 - BakaSU（原 ReSukiSU，Baka-SU/BakaSU）固定提交 `fa1da13`（迁移后历史完整保留，SHA 仍有效）。
   若需升级，务必重新核对符号契约与门禁要求
