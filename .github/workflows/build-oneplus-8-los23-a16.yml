@@ -386,6 +386,15 @@ jobs:
           EOF
           echo "[+] SUSFS Kconfig definitions added to drivers/kernelsu/Kconfig."
 
+      - name: 🧪 Diagnose fs/Makefile before SUSFS patch
+        if: inputs.susfs_enable == true
+        run: |
+          cd $GITHUB_WORKSPACE/device_kernel
+          echo "--- md5 ---"; md5sum fs/Makefile
+          echo "--- lines 9-20 ---"; sed -n '9,20p' fs/Makefile | cat -A
+          echo "--- git status ---"; git status --short fs/Makefile || true
+          echo "--- patch file head ---"; sed -n '/^diff --git a\/fs\/Makefile/,/^diff --git a\/fs\/namei/p' /tmp/Patches/Patch/susfs_patch_to_4.19.patch | cat -A
+
       - name: 🪝 Patch Kernel of SUSFS
         uses: ./.github/workflows/patch-susfs
 
