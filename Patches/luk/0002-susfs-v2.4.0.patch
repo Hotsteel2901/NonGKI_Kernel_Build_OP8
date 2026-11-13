@@ -49,10 +49,7 @@ diff --git a/fs/Makefile b/fs/Makefile
 index 0fc34ca..8f4b814 100644
 --- a/fs/Makefile
 +++ b/fs/Makefile
-@@ -14,7 +14,9 @@ obj-y :=	open.o read_write.o file_table.o super.o \
- 		pnode.o splice.o sync.o utimes.o d_path.o \
- 		stack.o fs_struct.o statfs.o fs_pin.o nsfs.o \
- 		fs_context.o fs_parser.o
+@@ -15,4 +15,6 @@
  
 +obj-$(CONFIG_KSU_SUSFS) += susfs.o
 +
