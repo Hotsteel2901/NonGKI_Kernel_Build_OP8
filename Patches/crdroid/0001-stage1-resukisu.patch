@@ -8,26 +8,6 @@ index 60e1516de..3ca206c13 100644
  CONFIG_LOCALVERSION="-perf"
  CONFIG_AUDIT=y
  CONFIG_NO_HZ=y
-diff --git a/drivers/Kconfig b/drivers/Kconfig
-index e0866eda8..7d4ab68a4 100644
---- a/drivers/Kconfig
-+++ b/drivers/Kconfig
-@@ -232,4 +232,5 @@ source "drivers/sensors/Kconfig"
- source "drivers/gpu/msm/Kconfig"
- 
- source "drivers/energy_model/Kconfig"
-+source "drivers/kernelsu/Kconfig"
- endmenu
-diff --git a/drivers/Makefile b/drivers/Makefile
-index 9a258f18e..56957811d 100644
---- a/drivers/Makefile
-+++ b/drivers/Makefile
-@@ -192,3 +192,5 @@ obj-$(CONFIG_UNISYS_VISORBUS)	+= visorbus/
- obj-$(CONFIG_SIOX)		+= siox/
- obj-$(CONFIG_GNSS)		+= gnss/
- obj-$(CONFIG_SENSORS_SSC)	+= sensors/
-+
-+obj-$(CONFIG_KSU) += kernelsu/
 diff --git a/drivers/input/input.c b/drivers/input/input.c
 index 70ffffea3..b53fdb418 100644
 --- a/drivers/input/input.c
