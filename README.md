@@ -8,7 +8,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 | Component | Note |
 |---|---|
 | KernelSU (backslashxx) | **[backslashxx/KernelSU](https://github.com/backslashxx/KernelSU)** master, pinned to `4e6e9ff`. This fork has **no upstream SUSFS support**, so the kernel side is a **hand-written bridge maintained in this repo** — not BakaSU's official inline-hook set. |
-| SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
+| SUSFS v2.4.0 | Official gki v2.4.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
 | NoMount VFS | `fs/nomount` built-in via upstream `kernel/setup.sh` (keyring magic `"NOMOUNT"`), off by default |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
@@ -24,7 +24,7 @@ Chinese docs: [README_cn.md](README_cn.md)
    - Reboot to **System**
    - The kernel image is the only thing replaced — `/data` is **not** wiped. Back up your stock `boot.img` first so you can roll back.
    - **Magisk is NOT compatible** with these builds.
-4. Install the **[KernelSU Manager](https://github.com/tiann/KernelSU/releases)** (official manager; backslashxx/KernelSU speaks its protocol) and verify: root works, modules mount, `ksu_susfs` reports SUSFS **2.3.0**.
+4. Install the **[KernelSU Manager](https://github.com/tiann/KernelSU/releases)** (official manager; backslashxx/KernelSU speaks its protocol) and verify: root works, modules mount, `ksu_susfs` reports SUSFS **2.4.0**.
 
 > Unlike the `master` / `ReSuki_Luk` / `crdroid_Resuki` branches (BakaSU, official SUSFS inline hooks), this branch
 > tracks **[backslashxx/KernelSU](https://github.com/backslashxx/KernelSU)** — a leaner fork without SUSFS support,
@@ -33,7 +33,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Patches (Patches/)
 | File | Content | Applied by |
 |---|---|---|
-| `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
+| `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.4.0 kernel-side code | patch-susfs action |
 | `Patch/backslashxx_manual_hooks.patch` | Static call-site hooks for backslashxx (`ksu_handle_execveat/faccessat/stat/newfstat_ret/fstat64_ret/sys_reboot` + SUS_KSTAT / SPOOF_UNAME bits) | custom workflow step |
 | `Patch/backslashxx_susfs_bridge.patch` | SUSFS command dispatch into backslashxx: `ksu_handle_susfs_cmd()`, `SUSFS_MAGIC` routing, `susfs_init()`, sdcard monitor, `susfs_set_current_proc_umounted()` | custom workflow step (gated by `SUSFS_ENABLE`) |
 | `Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS subsystem (`fs/hybridmount`, keyring magic `"hm1"`) | custom workflow step (gated by `VFS_HYBRIDMOUNT`) |

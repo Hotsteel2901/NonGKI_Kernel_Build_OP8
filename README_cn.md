@@ -8,7 +8,7 @@
 | 组件 | 说明 |
 |---|---|
 | KernelSU (backslashxx) | **[backslashxx/KernelSU](https://github.com/backslashxx/KernelSU)** master, 固定 `4e6e9ff`。该分支**上游不支持 SUSFS**, 内核侧是**本仓库手写的桥接**, 不是 BakaSU 的官方 inline hook 那套。 |
-| SUSFS v2.3.0 | 官方 gki v2.3.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
+| SUSFS v2.4.0 | 官方 gki v2.4.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` 4.19 内置移植 (keyring 魔数 `"hm1"`), **默认开启** |
 | NoMount VFS | `fs/nomount` 内置集成, 走上游 `kernel/setup.sh` (keyring 魔数 `"NOMOUNT"`), 默认关闭 |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y |
@@ -26,7 +26,7 @@
    - 重启进入系统
    - 仅替换内核镜像, **不会清空** `/data`; 刷入前建议**备份原厂 `boot.img`** 以便回滚
    - 本包**与 Magisk 不兼容**, 请勿与 Magisk 一起刷入
-5. 安装 **[KernelSU Manager](https://github.com/tiann/KernelSU/releases)** (官方管理器, backslashxx/KernelSU 走它的协议) 并验证: root 正常, 模块可挂载, `ksu_susfs` 报告 SUSFS **2.3.0**.
+5. 安装 **[KernelSU Manager](https://github.com/tiann/KernelSU/releases)** (官方管理器, backslashxx/KernelSU 走它的协议) 并验证: root 正常, 模块可挂载, `ksu_susfs` 报告 SUSFS **2.4.0**.
 
 > 与 `master` / `ReSuki_Luk` / `crdroid_Resuki` (BakaSU, 官方 SUSFS inline hook) 不同, 本分支跟的是
 > **[backslashxx/KernelSU](https://github.com/backslashxx/KernelSU)** —— 更精简、不支持 SUSFS,
@@ -36,7 +36,7 @@
 
 | 文件 | 内容 | 应用时机 |
 |---|---|---|
-| `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
+| `Patches/Patch/susfs_patch_to_4.19.patch` | SUSFS v2.4.0 全部内核侧代码 (susfs.c/namei/namespace/proc/statfs/mm/kallsyms/avc/cmdline 等) | patch-susfs 动作 |
 | `Patches/Patch/backslashxx_manual_hooks.patch` | backslashxx 的静态调用点钩子: `ksu_handle_execveat/faccessat/stat/newfstat_ret/fstat64_ret/sys_reboot` (另含 fs/stat.c SUS_KSTAT 与 kernel/sys.c uname 伪装片段) | 工作流自定义步骤 |
 | `Patches/Patch/backslashxx_susfs_bridge.patch` | SUSFS 命令分发接入 backslashxx: `ksu_handle_susfs_cmd()` / `SUSFS_MAGIC` 路由 / `susfs_init()` / sdcard 监控 / `susfs_set_current_proc_umounted()` | 工作流自定义步骤 (受 `SUSFS_ENABLE` 控制) |
 | `Patches/Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS 子系统 (`fs/hybridmount`, keyring 魔数 `"hm1"`) | 工作流自定义步骤 (受 `VFS_HYBRIDMOUNT` 控制) |
@@ -151,7 +151,7 @@
 ## 已知限制
 
 - 构建需要 x86_64 环境 (GitHub Actions 默认 runner 即可)
-- SUSFS v2.3.0 的 OPEN_REDIRECT 实际重定向在 4.19 上不生效 (架构限制, 与官方一致)
+- SUSFS v2.4.0 的 OPEN_REDIRECT 实际重定向在 4.19 上不生效 (架构限制, 与官方一致)
 - 若使用本地构建 (非 GitHub Actions), 内存 ≥ 8G 且用 `make -j2` (手机本体构建严禁 -j8)
 
 ## 鸣谢

@@ -39,77 +39,15 @@ diff --git a/fs/stat.c b/fs/stat.c
 index 376543199b5a..48bb8af3c19f 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
-@@ -21,6 +21,15 @@
- #include <linux/uaccess.h>
- #include <asm/unistd.h>
+@@ -26,4 +26,8 @@
+ #endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
  
 +#ifdef CONFIG_KSU_SUSFS
 +#include <linux/susfs_def.h>
 +#endif // #ifdef CONFIG_KSU_SUSFS
 +
-+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+extern bool susfs_is_inode_sus_kstat(struct inode *inode, bool *out_is_fuse);
-+extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat, u32 result_mask);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+
  /**
   * generic_fillattr - Fill in the basic attributes from the inode struct
-  * @inode: Inode to use as the source
-@@ -75,9 +84,54 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
- 	stat->result_mask |= STATX_BASIC_STATS;
- 	request_mask &= STATX_ALL;
- 	query_flags &= KSTAT_QUERY_FLAGS;
-+
-+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+	if (susfs_is_current_app_uid()) {
-+		bool is_fuse = false;
-+		if (susfs_is_inode_sus_kstat(d_backing_inode(path->dentry), &is_fuse)) {
-+			if (!is_fuse) {
-+				// stat->mnt_id = real_mount(path->mnt)->mnt_id;
-+				// only for 5.10 kernel
-+				stat->result_mask |= STATX_SUS_KSTAT;
-+			}
-+			// stat->mnt_id = real_mount(path->mnt)->mnt_id;
-+			// only for 5.10 kernel
-+			stat->result_mask |= STATX_SUS_KSTAT_FUSE;
-+		}
-+	}
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+
- 	if (inode->i_op->getattr)
-+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+	{
-+		int err = inode->i_op->getattr(path, stat, request_mask,
-+					    query_flags);
-+		if (!err) {
-+			if (stat->result_mask & STATX_SUS_KSTAT) {
-+				susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT);
-+				return err;
-+			}
-+			if (stat->result_mask & STATX_SUS_KSTAT_FUSE) {
-+				susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT_FUSE);
-+			return err;
-+			}
-+		}
-+		return err;
-+	}
-+	if (stat->result_mask & STATX_SUS_KSTAT) {
-+		generic_fillattr(inode, stat);
-+		susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT);
-+		return 0;
-+	}
-+	if (stat->result_mask & STATX_SUS_KSTAT_FUSE) {
-+		generic_fillattr(inode, stat);
-+		susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT_FUSE);
-+		return 0;
-+	}
-+#else
- 		return inode->i_op->getattr(path, stat, request_mask,
- 					    query_flags);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
- 
- 	generic_fillattr(inode, stat);
- 	return 0;
 @@ -353,6 +407,11 @@ SYSCALL_DEFINE2(newlstat, const char __user *, filename,
  	return cp_new_stat(&stat, statbuf);
  }
@@ -206,28 +144,6 @@ diff --git a/kernel/sys.c b/kernel/sys.c
 index a19ddda6818f..5f0d4eebc9f2 100644
 --- a/kernel/sys.c
 +++ b/kernel/sys.c
-@@ -1240,12 +1240,21 @@ static int override_release(char __user *release, size_t len)
- 	return ret;
- }
- 
-+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-+extern struct static_key_false susfs_is_uname_spoof_buffer_set;
-+extern void susfs_spoof_uname(struct new_utsname* tmp);
-+#endif
-+
- SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
- {
- 	struct new_utsname tmp;
- 
- 	down_read(&uts_sem);
- 	memcpy(&tmp, utsname(), sizeof(tmp));
-+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-+	if (static_branch_likely(&susfs_is_uname_spoof_buffer_set))
-+		susfs_spoof_uname(&tmp);
-+#endif
- 	up_read(&uts_sem);
- 	if (copy_to_user(name, &tmp, sizeof(tmp)))
- 		return -EFAULT;
 @@ -1257,6 +1266,28 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
  	return 0;
  }

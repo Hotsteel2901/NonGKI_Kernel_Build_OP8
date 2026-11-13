@@ -85,13 +85,13 @@ jobs:
 
         | Device | Codename | Kernel | System | Android | Package | Root | SuSFS | Re:Kernel | BBG | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 (`lineage-23.2`) | LineageOS 23.2 / AOSP-based | 16 | AnyKernel3 | KernelSU (backslashxx) | v2.3.0 (hand-written bridge) | ✓ | ✓ | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19 (`lineage-23.2`) | LineageOS 23.2 / AOSP-based | 16 | AnyKernel3 | KernelSU (backslashxx) | v2.4.0 (hand-written bridge) | ✓ | ✓ | ✓ |
 
         **What is inside**
 
         - **Kernel source**: `LineageOS/android_kernel_oneplus_sm8250` @ `lineage-23.2`
         - **Root**: **backslashxx's KernelSU fork** (`xxksu`) with manual hooks, pinned to `4e6e9ff` (reported in Manager as version `32717`). This is **not** the BakaSU / ReSukiSU line.
-        - **SuSFS**: v2.3.0. The KernelSU side is a **hand-written bridge** maintained in this repo (not an upstream-provided hook), so it is re-ported against every KernelSU bump.
+        - **SuSFS**: v2.4.0. The KernelSU side is a **hand-written bridge** maintained in this repo (not an upstream-provided hook), so it is re-ported against every KernelSU bump.
         - **VFS backend**: **Hybrid Mount** *or* **NoMount** — mutually exclusive, only one is compiled in; printed in the installer title.
         - **Extras**: Re:Kernel-X, DroidSpaces, Baseband Guard (BBG)
 
@@ -120,13 +120,13 @@ jobs:
 
         | 设备 | 代号 | 内核 | 系统 | Android | 包格式 | Root | SuSFS | Re:Kernel | BBG | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19（`lineage-23.2`） | LineageOS 23.2 / 类原生 | 16 | AnyKernel3 | KernelSU（backslashxx） | v2.3.0（手写桥接） | ✓ | ✓ | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19（`lineage-23.2`） | LineageOS 23.2 / 类原生 | 16 | AnyKernel3 | KernelSU（backslashxx） | v2.4.0（手写桥接） | ✓ | ✓ | ✓ |
 
         **包含内容**
 
         - **内核源码**：`LineageOS/android_kernel_oneplus_sm8250` @ `lineage-23.2`
         - **Root**：**backslashxx 的 KernelSU 分支**（`xxksu`）+ 手动钩子，钉在 `4e6e9ff`（管理器里显示版本 `32717`）。**不是** BakaSU / ReSukiSU 那条线。
-        - **SuSFS**：v2.3.0。KernelSU 侧是本仓库**手写的桥接**（不是上游自带钩子），每次跟进 KernelSU 都要成对重移植。
+        - **SuSFS**：v2.4.0。KernelSU 侧是本仓库**手写的桥接**（不是上游自带钩子），每次跟进 KernelSU 都要成对重移植。
         - **VFS 后端**：**Hybrid Mount** 或 **NoMount**，二者互斥，内核里只会编进其中一个，实际以刷机包标题为准。
         - **附加组件**：Re:Kernel-X、DroidSpaces、Baseband Guard（BBG）
 
