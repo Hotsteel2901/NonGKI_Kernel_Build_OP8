@@ -93,7 +93,7 @@ tag 格式 `<分支名>-v<版本>-<unix 时间戳>`，指向**本次实际编译
 
 | 分支 | root 实现 | 产物 |
 |---|---|---|
-| `master` | BakaSU（官方 inline hooks）+ SUSFS v2.3.0 | AnyKernel3 |
+| `master` | BakaSU（官方 inline hooks）+ SUSFS v2.4.0 | AnyKernel3 |
 | `KSU` | backslashxx/KernelSU + **手写 SUSFS 桥接** | AnyKernel3 |
 | `ReSuki_Luk` | BakaSU + NoMount（luk 树适配） | AnyKernel3 |
 | `crdroid_Resuki` | BakaSU（crdroid 树，分 stage 构建） | AnyKernel3 |

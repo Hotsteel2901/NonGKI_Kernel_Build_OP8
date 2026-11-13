@@ -101,7 +101,7 @@ Tags are `<branch>-v<version>-<unix-ts>` and point at the commit that was actual
 
 | Branch | Root | Artifact |
 |---|---|---|
-| `master` | BakaSU (official inline hooks) + SUSFS v2.3.0 | AnyKernel3 |
+| `master` | BakaSU (official inline hooks) + SUSFS v2.4.0 | AnyKernel3 |
 | `KSU` | backslashxx/KernelSU + **hand-written SUSFS bridge** | AnyKernel3 |
 | `ReSuki_Luk` | BakaSU + NoMount (luk tree) | AnyKernel3 |
 | `crdroid_Resuki` | BakaSU (crdroid tree, staged builds) | AnyKernel3 |
