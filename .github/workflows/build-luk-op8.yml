@@ -333,19 +333,25 @@ jobs:
           # 但重命名了符号、换了自己的 wire magic（"HYBRIDMO"），两套元模块与工具链
           # 互不通用。二者只能选一个，构建开头的互斥校验会拦截同时开启。
           #
-          # NoMount 官方自带 kernel/setup.sh，做通用内核集成（symlink 到 fs/nomount
-          # + 接线 fs/Makefile / fs/Kconfig），不依赖内核版本。4.19 这类 legacy 内核
-          # 无法用上游预编译 .ko，必须源码集成 —— 这个脚本正是干这个的。
-          # 与本仓库 master/KSU 分支的集成方式保持一致，同上游 JackA1ltman 项目的用法。
+          # NoMount 官方自带 kernel/setup.sh，做通用内核集成：
+          #   1) git clone 到内核树内的 NoMount/（内部 checkout dev，git pull 更新）
+          #   2) 在 fs/ 下建 symlink  fs/nomount -> ../NoMount/kernel/src
+          #   3) 往 fs/Makefile 追加 obj-$(CONFIG_NOMOUNT) += nomount/
+          #   4) 在 fs/Kconfig 的最后一个 endmenu 前插入 source "fs/nomount/Kconfig"
+          # 不依赖内核版本。4.19 这类 legacy 内核无法用上游预编译 .ko，必须源码集成。
+          # 与 master/KSU 分支的集成方式一致，同上游 JackA1ltman 项目的用法。
+          #
+          # 注意（2026-11 上游变更）：源码目录从 kernel/ 下移到 kernel/src/，
+          # setup.sh 同时自己完成 Makefile/Kconfig 接线；下面的自检按新布局校验。
           curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
 
           # curl | bash 只反映 bash 的退出码，这里补上集成结果自检。
-          test -d fs/nomount || { echo "[-] fs/nomount missing (symlink not created)"; false; }
+          test -L fs/nomount || { echo "[-] fs/nomount is not a symlink (setup.sh did not run?)"; false; }
           test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; false; }
+          test -f fs/nomount/Kconfig || { echo "[-] fs/nomount/Kconfig missing"; false; }
           grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
           grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
-          echo "[+] NoMount VFS applied (built-in)."
-
+          echo "[+] NoMount VFS applied (built-in, $(readlink fs/nomount))."
       - name: 💿 Apply DroidSpaces (cocci + 配置)
         if: inputs.enable_droidspaces
         run: |
