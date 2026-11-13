@@ -72,7 +72,7 @@ env:
   # 这里只给静态部分（不含 VFS），避免标题与实际集成内容不一致。
   # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
   # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
-  AK3_TITLE_PREFIX: "BakaSU (Master) + SUSFS v2.3.0"
+  AK3_TITLE_PREFIX: "BakaSU (Master) + SUSFS v2.4.0"
   AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
