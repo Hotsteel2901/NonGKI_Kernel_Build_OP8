@@ -7,19 +7,19 @@
 
 | 分支 | 内核源码 | Root | 包格式 | 目标系统 |
 |---|---|---|---|---|
-| `master` | [LineageOS/android_kernel_oneplus_sm8250](https://github.com/LineageOS/android_kernel_oneplus_sm8250) @ `lineage-23.2` | BakaSU + SuSFS v2.3.0（内置） | AnyKernel3 | LineageOS 23.2 / 类原生 Android 16 |
+| `master` | [LineageOS/android_kernel_oneplus_sm8250](https://github.com/LineageOS/android_kernel_oneplus_sm8250) @ `lineage-23.2` | BakaSU + SuSFS v2.4.0（内置） | AnyKernel3 | LineageOS 23.2 / 类原生 Android 16 |
 | `KSU` | 同 `master` | backslashxx 的 KernelSU（`4e6e9ff`）+ 手写 SuSFS 桥接 | AnyKernel3 | 同 `master` |
 | `Pure` | 同 `master` | **无** | **HotSPatch1**（电脑端替换 boot.img，不是 AK3） | 同 `master`，之后自行用 Magisk / APatch 修补 |
 | `ReSuki_Luk` | [luk1337/android_kernel_oneplus_sm8250](https://github.com/luk1337/android_kernel_oneplus_sm8250) @ `luk` | BakaSU | AnyKernel3 | 类原生 **与** OOS |
 | `crdroid_Resuki` | [crdroidandroid/android_kernel_oneplus_sm8250](https://github.com/crdroidandroid/android_kernel_oneplus_sm8250) @ `16.0` | BakaSU | AnyKernel3 | crDroid 16（stage1/2/3） |
-| `TropsPK` | [TropsPk/Tropsi_X_Kernel_SM8250](https://github.com/TropsPk/Tropsi_X_Kernel_SM8250) @ `Staging` | BakaSU + SuSFS v2.3.0（内置） | AnyKernel3 | 类原生 **与** OOS / ColorOS |
+| `TropsPK` | [TropsPk/Tropsi_X_Kernel_SM8250](https://github.com/TropsPk/Tropsi_X_Kernel_SM8250) @ `Staging` | BakaSU + SuSFS v2.4.0（内置） | AnyKernel3 | 类原生 **与** OOS / ColorOS |
 
 ## 集成内容
 
 | 组件 | 说明 |
 |---|---|
 | BakaSU | KernelSU 分支 (原 ReSukiSU), CONFIG_KSU_SUSFS (inline hook) 模式 |
-| SUSFS v2.3.0 | 官方 gki v2.3.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
+| SUSFS v2.4.0 | 官方 gki v2.4.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` 4.19 内置移植 (keyring 魔数 `"hm1"`), **默认开启** |
 | NoMount VFS | `fs/nomount` 内置集成, 走上游 `kernel/setup.sh` (keyring 魔数 `"NOMOUNT"`), 默认关闭 |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y。**`TropsPK` 分支不集成**：该内核自带 OPLUS HANS，NoActive 会自动 hook，rkx 与之间功能重叠 |
@@ -37,7 +37,7 @@
    - 重启进入系统
    - 仅替换内核镜像, **不会清空** `/data`; 刷入前建议**备份原厂 `boot.img`** 以便回滚
    - 本包**与 Magisk 不兼容**, 请勿与 Magisk 一起刷入
-5. 安装 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** 并验证: 显示 **SUSFS 2.3.0**, 授权/模块功能正常.
+5. 安装 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** 并验证: 显示 **SUSFS 2.4.0**, 授权/模块功能正常.
 
 > 上游 ReSukiSU 项目已更名/迁移为 **[BakaSU](https://github.com/Baka-SU/BakaSU)** (原 `ReSukiSU/ReSukiSU`
 > 组织已归档; GitHub 保留永久重定向, 旧地址仍可访问)。本仓库现已直接指向新地址。

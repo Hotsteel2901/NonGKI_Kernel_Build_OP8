@@ -2,9 +2,9 @@ diff --git a/drivers/input/input.c b/drivers/input/input.c
 index 70ffffea3e58..cc1e6927ec2b 100644
 --- a/drivers/input/input.c
 +++ b/drivers/input/input.c
-@@ -378,11 +378,21 @@ static int input_get_disposition(struct input_dev *dev,
- 	return disposition;
- }
+@@ -371,11 +371,21 @@
+ extern void __attribute__((weak)) oplus_sync_saupwk_event(unsigned int , unsigned int , int);
+ #endif /* OPLUS_FEATURE_SAUPWK */
  
 +#ifdef CONFIG_KSU_SUSFS
 +extern struct static_key_true ksu_is_input_hook_enabled;
@@ -21,9 +21,9 @@ index 70ffffea3e58..cc1e6927ec2b 100644
 +		ksu_handle_input_handle_event(&type, &code, &value);
 +#endif
 +
- 	if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
- 		add_input_randomness(type, code, value);
- 
+ #ifdef OPLUS_FEATURE_SAUPWK
+ 	if(oplus_sync_saupwk_event)
+         oplus_sync_saupwk_event(type, code, value);
 diff --git a/fs/exec.c b/fs/exec.c
 index eef84ebcac53..f13fb1b879fa 100644
 --- a/fs/exec.c
@@ -98,7 +98,6 @@ index eef84ebcac53..f13fb1b879fa 100644
  	kfree(pathbuf);
  	if (filename)
 diff --git a/fs/open.c b/fs/open.c
-index 13d70db567e0..c0e893df1558 100644
 --- a/fs/open.c
 +++ b/fs/open.c
 @@ -32,6 +32,10 @@
@@ -110,9 +109,9 @@ index 13d70db567e0..c0e893df1558 100644
 +#endif
 +
  #include "internal.h"
- #include <trace/hooks/syscall_check.h>
  
-@@ -354,6 +358,13 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
+ int do_truncate2(struct vfsmount *mnt, struct dentry *dentry, loff_t length,
+@@ -353,6 +357,18 @@
   * We do this by temporarily clearing all FS-related capabilities and
   * switching the fsuid/fsgid around to the real ones.
   */
@@ -126,7 +125,7 @@ index 13d70db567e0..c0e893df1558 100644
  long do_faccessat(int dfd, const char __user *filename, int mode)
  {
  	const struct cred *old_cred;
-@@ -363,6 +374,9 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+@@ -362,6 +378,9 @@
  	struct vfsmount *mnt;
  	int res;
  	unsigned int lookup_flags = LOOKUP_FOLLOW;
@@ -136,7 +135,7 @@ index 13d70db567e0..c0e893df1558 100644
  
  	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
  		return -EINVAL;
-@@ -405,7 +419,23 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+@@ -404,7 +423,23 @@
  
  	old_cred = override_creds(override_cred);
  retry:
@@ -183,83 +182,28 @@ index ec2d20ddd766..df80acd730f9 100644
  }
  
 diff --git a/fs/stat.c b/fs/stat.c
-index 376543199b5a..aafaec209593 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
-@@ -21,6 +21,16 @@
- #include <linux/uaccess.h>
- #include <asm/unistd.h>
+@@ -26,6 +26,18 @@
+ extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat, u32 result_mask);
+ #endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
  
 +#ifdef CONFIG_KSU_SUSFS
 +#include <linux/susfs_def.h>
 +#include "internal.h"
-+
-+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+extern bool susfs_is_inode_sus_kstat(struct inode *inode, bool *out_is_fuse);
-+extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat, u32 result_mask);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++#endif // #ifdef CONFIG_KSU_SUSFS
++#ifdef CONFIG_KSU_SUSFS
++extern struct static_key_true ksu_is_init_rc_hook_enabled;
++extern void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr);
++extern struct static_key_true ksu_su_compat_enabled;
++extern bool __ksu_is_allow_uid_for_current(uid_t uid);
++extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
 +#endif // #ifdef CONFIG_KSU_SUSFS
 +
  /**
   * generic_fillattr - Fill in the basic attributes from the inode struct
   * @inode: Inode to use as the source
-@@ -75,9 +85,54 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
- 	stat->result_mask |= STATX_BASIC_STATS;
- 	request_mask &= STATX_ALL;
- 	query_flags &= KSTAT_QUERY_FLAGS;
-+
-+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+	if (susfs_is_current_app_uid()) {
-+		bool is_fuse = false;
-+		if (susfs_is_inode_sus_kstat(d_backing_inode(path->dentry), &is_fuse)) {
-+			if (!is_fuse) {
-+				// stat->mnt_id = real_mount(path->mnt)->mnt_id;
-+				// only for 5.10 kernel
-+				stat->result_mask |= STATX_SUS_KSTAT;
-+			}
-+			// stat->mnt_id = real_mount(path->mnt)->mnt_id;
-+			// only for 5.10 kernel
-+			stat->result_mask |= STATX_SUS_KSTAT_FUSE;
-+		}
-+	}
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+
- 	if (inode->i_op->getattr)
-+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-+	{
-+		int err = inode->i_op->getattr(path, stat, request_mask,
-+			query_flags);
-+		if (!err) {
-+			if (stat->result_mask & STATX_SUS_KSTAT) {
-+				susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT);
-+				return err;
-+			}
-+			if (stat->result_mask & STATX_SUS_KSTAT_FUSE) {
-+				susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT_FUSE);
-+				return err;
-+			}
-+		}
-+		return err;
-+	}
-+	if (stat->result_mask & STATX_SUS_KSTAT) {
-+		generic_fillattr(inode, stat);
-+		susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT);
-+		return 0;
-+	}
-+	if (stat->result_mask & STATX_SUS_KSTAT_FUSE) {
-+		generic_fillattr(inode, stat);
-+		susfs_sus_kstat_spoof_generic_fillattr(inode, stat, STATX_SUS_KSTAT_FUSE);
-+		return 0;
-+	}
-+#else
- 		return inode->i_op->getattr(path, stat, request_mask,
--					    query_flags);
-+			query_flags);
-+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
- 
- 	generic_fillattr(inode, stat);
- 	return 0;
-@@ -129,6 +184,10 @@ EXPORT_SYMBOL(vfs_getattr);
+@@ -179,6 +191,10 @@
   *
   * 0 will be returned on success, and a -ve error code if unsuccessful.
   */
@@ -270,7 +214,7 @@ index 376543199b5a..aafaec209593 100644
  int vfs_statx_fd(unsigned int fd, struct kstat *stat,
  		 u32 request_mask, unsigned int query_flags)
  {
-@@ -142,6 +201,10 @@ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
+@@ -192,6 +208,10 @@
  	if (f.file) {
  		error = vfs_getattr(&f.file->f_path, stat,
  				    request_mask, query_flags);
@@ -281,7 +225,7 @@ index 376543199b5a..aafaec209593 100644
  		fdput(f);
  	}
  	return error;
-@@ -163,12 +226,20 @@ EXPORT_SYMBOL(vfs_statx_fd);
+@@ -213,12 +233,20 @@
   *
   * 0 will be returned on success, and a -ve error code if unsuccessful.
   */
@@ -302,7 +246,7 @@ index 376543199b5a..aafaec209593 100644
  
  	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
  		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
-@@ -182,7 +253,23 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
+@@ -232,7 +260,23 @@
  		lookup_flags |= LOOKUP_EMPTY;
  
  retry:
@@ -353,10 +297,9 @@ index 3a87fee47d3a..d485f915a85f 100644
  	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
  		return -EPERM;
 diff --git a/kernel/sys.c b/kernel/sys.c
-index fa98ba2e9e39..389b0a38afa9 100644
 --- a/kernel/sys.c
 +++ b/kernel/sys.c
-@@ -623,6 +623,10 @@ SYSCALL_DEFINE1(setuid, uid_t, uid)
+@@ -635,6 +635,10 @@
   * This function implements a generic ability to update ruid, euid,
   * and suid.  This allows you to implement the 4.4 compatible seteuid().
   */
@@ -367,7 +310,7 @@ index fa98ba2e9e39..389b0a38afa9 100644
  long __sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
  {
  	struct user_namespace *ns = current_user_ns();
-@@ -631,6 +635,10 @@ long __sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+@@ -643,6 +647,10 @@
  	int retval;
  	kuid_t kruid, keuid, ksuid;
  
@@ -378,24 +321,3 @@ index fa98ba2e9e39..389b0a38afa9 100644
  	kruid = make_kuid(ns, ruid);
  	keuid = make_kuid(ns, euid);
  	ksuid = make_kuid(ns, suid);
-@@ -1240,12 +1248,20 @@ static int override_release(char __user *release, size_t len)
- 	return ret;
- }
- 
-+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-+extern struct static_key_false susfs_is_uname_spoof_buffer_set;
-+extern void susfs_spoof_uname(struct new_utsname* tmp);
-+#endif
- SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
- {
- 	struct new_utsname tmp;
- 
- 	down_read(&uts_sem);
- 	memcpy(&tmp, utsname(), sizeof(tmp));
-+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-+	if (static_branch_likely(&susfs_is_uname_spoof_buffer_set))
-+		susfs_spoof_uname(&tmp);
-+#endif
- 	up_read(&uts_sem);
- 	if (copy_to_user(name, &tmp, sizeof(tmp)))
- 		return -EFAULT;

@@ -53,7 +53,7 @@ runs:
         shell: bash
         run: |
           cd $GITHUB_WORKSPACE/device_kernel/
-          SUSFS_VERSION="2.2.00"
+          SUSFS_VERSION="2.4.00"
 
           PACK_FILES(){
             temp_dir=$(mktemp -d)

@@ -91,7 +91,7 @@ jobs:
 
         | Device | Codename | Kernel | System | Android | Package | Root | SuSFS | Re:Kernel | BBG | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19.157 (`Tropsi-X` @ `Staging`) | Custom ROMs **and** OOS / ColorOS | 16 | AnyKernel3 | BakaSU | v2.3.0 (in-tree) | — | ✓ | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19.157 (`Tropsi-X` @ `Staging`) | Custom ROMs **and** OOS / ColorOS | 16 | AnyKernel3 | BakaSU | v2.4.0 (in-tree) | — | ✓ | ✓ |
 
         **What is inside**
 
@@ -99,7 +99,7 @@ jobs:
           This tree is derived from the OOS kernel and **keeps the full OPLUS driver set** (`oplus/`, `techpack/`, `oplus-stock_defconfig`), while `kona-perf_defconfig` is used for the AOSP/perf build — so **one artifact is intended to work on both custom ROMs and OOS**.
           Device projects included: 19811 (OnePlus 8), 19805 (8 Pro), 19821 (8T), 19855 (9R).
         - **Root**: BakaSU, built in with its official SuSFS inline hooks — pair it with **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
-        - **SuSFS**: v2.3.0, compiled into the kernel (not a loadable module)
+        - **SuSFS**: v2.4.0, compiled into the kernel (not a loadable module)
         - **VFS backend**: **Hybrid Mount** *or* **NoMount** — mutually exclusive, only one is compiled in. The backend actually included is printed in the installer title.
         - **Extras**: DroidSpaces, Baseband Guard (BBG)
         - **Scheduling / freezing**: this kernel ships the **OPLUS HANS** driver (`CONFIG_OPLUS_HANS=y` in both `kona-perf_defconfig` and `oplus-stock_defconfig`). **NoActive hooks HANS automatically**, so **Re:Kernel-X is intentionally NOT included** — its binder async-transaction cleanup overlaps with HANS/NoActive and stacking both risks interfering with each other.
@@ -128,7 +128,7 @@ jobs:
 
         | 设备 | 代号 | 内核 | 系统 | Android | 包格式 | Root | SuSFS | Re:Kernel | BBG | DroidSpace |
         |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19.157（`Tropsi-X` @ `Staging`） | 类原生 **与** OOS / ColorOS | 16 | AnyKernel3 | BakaSU | v2.3.0（内置） | — | ✓ | ✓ |
+        | OnePlus 8 | instantnoodle | 4.19.157（`Tropsi-X` @ `Staging`） | 类原生 **与** OOS / ColorOS | 16 | AnyKernel3 | BakaSU | v2.4.0（内置） | — | ✓ | ✓ |
 
         **包含内容**
 
@@ -136,7 +136,7 @@ jobs:
           该树由 OOS 内核衍生，**保留完整的 OPLUS 驱动集**（`oplus/`、`techpack/`、`oplus-stock_defconfig`），而构建走 `kona-perf_defconfig` 的 AOSP/性能配置 —— 因此**同一份产物面向类原生与 OOS 双系统**。
           包含的机型 project：19811（OnePlus 8）、19805（8 Pro）、19821（8T）、19855（9R）。
         - **Root**：BakaSU，使用其官方 SuSFS inline 钩子内置集成 —— 请搭配 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
-        - **SuSFS**：v2.3.0，直接编进内核（不是外置模块）
+        - **SuSFS**：v2.4.0，直接编进内核（不是外置模块）
         - **VFS 后端**：**Hybrid Mount** 或 **NoMount**，二者互斥，内核里只会编进其中一个。实际集成的是哪个，请以刷机包标题为准。
         - **附加组件**：DroidSpaces、Baseband Guard（BBG）
         - **调度 / 冻结**：本内核自带 **OPLUS HANS** 驱动（`kona-perf_defconfig` 与 `oplus-stock_defconfig` 两份配置均为 `CONFIG_OPLUS_HANS=y`）。**NoActive 会自动 hook 到 HANS**，因此本分支**刻意不集成 Re:Kernel-X** —— rkx 的 binder 异步事务清理与该机制功能重叠，叠加反而可能互相干扰。

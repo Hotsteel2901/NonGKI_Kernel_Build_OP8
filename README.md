@@ -8,18 +8,18 @@ Chinese docs: [README_cn.md](README_cn.md)
 
 | Branch | Kernel source | Root | Package | Target |
 |---|---|---|---|---|
-| `master` | [LineageOS/android_kernel_oneplus_sm8250](https://github.com/LineageOS/android_kernel_oneplus_sm8250) @ `lineage-23.2` | BakaSU + SuSFS v2.3.0 (in-tree) | AnyKernel3 | LineageOS 23.2 / AOSP-based Android 16 |
+| `master` | [LineageOS/android_kernel_oneplus_sm8250](https://github.com/LineageOS/android_kernel_oneplus_sm8250) @ `lineage-23.2` | BakaSU + SuSFS v2.4.0 (in-tree) | AnyKernel3 | LineageOS 23.2 / AOSP-based Android 16 |
 | `KSU` | same as `master` | backslashxx's KernelSU (`4e6e9ff`) + hand-written SuSFS bridge | AnyKernel3 | same as `master` |
 | `Pure` | same as `master` | **none** | **HotSPatch1** (PC-side boot.img patcher, not AK3) | same as `master`, patch with Magisk / APatch afterwards |
 | `ReSuki_Luk` | [luk1337/android_kernel_oneplus_sm8250](https://github.com/luk1337/android_kernel_oneplus_sm8250) @ `luk` | BakaSU | AnyKernel3 | Custom ROMs **and** OOS |
 | `crdroid_Resuki` | [crdroidandroid/android_kernel_oneplus_sm8250](https://github.com/crdroidandroid/android_kernel_oneplus_sm8250) @ `16.0` | BakaSU | AnyKernel3 | crDroid 16 (stage1/2/3) |
-| `TropsPK` | [TropsPk/Tropsi_X_Kernel_SM8250](https://github.com/TropsPk/Tropsi_X_Kernel_SM8250) @ `Staging` | BakaSU + SuSFS v2.3.0 (in-tree) | AnyKernel3 | Custom ROMs **and** OOS / ColorOS |
+| `TropsPK` | [TropsPk/Tropsi_X_Kernel_SM8250](https://github.com/TropsPk/Tropsi_X_Kernel_SM8250) @ `Staging` | BakaSU + SuSFS v2.4.0 (in-tree) | AnyKernel3 | Custom ROMs **and** OOS / ColorOS |
 
 ## Integrations
 | Component | Note |
 |---|---|
 | BakaSU | KernelSU fork (formerly ReSukiSU), CONFIG_KSU_SUSFS (inline hook) mode |
-| SUSFS v2.3.0 | Official gki v2.3.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
+| SUSFS v2.4.0 | Official gki v2.4.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
 | NoMount VFS | `fs/nomount` built-in via upstream `kernel/setup.sh` (keyring magic `"NOMOUNT"`), off by default |
 | ReKernel-X | v9.2 4.19 移植 (内置驱动), CONFIG_REKERNEL_X=y。**`TropsPK` 分支不集成**：该内核自带 OPLUS HANS，NoActive 会自动 hook，rkx 与之间功能重叠 |
@@ -35,7 +35,7 @@ Chinese docs: [README_cn.md](README_cn.md)
    - Reboot to **System**
    - The kernel image is the only thing replaced — `/data` is **not** wiped. Back up your stock `boot.img` first so you can roll back.
    - **Magisk is NOT compatible** with these builds.
-4. Install **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** and verify in it: SUSFS version **2.3.0**, allowlist & modules working.
+4. Install **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** and verify in it: SUSFS version **2.4.0**, allowlist & modules working.
 
 > The upstream ReSukiSU project has been renamed/migrated to **[BakaSU](https://github.com/Baka-SU/BakaSU)** (the old
 > `ReSukiSU/ReSukiSU` org is archived; GitHub keeps permanent redirects, so old URLs still resolve). This repo now
@@ -44,7 +44,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Patches (Patches/)
 | File | Content | Applied by |
 |---|---|---|
-| `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.3.0 kernel-side code | patch-susfs action |
+| `Patch/susfs_patch_to_4.19.patch` | SUSFS v2.4.0 kernel-side code | patch-susfs action |
 | `Patch/resukisu_inline_hooks.patch` | BakaSU SUSFS inline hooks: exec / open / read_write / stat / input / reboot / setresuid (+ SUS_KSTAT / SPOOF_UNAME bits) | custom workflow step |
 | `Patch/hybridmount_patch_to_4.19.patch` | Hybrid Mount VFS subsystem (`fs/hybridmount`, keyring magic `"hm1"`) | custom workflow step (gated by `VFS_HYBRIDMOUNT`) |
 | *(NoMount)* | no in-repo patch — pulled from upstream `kernel/setup.sh` | custom workflow step (gated by `VFS_NOMOUNT`) |
