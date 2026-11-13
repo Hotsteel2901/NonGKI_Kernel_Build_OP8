@@ -1,0 +1,982 @@
+name: Build crDroid OnePlus 8 Kernel (BakaSU + SUSFS + DroidSpaces)
+
+# ============================================================================
+# crDroid 独占工作流
+#
+# 目标内核: crdroidandroid/android_kernel_oneplus_sm8250 @ 16.0
+# 集成组件: BakaSU (原 ReSukiSU) -> SUSFS v2.4.0 -> DroidSpaces (循序渐进, 用 stage 控制)
+#
+# 本工作流与仓库中原有的 LineageOS 工作流完全独立:
+#   - 不修改、不引用 build-kernel.yml / build-release.yml / 任何 composite action
+#   - 仅在 crdroid 分支上新增本文件
+#
+# 本地已验证: 三个 stage 均完整编译通过 (Image 54845456 B, dtb.img 1428199 B)
+# ============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: '构建阶段: stage1=仅BakaSU / stage2=+SUSFS / stage3=+DroidSpaces'
+        required: true
+        type: choice
+        default: 'stage3'
+        options:
+          - stage1
+          - stage2
+          - stage3
+      kernel_ref:
+        description: '内核提交 (留空则用分支最新; 本地验证基准为 d5040872497a)'
+        required: false
+        type: string
+        default: ''
+
+      susfs_enable:
+        description: '集成 SUSFS (默认开启; 关闭则 stage2/3 不集成 SUSFS)'
+        required: true
+        type: boolean
+        default: true
+
+      # ─────────────────────────────────────────────────────────────────────
+      # VFS 路径重定向后端（二选一，互斥！）
+      # ─────────────────────────────────────────────────────────────────────
+      # HybridMount / NoMount 都劫持同一层 VFS，且各自使用
+      # 独立不兼容的 keyring 协议，最多只能开一个，各 stage 开头有互斥校验。
+      # 注意: stage1 仅集成 BakaSU，不含任何 VFS 后端，这三个开关只在
+      # stage2 / stage3 生效（stage1 会跳过校验）。
+      vfs_hybridmount:
+        description: 'VFS 后端: Hybrid Mount (默认开启; stage2/3 生效)'
+        required: true
+        type: boolean
+        default: true
+      vfs_nomount:
+        description: 'VFS 后端: NoMount (与 Hybrid Mount 互斥; stage2/3 生效)'
+        required: true
+        type: boolean
+        default: false
+
+env:
+  DEVICE_NAME: "oneplus_8"
+  DEVICE_CODENAME: "instantnoodle"
+
+  # AK3 刷机包在 recovery 里显示的标题行。
+  # 格式: 管理器（分支名） + 集成内容 Built By hotsteel
+  # 本分支三段式构建，各 stage 的标题如实反映该 stage 实际集成的组件
+  # （本分支未集成 ReKernel-X / Baseband Guard，故不出现在标题里）。
+  #
+  # 标题拆成 PREFIX + [VFS 段] + SUFFIX 三段组装：
+  # VFS 段由各 stage 的 Validate 步骤按**实际启用**的后端动态拼进去，
+  # 这样关了 HybridMount 就不会再出现 "Hybrid Mount VFS"，
+  # 避免标题与实际集成内容不一致。
+  # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
+  # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
+  #
+  # Stage1 不含 VFS（仅 BakaSU），故无 PREFIX/SUFFIX 拆分，标题为固定值。
+  AK3_TITLE_STAGE1: "BakaSU (crdroid) Built By hotsteel"
+  AK3_TITLE_STAGE2_PREFIX: "BakaSU (crdroid) + SUSFS v2.4.0"
+  AK3_TITLE_STAGE2_SUFFIX: "Built By hotsteel"
+  AK3_TITLE_STAGE3_PREFIX: "BakaSU (crdroid) + SUSFS v2.4.0"
+  AK3_TITLE_STAGE3_SUFFIX: "+ DroidSpaces Built By hotsteel"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # VFS 路径重定向后端（二选一，互斥！）
+  # ─────────────────────────────────────────────────────────────────────────
+  # 这三个都工作在同一个内核层（劫持 inode_operations / file_operations /
+  # dentry_operations），并各自使用**独立且不兼容的 keyring 协议**
+  # （HybridMount 用 "hm1" / NoMount 用 "NOMOUNT"）。
+  # 上游 Hybrid Mount 的 Kconfig 里就明确写了：
+  #   "not compatible with NoMount's metamodule or its tooling"
+  # 同时开启会让两套驱动抢同一层 hook，轻则元模块认不到内核、重则崩溃。
+  # 因此**最多只能开一个**，各 stage 开头有互斥校验，开了多个直接 fail。
+  #
+  # 注意: 本分支 stage1 仅集成 BakaSU，不含任何 VFS 后端，
+  # 因此这三个开关只在 stage2 / stage3 生效（stage1 会跳过校验）。
+  #
+  # 开关定义在文件头部的 workflow_dispatch.inputs（UI 控件），
+  # 各 stage 的 Validate 步骤直接读 inputs.vfs_*。
+  # 本文件是 workflow_dispatch 独占入口，inputs 始终存在，无需 env 兜底，
+  # 故这里**故意不定义 VFS_* env** —— 避免出现第二份"看起来像默认值"的
+  # 配置，防止误改 env 却毫无效果（这正是上一轮 UI 不显示问题的成因）。
+  #
+  # 默认: HybridMount 开, 其余关（HybridMount 是本仓库长期验证过的组合）。
+
+  # crDroid 内核源 (Android 16 分支)
+  KERNEL_SOURCE: "https://github.com/crdroidandroid/android_kernel_oneplus_sm8250.git"
+  KERNEL_BRANCH: "16.0"
+
+  # 工具链: 与本地验证环境一致 (clang 19 + aarch64 gcc)
+  CLANG_VERSION: "19.1.7"
+  DEFCONFIG_NAME: "vendor/kona-perf_defconfig"
+  ROM_TEXT: "crdroid16_a16"
+
+  # BakaSU（原 ReSukiSU，Baka-SU/BakaSU，原组织已归档）固定提交，避免 main 漂移破坏符号契约。
+  # 迁移后 git 历史完整保留，fa1da13 在新仓库中依然有效（已核实）。
+  # 官方公告: 旧链接不受影响, 请求会自动重定向到新地址; 此处直接用新地址。
+  # 安装命令 (迁移后新址): curl -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash
+  KSU_REPO: "https://github.com/Baka-SU/BakaSU.git"
+  KSU_COMMIT: "fa1da13"
+
+permissions:
+  contents: write
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Stage 1: 仅 BakaSU
+  # --------------------------------------------------------------------------
+  # 注意: job id "stage1-resukisu" 沿用旧拼写 —— 它与补丁文件名
+  # Patches/crdroid/0001-stage1-resukisu.patch 以及下游 4 处引用耦合,
+  # 改名收益不大而风险不小, 故保持不动。显示名 (name:) 已是 BakaSU。
+  stage1-resukisu:
+    name: "Stage1: BakaSU"
+    # 钉 24.04：本工作流用官方 LLVM 19.1.7 预编译包，其动态依赖是 noble 时代的
+    # ABI（libxml2.so.2 / libicuuc.so.74）。26.04 上 ld.lld 直接起不来。
+    runs-on: ubuntu-24.04
+    if: inputs.stage == 'stage1' || inputs.stage == 'stage2' || inputs.stage == 'stage3'
+    outputs:
+      image_size: ${{ steps.build.outputs.image_size }}
+    steps:
+      - name: ⏰ Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: 💾 Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h
+
+      - name: 🧰 Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
+            device-tree-compiler ccache cpio rsync zip unzip bc python3 \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+
+          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2。26.04 里这个 soname
+          # 没了（包名也变成 libxml2-16），不处理就会在 vdso 阶段死：
+          #   ld.lld: error while loading shared libraries: libxml2.so.2
+          #   make[2]: *** [arch/arm64/kernel/vdso/Makefile:65: vdso.so.dbg] Error 127
+          # 而 ld.lld 只认 libxml2.so.2，所以不装系统包，直接从 24.04(noble)
+          # 归档取一份 compat 库单独放到 /opt/llvm-compat，用 LD_LIBRARY_PATH 喂给
+          # ld.lld —— 系统自带的 libxml2 一动不动。
+          # 所有 curl 都必须带 --max-time：runner 到 archive.ubuntu.com 偶发卡死，
+          # 没有超时就是无限等（表现为这一步几十分钟没有任何输出）。
+          if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
+            echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
+            sudo mkdir -p /opt/llvm-compat/lib
+            BASE=http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/
+            FILE=$(curl -fsSL --connect-timeout 15 --max-time 60 "$BASE" \
+                   | grep -o 'libxml2_2\.9\.14[^"]*_amd64\.deb' | sort -uV | tail -n1)
+            if [ -z "$FILE" ]; then
+              echo "[-] cannot resolve libxml2 deb name from $BASE"
+              false
+            fi
+            echo "[i] using $FILE"
+            curl -fsSL --connect-timeout 15 --max-time 120 --retry 2 -o /tmp/libxml2.deb "$BASE$FILE" || {
+              echo "[-] download failed: $BASE$FILE"; false; }
+            dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
+            sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
+            test -e /opt/llvm-compat/lib/libxml2.so.2 || { echo "[-] compat lib missing after copy"; false; }
+            echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
+            echo "[+] compat libxml2 installed: $(ls /opt/llvm-compat/lib)"
+          else
+            echo "[+] libxml2.so.2 present"
+          fi
+
+      - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
+        run: |
+          curl -L --retry 3 -o llvm.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${CLANG_VERSION}/LLVM-${CLANG_VERSION}-Linux-X64.tar.xz"
+          mkdir -p /opt/llvm
+          tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
+          echo "/opt/llvm/bin" >> $GITHUB_PATH
+          /opt/llvm/bin/clang --version
+          /opt/llvm/bin/ld.lld --version || {
+            echo "[-] /opt/llvm/bin/ld.lld cannot run (missing shared library?)"
+            ldd /opt/llvm/bin/ld.lld || true
+            false
+          }
+
+      - name: 📥 Clone crDroid kernel
+        run: |
+          git clone --depth=1 "$KERNEL_SOURCE" -b "$KERNEL_BRANCH" device_kernel
+          cd device_kernel
+          if [ -n "${{ inputs.kernel_ref }}" ]; then
+            git fetch --depth=1 origin "${{ inputs.kernel_ref }}" && git checkout FETCH_HEAD
+          fi
+          git log --oneline -1
+          echo "-g$(git rev-parse --short HEAD)-crdroid" > .scmversion
+
+      - name: 📥 Setup BakaSU
+        run: |
+          cd device_kernel
+          git clone "$KSU_REPO" KernelSU
+          cd KernelSU && git checkout "$KSU_COMMIT" && cd ..
+          ln -sf ../KernelSU/kernel drivers/kernelsu
+          grep -q "kernelsu" drivers/Makefile || \
+            printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
+            sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+          # 去掉版本串里的 "-dirty"（仅显示层，KSU_VERSION 不受影响）：
+          # BakaSU 的 kernel/Kbuild 用 `git diff-index --quiet HEAD` 判断工作区，
+          # 我们后面要打 stage1/stage2 补丁，git 必然判 dirty，管理器就会显示
+          # "v4.2.0-rc3-xxxxxxxx-dirty"。删掉 ifneq / ...-dirty / endif 三行即可；
+          # 找不到该结构（上游改版）就跳过，绝不让构建失败。
+          KSU_KBUILD="drivers/kernelsu/Kbuild"
+          if [ -f "$KSU_KBUILD" ]; then
+            LINE=$(grep -n 'KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)-dirty' "$KSU_KBUILD" | cut -d: -f1 | head -1)
+            if [ -n "$LINE" ] \
+               && sed -n "$((LINE - 1))p" "$KSU_KBUILD" | grep -q 'diff-index --quiet HEAD' \
+               && [ "$(sed -n "$((LINE + 1))p" "$KSU_KBUILD" | tr -d '[:space:]')" = "endif" ]; then
+              sed -i "$((LINE - 1)),$((LINE + 1))d" "$KSU_KBUILD"
+              echo "[+] Stripped -dirty from BakaSU version string."
+            else
+              echo "[i] -dirty marker not found (already clean / upstream changed) - skip."
+            fi
+          fi
+          echo "[+] BakaSU wired."
+
+      - name: 🔗 Apply Stage1 patch (BakaSU inline hooks)
+        run: |
+          cd device_kernel
+          patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
+          echo "[+] Stage1 patch applied."
+
+      - name: 🚀 Build kernel (Stage1)
+        id: build
+        run: |
+          cd device_kernel
+          export PATH=/opt/llvm/bin:$PATH
+          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            arch/arm64/configs/vendor/oplus.config
+          # Stage1 = 仅 BakaSU（手动钩子）。BakaSU 钩子方式是三选一 choice
+          # (TRACEPOINT/MANUAL/SUSFS)，0001 已写 MANUAL_HOOK=y；这里确定 manual=y、SUSFS=n。
+          sed -i '/^CONFIG_KSU_MANUAL_HOOK=/d' out/.config
+          sed -i '/^CONFIG_KSU_SUSFS=/d' out/.config
+          echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
+          echo "CONFIG_KSU_SUSFS=n" >> out/.config
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          # pipefail: 否则 make 失败被 tee 的 0 掩盖，报错会漂到后面的步骤
+          set -o pipefail
+          make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
+          SIZE=$(stat -c%s out/arch/arm64/boot/Image)
+          echo "image_size=$SIZE" >> $GITHUB_OUTPUT
+          echo "[+] Stage1 Image: $SIZE bytes"
+
+      - name: 🖼️ Generate dtb.img
+        run: |
+          cd device_kernel
+          D=out/arch/arm64/boot/dts/vendor/oplus
+          cat $D/kona.dtb $D/kona-v2.dtb $D/kona-v2.1.dtb > out/arch/arm64/boot/dtb.img
+          ls -la out/arch/arm64/boot/dtb.img
+
+      - name: ✅ Verify Stage1
+        run: |
+          cd device_kernel
+          grep -q "^CONFIG_KSU=y" out/.config || { echo "[-] CONFIG_KSU missing"; exit 1; }
+          grep -q "^CONFIG_KSU_MANUAL_HOOK=y" out/.config || { echo "[-] MANUAL_HOOK missing"; exit 1; }
+          nm out/vmlinux | grep -q "ksu_handle_execveat" || { echo "[-] ksu symbols missing"; exit 1; }
+          echo "[+] Stage1 verified OK."
+
+      - name: 📦 Package AnyKernel3
+        run: |
+          cd device_kernel
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
+          # AK3 标题行: 管理器（分支名） + 集成内容 Built By hotsteel
+          # Stage1 不含 VFS，标题是 env 里的固定值，这里仍用 shell 变量读取
+          # 以与 stage2/stage3 保持一致（后者的 VFS 段是运行时组装的）。
+          # sed 替换串里 & 代表"整个匹配"，必须转义。
+          AK3_TITLE_RESOLVED="${AK3_TITLE_STAGE1:-}"
+          if [ -z "$AK3_TITLE_RESOLVED" ]; then
+            echo "[!] AK3_TITLE_STAGE1 is empty"
+            exit 1
+          fi
+          AK3_TITLE_ESCAPED=$(printf '%s' "$AK3_TITLE_RESOLVED" | sed 's/[&\\]/\\&/g')
+          sed -i "s/ExampleKernel by osm0sis @ xda-developers/$AK3_TITLE_ESCAPED/g" Anykernel3/anykernel.sh
+          echo "[+] AK3 title set to: $AK3_TITLE_RESOLVED"
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
+          sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
+          sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
+          mkdir -p tmp
+          B=out/arch/arm64/boot
+          cp -fp $B/Image tmp/
+          [ -f $B/dtb.img ] && cp -fp $B/dtb.img tmp/dtb
+          [ -f $B/dtbo.img ] && cp -fp $B/dtbo.img tmp/
+          cp -rp ./Anykernel3/* tmp
+          cd tmp && 7za a -mx9 tmp.zip * >/dev/null 2>&1 || zip -r9 -q tmp.zip .
+          cd ..
+          NAME="${{ env.DEVICE_CODENAME }}-${{ env.ROM_TEXT }}-stage1-$(date +%Y%m%d%H%M%S)-Anykernel3.zip"
+          cp -fp tmp/tmp.zip "$NAME"
+          echo "PACK_NAME=$NAME" >> $GITHUB_ENV
+
+      - name: ⬆️ Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-crdroid-stage1-${{ github.run_number }}
+          path: device_kernel/${{ env.PACK_NAME }}
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Stage 2: BakaSU + SUSFS v2.4.0
+  # --------------------------------------------------------------------------
+  stage2-susfs:
+    name: "Stage2: BakaSU + SUSFS v2.4.0"
+    # 钉 24.04：本工作流用官方 LLVM 19.1.7 预编译包，其动态依赖是 noble 时代的
+    # ABI（libxml2.so.2 / libicuuc.so.74）。26.04 上 ld.lld 直接起不来。
+    runs-on: ubuntu-24.04
+    needs: stage1-resukisu
+    if: inputs.stage == 'stage2' || inputs.stage == 'stage3'
+    steps:
+      - name: ⏰ Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: 🧭 Validate VFS backend selection (mutually exclusive)
+        run: |
+          # HybridMount / NoMount 二者互斥：它们都劫持同一层 VFS
+          # (inode_operations / file_operations / dentry_operations)，且各自使用
+          # 独立不兼容的 keyring 协议。同时启用会导致两套驱动抢同一批 hook，
+          # 元模块无法正确握手（认不到内核），严重时直接崩溃。
+          # 这里做前置校验，开了多个就立刻 fail，避免产出一个坏内核。
+          HM="${{ inputs.vfs_hybridmount }}"
+          NM="${{ inputs.vfs_nomount }}"
+
+          COUNT=0
+          [ "$HM" = "true" ] && COUNT=$((COUNT + 1))
+          [ "$NM" = "true" ] && COUNT=$((COUNT + 1))
+
+          echo "VFS backend selection:"
+          echo "  VFS_HYBRIDMOUNT = $HM"
+          echo "  VFS_NOMOUNT     = $NM"
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo ""
+            echo "[-] ERROR: VFS backends are mutually exclusive, but $COUNT are enabled."
+            echo "[-] HybridMount / NoMount both hijack the same VFS layer and"
+            echo "[-] use incompatible keyring protocols. Enable at most ONE of them."
+            exit 1
+          fi
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "[i] No VFS backend selected — building without path redirection."
+          else
+            echo "[+] VFS backend check passed."
+          fi
+
+          # 组装 AK3 标题：只在真正启用某个 VFS 后端时才把对应名字写进去，
+          # 保证标题与内核实际集成内容一致。写入 $GITHUB_ENV 供打包步骤读取。
+          VFS_LABEL=""
+          if [ "$HM" = "true" ]; then VFS_LABEL="Hybrid Mount VFS"; fi
+          if [ "$NM" = "true" ]; then VFS_LABEL="NoMount VFS"; fi
+
+          TITLE="${{ env.AK3_TITLE_STAGE2_PREFIX }}"
+          if [ -n "$VFS_LABEL" ]; then
+            TITLE="$TITLE + $VFS_LABEL"
+          fi
+          TITLE="$TITLE ${{ env.AK3_TITLE_STAGE2_SUFFIX }}"
+
+          echo "AK3_TITLE_STAGE2=$TITLE" >> $GITHUB_ENV
+          echo "[+] AK3 title will be: $TITLE"
+
+      - name: 💾 Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h
+
+      - name: 🧰 Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
+            device-tree-compiler ccache cpio rsync zip unzip bc python3 \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+
+          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2。26.04 里这个 soname
+          # 没了（包名也变成 libxml2-16），不处理就会在 vdso 阶段死：
+          #   ld.lld: error while loading shared libraries: libxml2.so.2
+          #   make[2]: *** [arch/arm64/kernel/vdso/Makefile:65: vdso.so.dbg] Error 127
+          # 而 ld.lld 只认 libxml2.so.2，所以不装系统包，直接从 24.04(noble)
+          # 归档取一份 compat 库单独放到 /opt/llvm-compat，用 LD_LIBRARY_PATH 喂给
+          # ld.lld —— 系统自带的 libxml2 一动不动。
+          # 所有 curl 都必须带 --max-time：runner 到 archive.ubuntu.com 偶发卡死，
+          # 没有超时就是无限等（表现为这一步几十分钟没有任何输出）。
+          if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
+            echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
+            sudo mkdir -p /opt/llvm-compat/lib
+            BASE=http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/
+            FILE=$(curl -fsSL --connect-timeout 15 --max-time 60 "$BASE" \
+                   | grep -o 'libxml2_2\.9\.14[^"]*_amd64\.deb' | sort -uV | tail -n1)
+            if [ -z "$FILE" ]; then
+              echo "[-] cannot resolve libxml2 deb name from $BASE"
+              false
+            fi
+            echo "[i] using $FILE"
+            curl -fsSL --connect-timeout 15 --max-time 120 --retry 2 -o /tmp/libxml2.deb "$BASE$FILE" || {
+              echo "[-] download failed: $BASE$FILE"; false; }
+            dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
+            sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
+            test -e /opt/llvm-compat/lib/libxml2.so.2 || { echo "[-] compat lib missing after copy"; false; }
+            echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
+            echo "[+] compat libxml2 installed: $(ls /opt/llvm-compat/lib)"
+          else
+            echo "[+] libxml2.so.2 present"
+          fi
+
+      - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
+        run: |
+          curl -L --retry 3 -o llvm.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${CLANG_VERSION}/LLVM-${CLANG_VERSION}-Linux-X64.tar.xz"
+          mkdir -p /opt/llvm
+          tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
+          echo "/opt/llvm/bin" >> $GITHUB_PATH
+          /opt/llvm/bin/clang --version
+          /opt/llvm/bin/ld.lld --version || {
+            echo "[-] /opt/llvm/bin/ld.lld cannot run (missing shared library?)"
+            ldd /opt/llvm/bin/ld.lld || true
+            false
+          }
+
+      - name: 📥 Clone crDroid kernel
+        run: |
+          git clone --depth=1 "$KERNEL_SOURCE" -b "$KERNEL_BRANCH" device_kernel
+          cd device_kernel
+          if [ -n "${{ inputs.kernel_ref }}" ]; then
+            git fetch --depth=1 origin "${{ inputs.kernel_ref }}" && git checkout FETCH_HEAD
+          fi
+          git log --oneline -1
+          echo "-g$(git rev-parse --short HEAD)-crdroid" > .scmversion
+
+      - name: 📥 Setup BakaSU
+        run: |
+          cd device_kernel
+          git clone "$KSU_REPO" KernelSU
+          cd KernelSU && git checkout "$KSU_COMMIT" && cd ..
+          ln -sf ../KernelSU/kernel drivers/kernelsu
+          grep -q "kernelsu" drivers/Makefile || \
+            printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
+            sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+          # 去掉版本串里的 "-dirty"（仅显示层，KSU_VERSION 不受影响）：
+          # BakaSU 的 kernel/Kbuild 用 `git diff-index --quiet HEAD` 判断工作区，
+          # 我们后面要打 stage1/stage2 补丁，git 必然判 dirty，管理器就会显示
+          # "v4.2.0-rc3-xxxxxxxx-dirty"。删掉 ifneq / ...-dirty / endif 三行即可；
+          # 找不到该结构（上游改版）就跳过，绝不让构建失败。
+          KSU_KBUILD="drivers/kernelsu/Kbuild"
+          if [ -f "$KSU_KBUILD" ]; then
+            LINE=$(grep -n 'KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)-dirty' "$KSU_KBUILD" | cut -d: -f1 | head -1)
+            if [ -n "$LINE" ] \
+               && sed -n "$((LINE - 1))p" "$KSU_KBUILD" | grep -q 'diff-index --quiet HEAD' \
+               && [ "$(sed -n "$((LINE + 1))p" "$KSU_KBUILD" | tr -d '[:space:]')" = "endif" ]; then
+              sed -i "$((LINE - 1)),$((LINE + 1))d" "$KSU_KBUILD"
+              echo "[+] Stripped -dirty from BakaSU version string."
+            else
+              echo "[i] -dirty marker not found (already clean / upstream changed) - skip."
+            fi
+          fi
+
+      - name: 🔗 Apply Stage1 patch
+        run: cd device_kernel && patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
+
+      - name: 🪝 Apply Stage2 patch (SUSFS v2.4.0)
+        if: inputs.susfs_enable
+        run: |
+          cd device_kernel
+          patch -p1 < ../Patches/crdroid/0002-stage2-susfs.patch
+          echo "[+] Stage2 patch applied."
+          grep -q "p->state = 0" fs/namei.c && echo "[+] p->state=0 present (anti-black-screen fix)"
+
+      - name: 🧩 Apply Hybrid Mount VFS patch
+        if: inputs.vfs_hybridmount == true
+        run: |
+          cd device_kernel
+          # Hybrid Mount 的 VFS 后端不是内核通用 VFS, 而是它自己的 hybridmount
+          # 子系统 (fork 自 NoMount, 通过 keyring 驱动)。上游只提供 5.10+ 的
+          # 预编译 .ko, 4.19 无匹配候选, 故 built-in 集成。
+          # 与 SUSFS / BakaSU 完全解耦: hybridmount.c 不引用任何 ksu_/susfs_ 符号,
+          # 与 SUSFS 补丁仅在 fs/Makefile 尾部追加处有交集 (offset +2, 无冲突)。
+          patch -p1 < ../Patches/crdroid/0004-hybridmount-vfs.patch
+          find . -name "*.orig" -delete
+
+          if [ -n "$(find . -name '*.rej')" ]; then
+            echo "[-] 0004-hybridmount-vfs.patch has rejected hunks!"
+            find . -name "*.rej" -exec cat {} \;
+            false
+          fi
+
+          test -f fs/hybridmount/hybridmount.c || { echo "[-] fs/hybridmount/hybridmount.c missing"; exit 1; }
+          grep -qF 'obj-$(CONFIG_HYBRIDMOUNT) += hybridmount/' fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
+          grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
+          echo "[+] Hybrid Mount VFS applied (built-in)."
+
+      - name: 🕳️ Apply NoMount VFS
+        if: inputs.vfs_nomount
+        run: |
+          cd device_kernel
+          # NoMount 与 HybridMount 同源不同家：hybridmount 就是从 NoMount fork 出来的，
+          # 但重命名了符号、换了自己的 wire magic（"HYBRIDMO"），两套元模块与工具链
+          # 互不通用。二者只能选一个，构建开头的互斥校验会拦截同时开启。
+          #
+          # NoMount 官方自带 kernel/setup.sh，做通用内核集成：
+          #   1) git clone 到内核树内的 NoMount/（内部 checkout dev，git pull 更新）
+          #   2) 在 fs/ 下建 symlink  fs/nomount -> ../NoMount/kernel/src
+          #   3) 往 fs/Makefile 追加 obj-$(CONFIG_NOMOUNT) += nomount/
+          #   4) 在 fs/Kconfig 的最后一个 endmenu 前插入 source "fs/nomount/Kconfig"
+          # 不依赖内核版本。4.19 这类 legacy 内核无法用上游预编译 .ko，必须源码集成。
+          # 与 master/KSU 分支的集成方式一致，同上游 JackA1ltman 项目的用法。
+          #
+          # 注意（2026-11 上游变更）：源码目录从 kernel/ 下移到 kernel/src/，
+          # setup.sh 同时自己完成 Makefile/Kconfig 接线；下面的自检按新布局校验。
+          curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
+
+          # curl | bash 只反映 bash 的退出码，这里补上集成结果自检。
+          test -L fs/nomount || { echo "[-] fs/nomount is not a symlink (setup.sh did not run?)"; false; }
+          test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; false; }
+          test -f fs/nomount/Kconfig || { echo "[-] fs/nomount/Kconfig missing"; false; }
+          grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
+          grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
+          echo "[+] NoMount VFS applied (built-in, $(readlink fs/nomount))."
+      - name: 🚀 Build kernel (Stage2)
+        id: build
+        run: |
+          cd device_kernel
+          export PATH=/opt/llvm/bin:$PATH
+          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            arch/arm64/configs/vendor/oplus.config
+          if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              ../Patches/crdroid/hybridmount.config
+          fi
+          if [ "${{ inputs.vfs_nomount }}" = "true" ]; then
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              ../Patches/crdroid/nomount.config
+          fi
+          # Stage2/3 钩子方式（choice 三选一）：SUSFS 开启→切到 SUSFS inline，
+          # 因与 MANUAL_HOOK 互斥必须移除它；关闭→保持手动钩子。
+          sed -i '/^CONFIG_KSU_MANUAL_HOOK=/d' out/.config
+          sed -i '/^CONFIG_KSU_SUSFS=/d' out/.config
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            echo "CONFIG_KSU_SUSFS=y" >> out/.config
+          else
+            echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS=n" >> out/.config
+          fi
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          # pipefail: 否则 make 失败被 tee 的 0 掩盖，报错会漂到后面的步骤
+          set -o pipefail
+          make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
+          echo "image_size=$(stat -c%s out/arch/arm64/boot/Image)" >> $GITHUB_OUTPUT
+
+      - name: 🖼️ Generate dtb.img
+        run: |
+          cd device_kernel
+          D=out/arch/arm64/boot/dts/vendor/oplus
+          cat $D/kona.dtb $D/kona-v2.dtb $D/kona-v2.1.dtb > out/arch/arm64/boot/dtb.img
+
+      - name: ✅ Verify Stage2
+        run: |
+          cd device_kernel
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
+            grep -q 'SUSFS_VERSION "v2.4.0"' include/linux/susfs.h || { echo "[-] SUSFS version mismatch"; exit 1; }
+            nm out/vmlinux | grep -q "susfs" || { echo "[-] susfs symbols missing"; exit 1; }
+          else
+            grep -q "^CONFIG_KSU_SUSFS=y" out/.config && { echo "[-] SUSFS 未按预期关闭"; exit 1; } || true
+            echo "[i] SUSFS disabled — skipped SUSFS symbol checks."
+          fi
+          # VFS 后端校验：只检查实际启用的那一个
+          if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
+            grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
+            grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (hybridmount hard dependency)"; exit 1; }
+            nm out/vmlinux | grep -q "hybridmount" || { echo "[-] hybridmount symbols missing"; exit 1; }
+          elif [ "${{ inputs.vfs_nomount }}" = "true" ]; then
+            grep -q "^CONFIG_NOMOUNT=y" out/.config || { echo "[-] NOMOUNT missing"; exit 1; }
+            grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (nomount hard dependency)"; exit 1; }
+            nm out/vmlinux | grep -q "nomount" || { echo "[-] nomount symbols missing"; exit 1; }
+          else
+            echo "[i] No VFS backend enabled, skipping VFS symbol checks."
+          fi
+          echo "[+] Stage2 verified OK (SUSFS v2.4.0 + VFS backend check done)."
+
+      - name: 📦 Package AnyKernel3
+        run: |
+          cd device_kernel
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
+          # AK3 标题行: 管理器（分支名） + 集成内容 Built By hotsteel
+          # VFS 段是按实际启用的后端动态拼的，运行时写进 GITHUB_ENV，
+          # 所以必须用 shell 变量读取（不能用 ${{ env.AK3_TITLE_STAGE2 }}）。
+          # sed 替换串里 & 代表"整个匹配"，必须转义。
+          AK3_TITLE_RESOLVED="${AK3_TITLE_STAGE2:-}"
+          if [ -z "$AK3_TITLE_RESOLVED" ]; then
+            echo "[!] AK3_TITLE_STAGE2 is empty"
+            exit 1
+          fi
+          AK3_TITLE_ESCAPED=$(printf '%s' "$AK3_TITLE_RESOLVED" | sed 's/[&\\]/\\&/g')
+          sed -i "s/ExampleKernel by osm0sis @ xda-developers/$AK3_TITLE_ESCAPED/g" Anykernel3/anykernel.sh
+          echo "[+] AK3 title set to: $AK3_TITLE_RESOLVED"
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
+          sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
+          sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
+          mkdir -p tmp
+          B=out/arch/arm64/boot
+          cp -fp $B/Image tmp/
+          [ -f $B/dtb.img ] && cp -fp $B/dtb.img tmp/dtb
+          [ -f $B/dtbo.img ] && cp -fp $B/dtbo.img tmp/
+          cp -rp ./Anykernel3/* tmp
+          cd tmp && 7za a -mx9 tmp.zip * >/dev/null 2>&1 || zip -r9 -q tmp.zip .
+          cd ..
+          NAME="${{ env.DEVICE_CODENAME }}-${{ env.ROM_TEXT }}-stage2-$(date +%Y%m%d%H%M%S)-Anykernel3.zip"
+          cp -fp tmp/tmp.zip "$NAME"
+          echo "PACK_NAME=$NAME" >> $GITHUB_ENV
+
+      - name: ⬆️ Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-crdroid-stage2-${{ github.run_number }}
+          path: device_kernel/${{ env.PACK_NAME }}
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Stage 3: BakaSU + SUSFS v2.4.0 + DroidSpaces
+  # --------------------------------------------------------------------------
+  stage3-droidspaces:
+    name: "Stage3: + DroidSpaces"
+    # 钉 24.04：本工作流用官方 LLVM 19.1.7 预编译包，其动态依赖是 noble 时代的
+    # ABI（libxml2.so.2 / libicuuc.so.74）。26.04 上 ld.lld 直接起不来。
+    runs-on: ubuntu-24.04
+    needs: stage2-susfs
+    if: inputs.stage == 'stage3'
+    steps:
+      - name: ⏰ Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: 🧭 Validate VFS backend selection (mutually exclusive)
+        run: |
+          # HybridMount / NoMount 二者互斥：它们都劫持同一层 VFS
+          # (inode_operations / file_operations / dentry_operations)，且各自使用
+          # 独立不兼容的 keyring 协议。同时启用会导致两套驱动抢同一批 hook，
+          # 元模块无法正确握手（认不到内核），严重时直接崩溃。
+          # 这里做前置校验，开了多个就立刻 fail，避免产出一个坏内核。
+          HM="${{ inputs.vfs_hybridmount }}"
+          NM="${{ inputs.vfs_nomount }}"
+
+          COUNT=0
+          [ "$HM" = "true" ] && COUNT=$((COUNT + 1))
+          [ "$NM" = "true" ] && COUNT=$((COUNT + 1))
+
+          echo "VFS backend selection:"
+          echo "  VFS_HYBRIDMOUNT = $HM"
+          echo "  VFS_NOMOUNT     = $NM"
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo ""
+            echo "[-] ERROR: VFS backends are mutually exclusive, but $COUNT are enabled."
+            echo "[-] HybridMount / NoMount both hijack the same VFS layer and"
+            echo "[-] use incompatible keyring protocols. Enable at most ONE of them."
+            exit 1
+          fi
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "[i] No VFS backend selected — building without path redirection."
+          else
+            echo "[+] VFS backend check passed."
+          fi
+
+          # 组装 AK3 标题：只在真正启用某个 VFS 后端时才把对应名字写进去，
+          # 保证标题与内核实际集成内容一致。写入 $GITHUB_ENV 供打包步骤读取。
+          VFS_LABEL=""
+          if [ "$HM" = "true" ]; then VFS_LABEL="Hybrid Mount VFS"; fi
+          if [ "$NM" = "true" ]; then VFS_LABEL="NoMount VFS"; fi
+
+          TITLE="${{ env.AK3_TITLE_STAGE3_PREFIX }}"
+          if [ -n "$VFS_LABEL" ]; then
+            TITLE="$TITLE + $VFS_LABEL"
+          fi
+          TITLE="$TITLE ${{ env.AK3_TITLE_STAGE3_SUFFIX }}"
+
+          echo "AK3_TITLE_STAGE3=$TITLE" >> $GITHUB_ENV
+          echo "[+] AK3 title will be: $TITLE"
+
+      - name: 💾 Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" 2>/dev/null || true
+          df -h
+
+      - name: 🧰 Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq flex bison libssl-dev libelf-dev \
+            device-tree-compiler ccache cpio rsync zip unzip bc python3 \
+            coccinelle gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+
+          # 官方 LLVM 预编译包的 ld.lld 动态依赖 libxml2.so.2。26.04 里这个 soname
+          # 没了（包名也变成 libxml2-16），不处理就会在 vdso 阶段死：
+          #   ld.lld: error while loading shared libraries: libxml2.so.2
+          #   make[2]: *** [arch/arm64/kernel/vdso/Makefile:65: vdso.so.dbg] Error 127
+          # 而 ld.lld 只认 libxml2.so.2，所以不装系统包，直接从 24.04(noble)
+          # 归档取一份 compat 库单独放到 /opt/llvm-compat，用 LD_LIBRARY_PATH 喂给
+          # ld.lld —— 系统自带的 libxml2 一动不动。
+          # 所有 curl 都必须带 --max-time：runner 到 archive.ubuntu.com 偶发卡死，
+          # 没有超时就是无限等（表现为这一步几十分钟没有任何输出）。
+          if ! ldconfig -p | grep -q 'libxml2\.so\.2'; then
+            echo "[!] libxml2.so.2 not found -> installing compat copy (noble)"
+            sudo mkdir -p /opt/llvm-compat/lib
+            BASE=http://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/
+            FILE=$(curl -fsSL --connect-timeout 15 --max-time 60 "$BASE" \
+                   | grep -o 'libxml2_2\.9\.14[^"]*_amd64\.deb' | sort -uV | tail -n1)
+            if [ -z "$FILE" ]; then
+              echo "[-] cannot resolve libxml2 deb name from $BASE"
+              false
+            fi
+            echo "[i] using $FILE"
+            curl -fsSL --connect-timeout 15 --max-time 120 --retry 2 -o /tmp/libxml2.deb "$BASE$FILE" || {
+              echo "[-] download failed: $BASE$FILE"; false; }
+            dpkg-deb -x /tmp/libxml2.deb /tmp/libxml2-x
+            sudo cp -a /tmp/libxml2-x/usr/lib/x86_64-linux-gnu/libxml2.so.2* /opt/llvm-compat/lib/
+            test -e /opt/llvm-compat/lib/libxml2.so.2 || { echo "[-] compat lib missing after copy"; false; }
+            echo "LD_LIBRARY_PATH=/opt/llvm-compat/lib" >> $GITHUB_ENV
+            echo "[+] compat libxml2 installed: $(ls /opt/llvm-compat/lib)"
+          else
+            echo "[+] libxml2.so.2 present"
+          fi
+
+      - name: ⚙️ Install LLVM ${{ env.CLANG_VERSION }}
+        run: |
+          curl -L --retry 3 -o llvm.tar.xz \
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-${CLANG_VERSION}/LLVM-${CLANG_VERSION}-Linux-X64.tar.xz"
+          mkdir -p /opt/llvm
+          tar -xf llvm.tar.xz -C /opt/llvm --strip-components 1
+          echo "/opt/llvm/bin" >> $GITHUB_PATH
+          /opt/llvm/bin/clang --version
+          /opt/llvm/bin/ld.lld --version || {
+            echo "[-] /opt/llvm/bin/ld.lld cannot run (missing shared library?)"
+            ldd /opt/llvm/bin/ld.lld || true
+            false
+          }
+
+      - name: 📥 Clone crDroid kernel
+        run: |
+          git clone --depth=1 "$KERNEL_SOURCE" -b "$KERNEL_BRANCH" device_kernel
+          cd device_kernel
+          if [ -n "${{ inputs.kernel_ref }}" ]; then
+            git fetch --depth=1 origin "${{ inputs.kernel_ref }}" && git checkout FETCH_HEAD
+          fi
+          git log --oneline -1
+          echo "-g$(git rev-parse --short HEAD)-crdroid" > .scmversion
+
+      - name: 📥 Setup BakaSU
+        run: |
+          cd device_kernel
+          git clone "$KSU_REPO" KernelSU
+          cd KernelSU && git checkout "$KSU_COMMIT" && cd ..
+          ln -sf ../KernelSU/kernel drivers/kernelsu
+          grep -q "kernelsu" drivers/Makefile || \
+            printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || \
+            sed -i '/^endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+
+          # 去掉版本串里的 "-dirty"（仅显示层，KSU_VERSION 不受影响）：
+          # BakaSU 的 kernel/Kbuild 用 `git diff-index --quiet HEAD` 判断工作区，
+          # 我们后面要打 stage1/stage2 补丁，git 必然判 dirty，管理器就会显示
+          # "v4.2.0-rc3-xxxxxxxx-dirty"。删掉 ifneq / ...-dirty / endif 三行即可；
+          # 找不到该结构（上游改版）就跳过，绝不让构建失败。
+          KSU_KBUILD="drivers/kernelsu/Kbuild"
+          if [ -f "$KSU_KBUILD" ]; then
+            LINE=$(grep -n 'KSU_COMMIT_SHA  := \$(KSU_COMMIT_SHA)-dirty' "$KSU_KBUILD" | cut -d: -f1 | head -1)
+            if [ -n "$LINE" ] \
+               && sed -n "$((LINE - 1))p" "$KSU_KBUILD" | grep -q 'diff-index --quiet HEAD' \
+               && [ "$(sed -n "$((LINE + 1))p" "$KSU_KBUILD" | tr -d '[:space:]')" = "endif" ]; then
+              sed -i "$((LINE - 1)),$((LINE + 1))d" "$KSU_KBUILD"
+              echo "[+] Stripped -dirty from BakaSU version string."
+            else
+              echo "[i] -dirty marker not found (already clean / upstream changed) - skip."
+            fi
+          fi
+
+      - name: 🔗 Apply Stage1 patch
+        run: cd device_kernel && patch -p1 < ../Patches/crdroid/0001-stage1-resukisu.patch
+
+      - name: 🪝 Apply Stage2 patch
+        if: inputs.susfs_enable
+        run: cd device_kernel && patch -p1 < ../Patches/crdroid/0002-stage2-susfs.patch
+
+      - name: 🧩 Apply Hybrid Mount VFS patch
+        if: inputs.vfs_hybridmount == true
+        run: |
+          cd device_kernel
+          patch -p1 < ../Patches/crdroid/0004-hybridmount-vfs.patch
+          find . -name "*.orig" -delete
+          if [ -n "$(find . -name '*.rej')" ]; then
+            echo "[-] 0004-hybridmount-vfs.patch has rejected hunks!"
+            find . -name "*.rej" -exec cat {} \;
+            exit 1
+          fi
+          test -f fs/hybridmount/hybridmount.c || { echo "[-] fs/hybridmount/hybridmount.c missing"; exit 1; }
+          grep -qF 'obj-$(CONFIG_HYBRIDMOUNT) += hybridmount/' fs/Makefile || { echo "[-] fs/Makefile not wired"; exit 1; }
+          grep -qF 'source "fs/hybridmount/Kconfig"' fs/Kconfig || { echo "[-] fs/Kconfig not wired"; exit 1; }
+          echo "[+] Hybrid Mount VFS applied (built-in)."
+
+      - name: 🕳️ Apply NoMount VFS
+        if: inputs.vfs_nomount
+        run: |
+          cd device_kernel
+          # NoMount 与 HybridMount 同源不同家：hybridmount 就是从 NoMount fork 出来的，
+          # 但重命名了符号、换了自己的 wire magic（"HYBRIDMO"），两套元模块与工具链
+          # 互不通用。二者只能选一个，构建开头的互斥校验会拦截同时开启。
+          #
+          # NoMount 官方自带 kernel/setup.sh，做通用内核集成：
+          #   1) git clone 到内核树内的 NoMount/（内部 checkout dev，git pull 更新）
+          #   2) 在 fs/ 下建 symlink  fs/nomount -> ../NoMount/kernel/src
+          #   3) 往 fs/Makefile 追加 obj-$(CONFIG_NOMOUNT) += nomount/
+          #   4) 在 fs/Kconfig 的最后一个 endmenu 前插入 source "fs/nomount/Kconfig"
+          # 不依赖内核版本。4.19 这类 legacy 内核无法用上游预编译 .ko，必须源码集成。
+          # 与 master/KSU 分支的集成方式一致，同上游 JackA1ltman 项目的用法。
+          #
+          # 注意（2026-11 上游变更）：源码目录从 kernel/ 下移到 kernel/src/，
+          # setup.sh 同时自己完成 Makefile/Kconfig 接线；下面的自检按新布局校验。
+          curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
+
+          # curl | bash 只反映 bash 的退出码，这里补上集成结果自检。
+          test -L fs/nomount || { echo "[-] fs/nomount is not a symlink (setup.sh did not run?)"; false; }
+          test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; false; }
+          test -f fs/nomount/Kconfig || { echo "[-] fs/nomount/Kconfig missing"; false; }
+          grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
+          grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
+          echo "[+] NoMount VFS applied (built-in, $(readlink fs/nomount))."
+      - name: 💿 Apply Stage3 DroidSpaces (cocci + config)
+        run: |
+          cd device_kernel
+          cp ../Patches/crdroid/droidspaces.config arch/arm64/configs/
+          cp ../Patches/crdroid/fix_restore_cgroup_file_prefix_handling.cocci ./
+          if ! grep -q "kernfs_create_link" kernel/cgroup/cgroup.c; then
+            spatch --sp-file fix_restore_cgroup_file_prefix_handling.cocci \
+                   --in-place kernel/cgroup/cgroup.c
+            echo "[+] cgroup.c patched."
+          else
+            echo "[-] cgroup.c already patched, skipped."
+          fi
+          # xt_qtaguid.c 在本内核不存在, 该 cocci 跳过 (上游 crDroid 树无此驱动)
+          echo "[+] DroidSpaces patch applied."
+
+      - name: 🚀 Build kernel (Stage3)
+        id: build
+        run: |
+          cd device_kernel
+          export PATH=/opt/llvm/bin:$PATH
+          MAKE_OPTS="ARCH=arm64 CC=ccache clang LLVM=1 LLVM_IAS=0"
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- $DEFCONFIG_NAME
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            arch/arm64/configs/vendor/oplus.config
+          ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+            arch/arm64/configs/droidspaces.config
+          if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              ../Patches/crdroid/hybridmount.config
+          fi
+          if [ "${{ inputs.vfs_nomount }}" = "true" ]; then
+            ./scripts/kconfig/merge_config.sh -O out/ -m out/.config \
+              ../Patches/crdroid/nomount.config
+          fi
+          # Stage2/3 钩子方式（choice 三选一）：SUSFS 开启→切到 SUSFS inline，
+          # 因与 MANUAL_HOOK 互斥必须移除它；关闭→保持手动钩子。
+          sed -i '/^CONFIG_KSU_MANUAL_HOOK=/d' out/.config
+          sed -i '/^CONFIG_KSU_SUSFS=/d' out/.config
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            echo "CONFIG_KSU_SUSFS=y" >> out/.config
+          else
+            echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
+            echo "CONFIG_KSU_SUSFS=n" >> out/.config
+          fi
+          make O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          # pipefail: 否则 make 失败被 tee 的 0 掩盖，报错会漂到后面的步骤
+          set -o pipefail
+          make -j$(nproc) O=out $MAKE_OPTS CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee error.log
+          echo "image_size=$(stat -c%s out/arch/arm64/boot/Image)" >> $GITHUB_OUTPUT
+
+      - name: 🖼️ Generate dtb.img
+        run: |
+          cd device_kernel
+          D=out/arch/arm64/boot/dts/vendor/oplus
+          cat $D/kona.dtb $D/kona-v2.dtb $D/kona-v2.1.dtb > out/arch/arm64/boot/dtb.img
+
+      - name: ✅ Verify Stage3
+        run: |
+          cd device_kernel
+          if [ "${{ inputs.susfs_enable }}" = "true" ]; then
+            grep -q "^CONFIG_KSU_SUSFS=y" out/.config || { echo "[-] SUSFS missing"; exit 1; }
+          else
+            echo "[i] SUSFS disabled — skipped SUSFS check."
+          fi
+          grep -q "^CONFIG_USER_NS=y" out/.config || { echo "[-] USER_NS missing"; exit 1; }
+          grep -q "^CONFIG_PID_NS=y" out/.config || { echo "[-] PID_NS missing"; exit 1; }
+          grep -q "kernfs_create_link" kernel/cgroup/cgroup.c || { echo "[-] cgroup patch missing"; exit 1; }
+          # VFS 后端校验：只检查实际启用的那一个
+          if [ "${{ inputs.vfs_hybridmount }}" = "true" ]; then
+            grep -q "^CONFIG_HYBRIDMOUNT=y" out/.config || { echo "[-] HYBRIDMOUNT missing"; exit 1; }
+            grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (hybridmount hard dependency)"; exit 1; }
+            nm out/vmlinux | grep -q "hybridmount" || { echo "[-] hybridmount symbols missing"; exit 1; }
+          elif [ "${{ inputs.vfs_nomount }}" = "true" ]; then
+            grep -q "^CONFIG_NOMOUNT=y" out/.config || { echo "[-] NOMOUNT missing"; exit 1; }
+            grep -q "^CONFIG_KEYS=y" out/.config || { echo "[-] KEYS missing (nomount hard dependency)"; exit 1; }
+            nm out/vmlinux | grep -q "nomount" || { echo "[-] nomount symbols missing"; exit 1; }
+          else
+            echo "[i] No VFS backend enabled, skipping VFS symbol checks."
+          fi
+          echo "[+] Stage3 verified OK (SUSFS + DroidSpaces + VFS backend check done)."
+
+      - name: 📦 Package AnyKernel3
+        run: |
+          cd device_kernel
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git -b master Anykernel3
+          # AK3 标题行: 管理器（分支名） + 集成内容 Built By hotsteel
+          # VFS 段是按实际启用的后端动态拼的，运行时写进 GITHUB_ENV，
+          # 所以必须用 shell 变量读取（不能用 ${{ env.AK3_TITLE_STAGE3 }}）。
+          # sed 替换串里 & 代表"整个匹配"，必须转义。
+          AK3_TITLE_RESOLVED="${AK3_TITLE_STAGE3:-}"
+          if [ -z "$AK3_TITLE_RESOLVED" ]; then
+            echo "[!] AK3_TITLE_STAGE3 is empty"
+            exit 1
+          fi
+          AK3_TITLE_ESCAPED=$(printf '%s' "$AK3_TITLE_RESOLVED" | sed 's/[&\\]/\\&/g')
+          sed -i "s/ExampleKernel by osm0sis @ xda-developers/$AK3_TITLE_ESCAPED/g" Anykernel3/anykernel.sh
+          echo "[+] AK3 title set to: $AK3_TITLE_RESOLVED"
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' Anykernel3/anykernel.sh
+          sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' Anykernel3/anykernel.sh
+          sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' Anykernel3/anykernel.sh
+          mkdir -p tmp
+          B=out/arch/arm64/boot
+          cp -fp $B/Image tmp/
+          [ -f $B/dtb.img ] && cp -fp $B/dtb.img tmp/dtb
+          [ -f $B/dtbo.img ] && cp -fp $B/dtbo.img tmp/
+          cp -rp ./Anykernel3/* tmp
+          cd tmp && 7za a -mx9 tmp.zip * >/dev/null 2>&1 || zip -r9 -q tmp.zip .
+          cd ..
+          NAME="${{ env.DEVICE_CODENAME }}-${{ env.ROM_TEXT }}-stage3-$(date +%Y%m%d%H%M%S)-Anykernel3.zip"
+          cp -fp tmp/tmp.zip "$NAME"
+          echo "PACK_NAME=$NAME" >> $GITHUB_ENV
+
+      - name: ⬆️ Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-crdroid-stage3-${{ github.run_number }}
+          path: device_kernel/${{ env.PACK_NAME }}
+          if-no-files-found: error
