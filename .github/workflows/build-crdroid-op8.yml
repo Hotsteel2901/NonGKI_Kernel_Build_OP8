@@ -535,15 +535,26 @@ jobs:
           #
           # 注意（2026-11 上游变更）：源码目录从 kernel/ 下移到 kernel/src/，
           # setup.sh 同时自己完成 Makefile/Kconfig 接线；下面的自检按新布局校验。
-          curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
+          # 不 pin，跟随上游 dev 头（与元模块 update.json 同步演进）。
+          # 先落盘再执行：`curl | bash` 在 curl 404/超时时会让 bash 拿到空输入
+          # 并正常退出 0，集成静默失败且看不出根因。
+          curl -fsSL -o /tmp/nomount_setup.sh \
+            "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh"
+          bash /tmp/nomount_setup.sh
+          rm -f /tmp/nomount_setup.sh
+          find . -name "*.orig" -delete
 
-          # curl | bash 只反映 bash 的退出码，这里补上集成结果自检。
+          # 集成结果自检（防上游改目录布局后 setup.sh 仍"成功"返回）。
           test -L fs/nomount || { echo "[-] fs/nomount is not a symlink (setup.sh did not run?)"; false; }
           test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; false; }
           test -f fs/nomount/Kconfig || { echo "[-] fs/nomount/Kconfig missing"; false; }
           grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
           grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
           echo "[+] NoMount VFS applied (built-in, $(readlink fs/nomount))."
+          # 线协议号：v23 -> v2.3.x。与元模块协议不一致时表现为「能启动、
+          # 规则全废」（nm_load_status=123），编译期无任何提示。
+          NM_PROTO=$(grep -oP 'NOMOUNT_BASE_VERSION\s+"\K[0-9]+' fs/nomount/nomount.h || echo '?')
+          echo "[+] NoMount wire protocol = v${NM_PROTO} (metamodule must be v2.$((NM_PROTO - 20)).x)"
       - name: 🚀 Build kernel (Stage2)
         id: build
         run: |
@@ -850,15 +861,26 @@ jobs:
           #
           # 注意（2026-11 上游变更）：源码目录从 kernel/ 下移到 kernel/src/，
           # setup.sh 同时自己完成 Makefile/Kconfig 接线；下面的自检按新布局校验。
-          curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
+          # 不 pin，跟随上游 dev 头（与元模块 update.json 同步演进）。
+          # 先落盘再执行：`curl | bash` 在 curl 404/超时时会让 bash 拿到空输入
+          # 并正常退出 0，集成静默失败且看不出根因。
+          curl -fsSL -o /tmp/nomount_setup.sh \
+            "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh"
+          bash /tmp/nomount_setup.sh
+          rm -f /tmp/nomount_setup.sh
+          find . -name "*.orig" -delete
 
-          # curl | bash 只反映 bash 的退出码，这里补上集成结果自检。
+          # 集成结果自检（防上游改目录布局后 setup.sh 仍"成功"返回）。
           test -L fs/nomount || { echo "[-] fs/nomount is not a symlink (setup.sh did not run?)"; false; }
           test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; false; }
           test -f fs/nomount/Kconfig || { echo "[-] fs/nomount/Kconfig missing"; false; }
           grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
           grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
           echo "[+] NoMount VFS applied (built-in, $(readlink fs/nomount))."
+          # 线协议号：v23 -> v2.3.x。与元模块协议不一致时表现为「能启动、
+          # 规则全废」（nm_load_status=123），编译期无任何提示。
+          NM_PROTO=$(grep -oP 'NOMOUNT_BASE_VERSION\s+"\K[0-9]+' fs/nomount/nomount.h || echo '?')
+          echo "[+] NoMount wire protocol = v${NM_PROTO} (metamodule must be v2.$((NM_PROTO - 20)).x)"
       - name: 💿 Apply Stage3 DroidSpaces (cocci + config)
         run: |
           cd device_kernel

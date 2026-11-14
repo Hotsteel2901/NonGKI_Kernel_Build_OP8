@@ -445,16 +445,33 @@ jobs:
           #
           # 注意（2026-11 上游变更）：源码目录从 kernel/ 下移到 kernel/src/，
           # setup.sh 同时自己完成 Makefile/Kconfig 接线；下面的自检按新布局校验。
-          curl -sSL "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh" | bash -s
+          # 这里**不 pin**：跟随上游 dev 头，和元模块的 update.json 一起走最新
+          # （元模块跟 release，驱动跟 dev，二者协议号由上游保证一致）。
+          # 代价是驱动可能比模块新一两天，所以下面把实际线协议号打进日志，
+          # 出问题第一眼就能对上：v2.3.0 元模块 <-> NOMOUNT_BASE_VERSION "23"。
+          #
+          # 先落盘再执行，不用 `curl | bash`：管道里 curl 失败（404 / 网络抖动）
+          # 时 bash 会拿到空输入并正常退出 0，整条集成静默失败，最后只看到一堆
+          # 莫名其妙的 test -f 报错，看不出根因。
+          curl -fsSL -o /tmp/nomount_setup.sh \
+            "https://raw.githubusercontent.com/maxsteeel/nomount/refs/heads/dev/kernel/setup.sh"
+          bash /tmp/nomount_setup.sh
+          rm -f /tmp/nomount_setup.sh
+          find . -name "*.orig" -delete
 
-          # setup.sh 的失败不一定反映到管道的退出码（curl | bash 只取 bash 的），
-          # 所以这里做集成结果自检。
+          # 上面已改成先落盘再执行，curl 失败会直接让本步失败；这里再做集成
+          # 结果自检，防上游改了目录布局而 setup.sh 自身仍然"成功"返回。
           test -L fs/nomount || { echo "[-] fs/nomount is not a symlink (setup.sh did not run?)"; false; }
           test -f fs/nomount/nomount.c || { echo "[-] fs/nomount/nomount.c missing"; false; }
           test -f fs/nomount/Kconfig || { echo "[-] fs/nomount/Kconfig missing"; false; }
           grep -q "nomount" fs/Makefile || { echo "[-] fs/Makefile not wired"; false; }
           grep -q "fs/nomount/Kconfig" fs/Kconfig || { echo "[-] fs/Kconfig not wired"; false; }
           echo "[+] NoMount VFS subsystem patched (built-in, $(readlink fs/nomount))."
+          # 线协议版本：v21 -> v2.1.x、v22 -> v2.2.x、v23 -> v2.3.x。
+          # 驱动与元模块协议号不一致时的表现是「能装、能开机、规则一条都加载
+          # 不了」（WebUI 报 nm_load_status=123），编译期毫无提示，所以必须打出来。
+          NM_PROTO=$(grep -oP 'NOMOUNT_BASE_VERSION\s+"\K[0-9]+' fs/nomount/nomount.h || echo '?')
+          echo "[+] NoMount wire protocol = v${NM_PROTO} (metamodule must be v2.$((NM_PROTO - 20)).x)"
 
       - name: ⚙️ Enable NoMount VFS in DEFCONFIG
         if: inputs.vfs_nomount == true
