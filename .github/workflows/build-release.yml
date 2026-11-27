@@ -172,20 +172,35 @@ jobs:
           # 去重逻辑已改到下面基于 git ls-remote 的冲突递增里，故删除。
 
           # Get KernelSU version
-          git clone -b master https://github.com/backslashxx/KernelSU.git KernelSU-xxksu
-          KSU_XXKSU_VERSION=$(cd KernelSU-xxksu && expr $(/usr/bin/git rev-list --count HEAD) + 10200 - 32)
-          git clone -b main https://github.com/rsuntk/KernelSU.git KernelSU-rsuntk
-          KSU_RSUNTK_VERSION=$(cd KernelSU-rsuntk && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
-          git clone -b builtin https://github.com/ShirkNeko/SukiSU-Ultra.git KernelSU-SukiSU-Ultra
-          KSU_SUKISU_ULTRA_VERSION=$(cd KernelSU-SukiSU-Ultra && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
-          git clone -b legacy https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
-          KSU_NEXT_VERSION=$(cd KernelSU-Next && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+          if GIT_TERMINAL_PROMPT=0 git clone --depth=1 -b master https://github.com/backslashxx/KernelSU.git KernelSU-xxksu 2>/dev/null; then
+            KSU_XXKSU_VERSION=$(cd KernelSU-xxksu && expr $(/usr/bin/git rev-list --count HEAD) + 10200 - 32)
+          else
+            KSU_XXKSU_VERSION="unavailable"
+          fi
+          if GIT_TERMINAL_PROMPT=0 git clone -b main https://github.com/rsuntk/KernelSU.git KernelSU-rsuntk 2>/dev/null; then
+            KSU_RSUNTK_VERSION=$(cd KernelSU-rsuntk && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+          else
+            KSU_RSUNTK_VERSION="unavailable"
+          fi
+          if GIT_TERMINAL_PROMPT=0 git clone -b builtin https://github.com/ShirkNeko/SukiSU-Ultra.git KernelSU-SukiSU-Ultra 2>/dev/null; then
+            KSU_SUKISU_ULTRA_VERSION=$(cd KernelSU-SukiSU-Ultra && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+          else
+            KSU_SUKISU_ULTRA_VERSION="unavailable"
+          fi
+          if GIT_TERMINAL_PROMPT=0 git clone -b legacy https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next 2>/dev/null; then
+            KSU_NEXT_VERSION=$(cd KernelSU-Next && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+          else
+            KSU_NEXT_VERSION="unavailable"
+          fi
           # BakaSU（原 ReSukiSU，Baka-SU/BakaSU，原组织已归档）：
           # kernel/Kbuild 的版本公式为 KSU_VERSION = 30000 + KSU_LOCAL_VERSION + 700，
           # 即 base = 30000 + 700 = 30700。
           # 注意：旧写法 base=10200 对应的是 ReSukiSU 时代的 +289 体系，迁移后已失效，切勿沿用。
-          git clone -b main https://github.com/Baka-SU/BakaSU.git KernelSU-BakaSU
-          KSU_BAKASU_VERSION=$(cd KernelSU-BakaSU && expr $(/usr/bin/git rev-list --count HEAD) + 30700)
+          if GIT_TERMINAL_PROMPT=0 git clone -b main https://github.com/Baka-SU/BakaSU.git KernelSU-BakaSU 2>/dev/null; then
+            KSU_BAKASU_VERSION=$(cd KernelSU-BakaSU && expr $(/usr/bin/git rev-list --count HEAD) + 30700)
+          else
+            KSU_BAKASU_VERSION="unavailable"
+          fi
 
           # 本分支实际内置的 root 实现是 BakaSU，tag 里的语义化版本号取它的版本。
           ROOT_VERSION=$KSU_BAKASU_VERSION
