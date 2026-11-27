@@ -64,7 +64,7 @@ env:
   # 这里只给静态部分（不含 VFS），避免标题与实际集成内容不一致。
   # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
   # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
-  AK3_TITLE_PREFIX: "KernelSU (KSU) + SUSFS v2.4.0"
+  AK3_TITLE_PREFIX: "KernelSU-RKSU (KSU) + SUSFS v2.4.0"
   AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
@@ -102,8 +102,8 @@ env:
   # 因此这里**钉死 SHA**（KERNELSU_PIN），保证补丁与源码树一一对应、构建可复现。
   # 升上游 = 改 KERNELSU_PIN + 重新对齐两份补丁（见 Patches/Archive/README.md 的流程说明）。
   KERNELSU_AUTO_GET : "true" # if u want easy setting kernelsu, u can true.
-  KERNELSU_AUTO_FORK : "xxksu" # xxksu, rsuntk, next, resukisu and sukisu
-  KERNELSU_PIN : "4e6e9ff00b99c92a4078753b13c791ae2df11b4f"
+  KERNELSU_AUTO_FORK : "rsuntk" # xxksu, rsuntk, next, resukisu and sukisu
+  KERNELSU_PIN : "078583bef7ff723796f81fa46b073b5f33322fa4"
 
   # SUSFS 由 UI 勾选控制（susfs_enable 输入），默认开启。
   # KSU 分支的 SUSFS 是**手写桥接**（backslashxx_manual_hooks.patch 的 SUSFS 片段

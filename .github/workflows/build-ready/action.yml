@@ -136,13 +136,8 @@ runs:
             elif [[ "${{ env.KERNELSU_AUTO_FORK }}" == "rsuntk" ]]; then
                 KERNELSU_AUTHOR="rsuntk"
                 KERNELSU_NAME="KernelSU"
-                KERNELSU_ORIGIN_BRANCH="main"
-                if [[ "${{ env.SUSFS_ENABLE }}" == "true" ]]; then
-                    echo "[-] ${{ env.KERNELSU_AUTO_FORK }} doesn't support SuSFS! "
-                    false
-                else
-                    KERNELSU_BRANCH="main"
-                fi
+                KERNELSU_ORIGIN_BRANCH="master"
+                KERNELSU_BRANCH="master"
 
             elif [[ "${{ env.KERNELSU_AUTO_FORK }}" == "sukisu" ]]; then
                 KERNELSU_AUTHOR="SukiSU-Ultra"
@@ -337,7 +332,7 @@ runs:
             fi
           fi
 
-          if [[ "${{ env.KERNELSU_SOURCE }}" == *blackslashxx* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "xxksu" ]]; then
+          if [[ "${{ env.KERNELSU_SOURCE }}" == *blackslashxx* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "xxksu" ]] || [[ "${{ env.KERNELSU_SOURCE }}" == *rsuntk* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "rsuntk" ]]; then
             echo "CONFIG_KSU_KPROBES_KSUD=n" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
             # 本分支用的是**手写静态钩子**（backslashxx_manual_hooks.patch 直接在 fs/*.c 里
             # 调 ksu_handle_*）。上游把 sucompat 的钩子改成 SUCOMPAT_HOOK_TYPE 宏控制后：

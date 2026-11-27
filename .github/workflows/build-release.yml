@@ -190,8 +190,11 @@ jobs:
             echo "[-] Failed to clone backslashxx/KernelSU (repo unavailable)"
             KSU_XXKSU_VERSION="unknown"
           fi
-          if GIT_TERMINAL_PROMPT=0 git clone -b main https://github.com/rsuntk/KernelSU.git KernelSU-rsuntk 2>/dev/null; then
-            KSU_RSUNTK_VERSION=$(cd KernelSU-rsuntk && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+          if GIT_TERMINAL_PROMPT=0 git clone -b master https://github.com/rsuntk/KernelSU.git KernelSU-rsuntk 2>/dev/null; then
+            KSU_RSUNTK_VERSION=$(grep -oP 'KSU_VERSION=\K[0-9]+' KernelSU-rsuntk/kernel/Makefile | head -1)
+            if [ -z "$KSU_RSUNTK_VERSION" ]; then
+              KSU_RSUNTK_VERSION=$(cd KernelSU-rsuntk && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+            fi
           else
             KSU_RSUNTK_VERSION="unavailable"
           fi
@@ -217,7 +220,7 @@ jobs:
           fi
 
           # 本分支实际内置的 root 实现是 backslashxx 的 KernelSU，tag 里的语义化版本号取它。
-          ROOT_VERSION=$KSU_XXKSU_VERSION
+          ROOT_VERSION=$KSU_RSUNTK_VERSION
 
           # ---- tag 命名 ----
           # 格式：<分支>-v<管理器版本>-<Unix 时间戳>[ -N ]
