@@ -63,7 +63,7 @@ index 0b7ec3c..6babfbb 100644
  		}
  		break;
  	}
-@@ -789,6 +796,100 @@ out:
+@@ -789,6 +796,104 @@ out:
  	return ret;
  }
  
@@ -81,6 +81,10 @@ index 0b7ec3c..6babfbb 100644
 +	}
 +	case CMD_SUSFS_ADD_SUS_PATH_LOOP: {
 +		susfs_add_sus_path_loop(arg);
++		return 0;
++	}
++	case CMD_SUSFS_SET_SUS_PATH_UID_FILTER: {
++		susfs_set_sus_path_uid_filter(arg);
 +		return 0;
 +	}
 +#endif
