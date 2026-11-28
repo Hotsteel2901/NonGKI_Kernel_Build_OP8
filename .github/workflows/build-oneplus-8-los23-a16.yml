@@ -105,10 +105,10 @@ env:
   DEFCONFIG_ORIGIN_IMAGE: ""
   DEFCONFIG_FROM_BOOT: false
 
-  # SukiSU-Nova 官方实际仓库位于 git.zako.shirkneko.top:20004/shirkneko/SukiSU (builtin-new)
+  # SukiSU-Nova 官方实际仓库位于 git.zako.shirkneko.top:20004/shirkneko/SukiSU (builtin)
   # 上游 setup.sh 里的 clone URL 为网页链接非 .git，故使用 manual 模式直接 git clone
   KERNELSU_SOURCE : "https://git.zako.shirkneko.top:20004/shirkneko/SukiSU.git"
-  KERNELSU_BRANCH : "builtin-new"
+  KERNELSU_BRANCH : "builtin"
 
   KERNELSU_AUTO_GET : "false"
   KERNELSU_AUTO_FORK : ""

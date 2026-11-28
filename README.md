@@ -7,7 +7,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Integrations
 | Component | Note |
 |---|---|
-| SukiSU-Nova | `https://git.zako.shirkneko.top:20004/shirkneko/SukiSU.git` (`builtin-new`), `CONFIG_KSU_SUSFS` inline hook mode (or `CONFIG_KSU_HACK_ARM64_BRANCH_LINK` when SUSFS is off) |
+| SukiSU-Nova | `https://git.zako.shirkneko.top:20004/shirkneko/SukiSU.git` (`builtin`), `CONFIG_KSU_SUSFS` inline hook mode (or `CONFIG_KSU_HACK_ARM64_BRANCH_LINK` when SUSFS is off) |
 | KPM | KernelPatch Module support enabled by default (`CONFIG_KPM=y`, `KSU_CAN_USE_KPM` unlocked for 4.19 + `patch_linux` binary patching) |
 | SUSFS v2.4.0 | Official gki v2.4.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
@@ -128,7 +128,7 @@ Two things here are deliberate and easy to get wrong:
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **required** (schgm-flash.c needs CONFIG_OPLUS_SM8250_CHARGER)
 - `VFS_HYBRIDMOUNT / VFS_NOMOUNT` — mutually exclusive, see the section above
-- SukiSU-Nova (`builtin-new`) stays **latest** (`setup.sh` `git pull` each run)
+- SukiSU-Nova (`builtin`) stays **latest** (`setup.sh` `git pull` each run)
 - `KPM_ENABLE / KPM_INLINE`: controlled by `kpm_enable` input (default `true`)
 - dtb: custom step concatenates `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img`; dtbo not packed (stock partition used)
 
