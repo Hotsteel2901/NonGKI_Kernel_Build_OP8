@@ -191,8 +191,12 @@ jobs:
           else
             KSU_RSUNTK_VERSION="unavailable"
           fi
-          # SukiSU-Nova Kbuild 版本公式: VERSION_BASE (30000) + rev-list --count main + VERSION_OFFSET (996)
-          if GIT_TERMINAL_PROMPT=0 git clone -b main https://git.zako.shirkneko.top:20004/shirkneko/SukiSU.git KernelSU-SukiSU-Nova 2>/dev/null; then
+          # SukiSU-Nova Kbuild 版本公式: VERSION_BASE (30000) + commit_count(main) + VERSION_OFFSET (996)
+          # 优先通过 Gitea API X-Total-Count 获取（~1s），避免全量 clone 自建站超时
+          ZAKO_COUNT=$(curl -s -D - -o /dev/null -m 15 "https://git.zako.shirkneko.top:20004/api/v1/repos/shirkneko/SukiSU/commits?sha=main&limit=1" 2>/dev/null | tr -d '\r' | sed -n 's/^[Xx]-[Tt]otal-[Cc]ount:[[:space:]]*\([0-9]*\).*/\1/p' | head -n1)
+          if [ -n "$ZAKO_COUNT" ]; then
+            KSU_SUKISU_NOVA_VERSION=$(expr "$ZAKO_COUNT" + 30000 + 996)
+          elif GIT_TERMINAL_PROMPT=0 git clone --filter=blob:none --bare -b main https://git.zako.shirkneko.top:20004/shirkneko/SukiSU.git KernelSU-SukiSU-Nova 2>/dev/null; then
             KSU_SUKISU_NOVA_VERSION=$(cd KernelSU-SukiSU-Nova && expr $(/usr/bin/git rev-list --count HEAD) + 30000 + 996)
           else
             KSU_SUKISU_NOVA_VERSION="unavailable"

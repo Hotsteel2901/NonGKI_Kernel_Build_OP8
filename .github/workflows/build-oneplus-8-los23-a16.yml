@@ -294,6 +294,14 @@ jobs:
           echo "[+] Build SHA: $(git rev-parse HEAD)"
           echo "-g$(git rev-parse --short HEAD)-hotsteel" > .scmversion
 
+      - name: ⚡ Prevent SukiSU-Nova Kbuild from unshallow hang
+        run: |
+          KSU_KBUILD="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/Kbuild"
+          if [ -f "$KSU_KBUILD" ]; then
+            sed -i '/fetch --unshallow/d' "$KSU_KBUILD"
+            echo "[+] Removed git fetch --unshallow from Kbuild (shallow clone safe)."
+          fi
+
       - name: 🔓 Unlock SukiSU-Nova KPM for Linux 4.19
         if: env.KPM_ENABLE == 'true'
         run: |
