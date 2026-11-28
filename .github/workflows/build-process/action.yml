@@ -253,6 +253,35 @@ runs:
           cd $GITHUB_WORKSPACE/device_kernel/
           IMAGE_DIR="$GITHUB_WORKSPACE/device_kernel/out/arch/"${{ env.KERNEL_ARCH }}"/boot"
 
+          RUN_KPM_PATCH(){
+            local ORIG_SIZE NEW_SIZE
+            ORIG_SIZE=$(stat -c%s Image)
+            if [[ "${{ env.KPM_INLINE }}" == "true" ]]; then
+              if [ -f "kpimg" ]; then
+                ./patch -p -i Image -k kpimg -o oImage 2>&1 | tee /tmp/kpm_patch.log
+              else
+                ./patch 2>&1 | tee /tmp/kpm_patch.log
+              fi
+            else
+              ./kptools-linux -p -k kpimg-linux -i Image -o oImage 2>&1 | tee /tmp/kpm_patch.log
+            fi
+
+            if [ ! -f "oImage" ]; then
+              echo "[-] KPM patch failed: oImage not produced!"
+              exit 1
+            fi
+            if grep -qE 'kpimg version: 0$|kpimg: 0x[0-9a-fA-F]+,0x10,' /tmp/kpm_patch.log; then
+              echo "[-] FATAL: Empty kpimg detected (0x10 bytes / version 0) — would cause instant 9008 crash!"
+              exit 1
+            fi
+            NEW_SIZE=$(stat -c%s oImage)
+            echo "[+] Image size: ${ORIG_SIZE} -> ${NEW_SIZE} (+$((NEW_SIZE - ORIG_SIZE)) bytes)"
+            if [ $((NEW_SIZE - ORIG_SIZE)) -lt 100000 ]; then
+              echo "[-] FATAL: Patched oImage did not grow by >=100KB; kpimg payload likely missing!"
+              exit 1
+            fi
+          }
+
           if [[ -f "$IMAGE_DIR/Image.gz-dtb" ]]; then
               MODE="gz-dtb"
 
@@ -284,18 +313,14 @@ runs:
 
                   if [[ "${{ env.KPM_INLINE }}" == "true" ]]; then
                     cp patch "$IMAGE_DIR/"
+                    [ -f "kpimg" ] && cp kpimg "$IMAGE_DIR/"
                   else
                     cp kpimg-linux "$IMAGE_DIR/"
                     cp kptools-linux "$IMAGE_DIR/"
                   fi
 
                   cd "$IMAGE_DIR/" || exit 1
-
-                  if [[ "${{ env.KPM_INLINE }}" == "true" ]]; then
-                    ./patch
-                  else
-                    ./kptools-linux -p -k kptools-linux -i Image -o oImage
-                  fi
+                  RUN_KPM_PATCH
 
                   rm -f Image
                   mv oImage Image
@@ -312,18 +337,14 @@ runs:
 
               if [[ "${{ env.KPM_INLINE }}" == "true" ]]; then
                 cp patch "$IMAGE_DIR/"
+                [ -f "kpimg" ] && cp kpimg "$IMAGE_DIR/"
               else
                 cp kpimg-linux "$IMAGE_DIR/"
                 cp kptools-linux "$IMAGE_DIR/"
               fi
 
               cd "$IMAGE_DIR/" || exit 1
-
-              if [[ "${{ env.KPM_INLINE }}" == "true" ]]; then
-                ./patch
-              else
-                ./kptools-linux -p -k kptools-linux -i Image -o oImage
-              fi
+              RUN_KPM_PATCH
 
               rm -f Image
               mv oImage Image
@@ -334,18 +355,14 @@ runs:
             plain)
               if [[ "${{ env.KPM_INLINE }}" == "true" ]]; then
                 cp patch "$IMAGE_DIR/"
+                [ -f "kpimg" ] && cp kpimg "$IMAGE_DIR/"
               else
                 cp kpimg-linux "$IMAGE_DIR/"
                 cp kptools-linux "$IMAGE_DIR/"
               fi
 
               cd "$IMAGE_DIR/" || exit 1
-
-              if [[ "${{ env.KPM_INLINE }}" == "true" ]]; then
-                ./patch
-              else
-                ./kptools-linux -p -k kptools-linux -i Image -o oImage
-              fi
+              RUN_KPM_PATCH
 
               mv oImage Image
               echo "[+] Hook Image successfully !"

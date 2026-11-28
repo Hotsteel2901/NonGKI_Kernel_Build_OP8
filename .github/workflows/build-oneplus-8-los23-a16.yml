@@ -186,7 +186,11 @@ env:
   KPM_ENABLE: ${{ inputs.kpm_enable }}
   KPM_INLINE: ${{ inputs.kpm_enable }}
   KPM_KPATCH_NEXT: "false"
-  KPM_PATCH_SOURCE: "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU_patch/refs/heads/main/kpm/patch_linux"
+  # ⚠️ 切勿使用 SukiSU-Ultra/SukiSU_patch/kpm/patch_linux（自 2026-10-18 起内置 kpimg 为空 0x10 字节，
+  #    修补后内核入口跳到全 0 空区，一进第一屏即重启进 9008；见 SukiSU_patch#15）。
+  #    改用 zako 站 SukiSU_KernelPatch_patch kpm-ci 的 kptools-linux + 独立 kpimg 显式修补。
+  KPM_PATCH_SOURCE: "https://git.zako.shirkneko.top:20004/shirkneko/SukiSU_KernelPatch_patch/releases/download/kpm-ci/kptools-linux"
+  KPM_KPIMG_SOURCE: "https://git.zako.shirkneko.top:20004/shirkneko/SukiSU_KernelPatch_patch/releases/download/kpm-ci/kpimg"
 
   BASEBAND_GUARD_ENABLE: "true"
   BASEBAND_GUARD_BOOT: "false"
@@ -296,19 +300,18 @@ jobs:
 
       - name: ⚡ Prevent SukiSU-Nova Kbuild from unshallow hang
         run: |
-          KSU_KBUILD="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/Kbuild"
-          if [ -f "$KSU_KBUILD" ]; then
-            sed -i '/fetch --unshallow/d' "$KSU_KBUILD"
-            echo "[+] Removed git fetch --unshallow from Kbuild (shallow clone safe)."
-          fi
+          for f in             "$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/Kbuild"             "$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/kbuild-config/version.mk"; do
+            if [ -f "$f" ] && grep -q 'fetch --unshallow' "$f"; then
+              sed -i '/fetch --unshallow/d' "$f"
+              echo "[+] Removed git fetch --unshallow from $(basename "$f") (shallow clone safe)."
+            fi
+          done
 
-      - name: 🔓 Unlock SukiSU-Nova KPM for Linux 4.19
+      - name: 🔓 Verify/Unlock SukiSU-Nova KPM for Linux 4.19
         if: env.KPM_ENABLE == 'true'
         run: |
-          # SukiSU-Nova builtin-new 默认在 kernel_compat.h 中把 KSU_CAN_USE_KPM 限制在 >= 5.10.0。
-          # 本内核 (4.19.325) 已原生包含 include/linux/set_memory.h 与 CONFIG_KALLSYMS_ALL=y，
-          # 且 extension/kpm/{kpm,compact,super_access}.c 已做 4.x 兼容；将其放宽至 4.4.0
-          # 以便编译期启用 KPM 桥接，配合 patch_linux 修补内核镜像。
+          # 上游 SukiSU builtin (commit 97bcad2+) 已原生将 KPM 最低版本降至 Linux 3.10+。
+          # 这里保留向后兼容检查：若仍存在旧的 5.10.0 门控则放宽至 4.4.0；若已原生支持 3.10+ 则直接通过。
           COMPAT_H="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/kernel_compat.h"
           PRELUDE_H="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/include/prelude.h"
           KSU_KBUILD="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/Kbuild"
@@ -321,29 +324,27 @@ jobs:
           s_compat = p_compat.read_text()
           old_c = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n#define KSU_CAN_USE_KPM"
           new_c = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\n#define KSU_CAN_USE_KPM"
-          if new_c in s_compat:
-              print("[i] KSU_CAN_USE_KPM already unlocked for 4.4+.")
-          elif old_c in s_compat:
+          if old_c in s_compat:
               p_compat.write_text(s_compat.replace(old_c, new_c, 1))
               print("[+] Unlocked KSU_CAN_USE_KPM in kernel_compat.h (5.10.0 -> 4.4.0).")
+          elif "#define KSU_CAN_USE_KPM" in s_compat:
+              print("[i] KSU_CAN_USE_KPM already enabled for Linux 4.19 (upstream 3.10+ support).")
           else:
-              raise SystemExit("[-] KSU_CAN_USE_KPM guard not found in kernel_compat.h")
+              raise SystemExit("[-] KSU_CAN_USE_KPM not found in kernel_compat.h")
 
           p_prelude = Path(sys.argv[2])
           if p_prelude.exists():
               s_prelude = p_prelude.read_text()
               old_p = "// KPM is only built on 5.10+, keep its headers out of older trees\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)"
               new_p = "// KPM is only built on 5.10+, keep its headers out of older trees\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)"
-              if new_p in s_prelude:
-                  print("[i] KPM headers in prelude.h already unlocked for 4.4+.")
-              elif old_p in s_prelude:
+              if old_p in s_prelude:
                   p_prelude.write_text(s_prelude.replace(old_p, new_p, 1))
                   print("[+] Unlocked KPM headers in include/prelude.h (5.10.0 -> 4.4.0).")
               else:
-                  raise SystemExit("[-] KPM header guard not found in include/prelude.h")
+                  print("[i] KPM headers in include/prelude.h already enabled for Linux 4.19.")
           PYEOF
 
-          if [ -f "$KSU_KBUILD" ]; then
+          if [ -f "$KSU_KBUILD" ] && grep -q 'ifeq (\$(KERNEL_TYPE), GKI 2.0)' "$KSU_KBUILD"; then
             sed -i 's/ifeq ($(KERNEL_TYPE), GKI 2.0)/ifneq ($(KERNEL_TYPE),)/g' "$KSU_KBUILD"
           fi
 

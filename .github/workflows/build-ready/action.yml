@@ -279,6 +279,16 @@ runs:
                 false
             fi
 
+            if [ -n "${{ env.KPM_KPIMG_SOURCE }}" ]; then
+                ${{ env.CURLX }} "${{ env.KPM_KPIMG_SOURCE }}" kpimg
+                if [ ! -f "kpimg" ] || [ "$(stat -c%s kpimg)" -lt 65536 ]; then
+                    echo "[-] Downloaded kpimg is missing or too small (empty kpimg causes instant 9008 crash)!"
+                    false
+                fi
+                echo "[+] Verified kpimg ($(stat -c%s kpimg) bytes):"
+                ./patch -l -k kpimg
+            fi
+
           }
 
           GET_KPATCH_NEXT_TOOLS(){
