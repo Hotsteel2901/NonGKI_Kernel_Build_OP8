@@ -310,22 +310,37 @@ jobs:
           # 且 extension/kpm/{kpm,compact,super_access}.c 已做 4.x 兼容；将其放宽至 4.4.0
           # 以便编译期启用 KPM 桥接，配合 patch_linux 修补内核镜像。
           COMPAT_H="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/kernel_compat.h"
+          PRELUDE_H="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/include/prelude.h"
           KSU_KBUILD="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/Kbuild"
 
-          python3 - "$COMPAT_H" << 'PYEOF'
+          python3 - "$COMPAT_H" "$PRELUDE_H" << 'PYEOF'
           import sys
           from pathlib import Path
-          p = Path(sys.argv[1])
-          s = p.read_text()
-          old = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n#define KSU_CAN_USE_KPM"
-          new = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\n#define KSU_CAN_USE_KPM"
-          if new in s:
+
+          p_compat = Path(sys.argv[1])
+          s_compat = p_compat.read_text()
+          old_c = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n#define KSU_CAN_USE_KPM"
+          new_c = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\n#define KSU_CAN_USE_KPM"
+          if new_c in s_compat:
               print("[i] KSU_CAN_USE_KPM already unlocked for 4.4+.")
-          elif old in s:
-              p.write_text(s.replace(old, new, 1))
+          elif old_c in s_compat:
+              p_compat.write_text(s_compat.replace(old_c, new_c, 1))
               print("[+] Unlocked KSU_CAN_USE_KPM in kernel_compat.h (5.10.0 -> 4.4.0).")
           else:
               raise SystemExit("[-] KSU_CAN_USE_KPM guard not found in kernel_compat.h")
+
+          p_prelude = Path(sys.argv[2])
+          if p_prelude.exists():
+              s_prelude = p_prelude.read_text()
+              old_p = "// KPM is only built on 5.10+, keep its headers out of older trees\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)"
+              new_p = "// KPM is only built on 5.10+, keep its headers out of older trees\n#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)"
+              if new_p in s_prelude:
+                  print("[i] KPM headers in prelude.h already unlocked for 4.4+.")
+              elif old_p in s_prelude:
+                  p_prelude.write_text(s_prelude.replace(old_p, new_p, 1))
+                  print("[+] Unlocked KPM headers in include/prelude.h (5.10.0 -> 4.4.0).")
+              else:
+                  raise SystemExit("[-] KPM header guard not found in include/prelude.h")
           PYEOF
 
           if [ -f "$KSU_KBUILD" ]; then
