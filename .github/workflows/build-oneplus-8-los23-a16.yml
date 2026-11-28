@@ -1,4 +1,4 @@
-name: Build Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
+name: Build Oneplus 8 (LineageOS 23.2 A16) (SukiSU-Nova+KPM+SUSFS Kernel)
 
 # ============================================================================
 # 可复用构建工作流（OnePlus 8 / LineageOS 23.2 A16）
@@ -21,6 +21,11 @@ on:
         required: false
         type: boolean
         default: false
+      kpm_enable:
+        description: '集成 SukiSU-Nova KPM (KernelPatch Module 内核模块支持，默认开启)'
+        required: false
+        type: boolean
+        default: true
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: false
@@ -50,6 +55,11 @@ on:
         required: true
         type: boolean
         default: false
+      kpm_enable:
+        description: '集成 SukiSU-Nova KPM (KernelPatch Module 内核模块支持，默认开启)'
+        required: true
+        type: boolean
+        default: true
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: true
@@ -72,7 +82,7 @@ env:
   # 这里只给静态部分（不含 VFS），避免标题与实际集成内容不一致。
   # 注意: 不要在此定义 AK3_TITLE —— workflow 级 env 会覆盖 GITHUB_ENV 里的
   # 运行时值，导致动态组装的标题失效。AK3_TITLE 由 Validate 步骤写入。
-  AK3_TITLE_PREFIX: "BakaSU (Master) + SUSFS v2.4.0"
+  AK3_TITLE_PREFIX: "SukiSU-Nova (sukisu-nova) + SUSFS v2.4.0"
   AK3_TITLE_SUFFIX: "ReKernel-X + DroidSpaces + Baseband Guard Built By hotsteel"
 
   CUSTOM_CMDS : "CLANG_TRIPLE=aarch64-linux-gnu-"
@@ -103,7 +113,7 @@ env:
   # 注意: "resukisu" 只是内部标识符(下游有多处分支判断, 改动无收益), 实际仓库指向
   # Baka-SU/BakaSU, 拼出的 setup.sh 地址为:
   #   https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/main/kernel/setup.sh
-  KERNELSU_AUTO_FORK : "resukisu" # xxksu, rsuntk, next, resukisu and sukisu
+  KERNELSU_AUTO_FORK : "sukisu" # xxksu, rsuntk, next, resukisu and sukisu (SukiSU-Nova builtin-new)
 
   # SUSFS 由 UI 勾选控制（workflow_dispatch / workflow_call 的 susfs_enable 输入），
   # 默认开启。关闭时：不应用 SUSFS 补丁，改用 Patches/syscall_hook_patches.sh
@@ -175,10 +185,10 @@ env:
 
   KERNEL_PATCH: "false"
 
-  KPM_ENABLE: "false"
-  KPM_INLINE: "false"
+  KPM_ENABLE: ${{ inputs.kpm_enable }}
+  KPM_INLINE: ${{ inputs.kpm_enable }}
   KPM_KPATCH_NEXT: "false"
-  KPM_PATCH_SOURCE: ""
+  KPM_PATCH_SOURCE: "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU_patch/refs/heads/main/kpm/patch_linux"
 
   BASEBAND_GUARD_ENABLE: "true"
   BASEBAND_GUARD_BOOT: "false"
@@ -196,7 +206,7 @@ env:
 
 jobs:
   build-kernel:
-    name: Oneplus 8 (LineageOS 23.2 A16) (BakaSU+SUSFS Kernel)
+    name: Oneplus 8 (LineageOS 23.2 A16) (SukiSU-Nova+KPM+SUSFS Kernel)
     runs-on: ubuntu-latest
     outputs:
       build_sha: ${{ steps.build_sha.outputs.build_sha }}
@@ -261,7 +271,12 @@ jobs:
           if [ "$HM" = "true" ]; then VFS_LABEL="Hybrid Mount VFS"; fi
           if [ "$NM" = "true" ]; then VFS_LABEL="NoMount VFS"; fi
 
+          KPM_FLAG="${{ inputs.kpm_enable }}"
+          KPM_FLAG="${KPM_FLAG:-true}"
           TITLE="${{ env.AK3_TITLE_PREFIX }}"
+          if [ "$KPM_FLAG" = "true" ]; then
+            TITLE="$TITLE + KPM"
+          fi
           if [ -n "$VFS_LABEL" ]; then
             TITLE="$TITLE + $VFS_LABEL"
           fi
@@ -280,6 +295,36 @@ jobs:
           echo "build_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
           echo "[+] Build SHA: $(git rev-parse HEAD)"
           echo "-g$(git rev-parse --short HEAD)-hotsteel" > .scmversion
+
+      - name: 🔓 Unlock SukiSU-Nova KPM for Linux 4.19
+        if: env.KPM_ENABLE == 'true'
+        run: |
+          # SukiSU-Nova builtin-new 默认在 kernel_compat.h 中把 KSU_CAN_USE_KPM 限制在 >= 5.10.0。
+          # 本内核 (4.19.325) 已原生包含 include/linux/set_memory.h 与 CONFIG_KALLSYMS_ALL=y，
+          # 且 extension/kpm/{kpm,compact,super_access}.c 已做 4.x 兼容；将其放宽至 4.4.0
+          # 以便编译期启用 KPM 桥接，配合 patch_linux 修补内核镜像。
+          COMPAT_H="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/kernel_compat.h"
+          KSU_MK="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/Makefile"
+
+          python3 - "$COMPAT_H" << 'PYEOF'
+          import sys
+          from pathlib import Path
+          p = Path(sys.argv[1])
+          s = p.read_text()
+          old = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)\n#define KSU_CAN_USE_KPM"
+          new = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\n#define KSU_CAN_USE_KPM"
+          if new in s:
+              print("[i] KSU_CAN_USE_KPM already unlocked for 4.4+.")
+          elif old in s:
+              p.write_text(s.replace(old, new, 1))
+              print("[+] Unlocked KSU_CAN_USE_KPM in kernel_compat.h (5.10.0 -> 4.4.0).")
+          else:
+              raise SystemExit("[-] KSU_CAN_USE_KPM guard not found in kernel_compat.h")
+          PYEOF
+
+          if [ -f "$KSU_MK" ]; then
+            sed -i 's/ifeq ($(KERNEL_TYPE), GKI 2.0)/ifneq ($(KERNEL_TYPE),)/g' "$KSU_MK"
+          fi
 
       - name: 🪝 Patch Kernel of SUSFS
         uses: ./.github/workflows/patch-susfs
@@ -315,13 +360,10 @@ jobs:
               echo "[i] drivers/kernelsu/tools/susfs_compat.mk not present (not a BakaSU tree?) - skip unblock."
             fi
           else
-            # SUSFS 关闭（或走外置 LKM）：改用 syscall（手动）钩子回退，KernelSU 以
-            # CONFIG_KSU_MANUAL_HOOK 模式工作（build-ready 已写入该开关）。
-            # 脚本来自上游 JackA1ltman/NonGKI_Kernel_Build_2nd。
-            cp /tmp/Patches/syscall_hook_patches.sh ./
-            bash syscall_hook_patches.sh ./
-            rm -f syscall_hook_patches.sh
-            echo "[+] KernelSU syscall hooks patched (in-tree SUSFS disabled)."
+            # SUSFS 关闭（或走外置 LKM）：SukiSU-Nova builtin-new 已移除 CONFIG_KSU_MANUAL_HOOK，
+            # 改用其内置的 CONFIG_KSU_HACK_ARM64_BRANCH_LINK=y（build-ready 已写入 DEFCONFIG），
+            # 无需额外打 syscall_hook_patches.sh。
+            echo "[+] Using SukiSU-Nova built-in CONFIG_KSU_HACK_ARM64_BRANCH_LINK (in-tree SUSFS disabled)."
           fi
 
       - name: 🏷️ Strip "-dirty" from KernelSU version string

@@ -38,6 +38,12 @@ on:
         type: boolean
         default: false
 
+      kpm_enable:
+        description: '集成 SukiSU-Nova KPM (KernelPatch Module 内核模块支持，默认开启)'
+        required: true
+        type: boolean
+        default: true
+
       # ─────────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（二选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
@@ -66,6 +72,7 @@ jobs:
     with:
       susfs_enable: ${{ inputs.susfs_enable }}
       susfs_lkm: ${{ inputs.susfs_lkm }}
+      kpm_enable: ${{ inputs.kpm_enable }}
       vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
       vfs_nomount: ${{ inputs.vfs_nomount }}
 
@@ -85,19 +92,20 @@ jobs:
       PACK_METHOD: "Anykernel3"
       # Release 标题格式：管理器（分支名） + 时间，例如 "BakaSU (Master) 2026-10-05 10:47"。
       # 时间由 ${TIME} 在运行时拼接，这里只写前缀部分。
-      RELEASE_NAME: "BakaSU (Master)"
+      RELEASE_NAME: "SukiSU-Nova (sukisu-nova)"
       RELEASE_NOTES: |
         ### English
 
-        | Device | Codename | Kernel | System | Android | Package | Root | SuSFS | Re:Kernel | BBG | DroidSpace |
-        |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19 (`lineage-23.2`) | LineageOS 23.2 / AOSP-based | 16 | AnyKernel3 | BakaSU | v2.4.0 (in-tree) | ✓ | ✓ | ✓ |
+        | Device | Codename | Kernel | System | Android | Package | Root | KPM | SuSFS | Re:Kernel | BBG | DroidSpace |
+        |----------|----------|----------|----------|----------|----------|----------|-----|-------|-----------|-----|------------|
+        | OnePlus 8 | instantnoodle | 4.19 (`lineage-23.2`) | LineageOS 23.2 / AOSP-based | 16 | AnyKernel3 | SukiSU-Nova | ✓ (built-in + `patch_linux`) | v2.4.0 (in-tree) | ✓ | ✓ | ✓ |
 
         **What is inside**
 
         - **Kernel source**: `LineageOS/android_kernel_oneplus_sm8250` @ `lineage-23.2`
-        - **Root**: BakaSU, built in with its official SuSFS inline hooks — pair it with **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
-        - **SuSFS**: v2.4.0, compiled into the kernel (not a loadable module)
+        - **Root**: SukiSU-Nova (`builtin-new`), built in with SUSFS inline hooks (`CONFIG_KSU_SUSFS`) — pair it with **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)** (`com.sukisu.nova`)
+        - **KPM**: KernelPatch Module support enabled by default (`CONFIG_KPM=y` + `CONFIG_KALLSYMS_ALL=y` + `KSU_CAN_USE_KPM` unlocked for 4.19 + `patch_linux` binary image patching)
+        - **SuSFS**: v2.4.0, compiled into the kernel (or optional LKM mode)
         - **VFS backend**: **Hybrid Mount** *or* **NoMount** — mutually exclusive, only one is compiled in. The backend actually included is printed in the installer title.
         - **Extras**: Re:Kernel-X, DroidSpaces, Baseband Guard (BBG)
 
@@ -110,7 +118,7 @@ jobs:
            adb sideload NonGKI_Kernel_<codename>_<build>.zip
            ```
         4. Reboot to **System**.
-        5. Install **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** and verify root + SuSFS are active (Manager → Settings → SuSFS).
+        5. Install **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)** and verify root, KPM, and SuSFS are active.
 
         > **Notes**
         > - This is an **AnyKernel3** package: only the kernel image is replaced, `/data` is untouched.
@@ -122,15 +130,16 @@ jobs:
 
         ### 中文
 
-        | 设备 | 代号 | 内核 | 系统 | Android | 包格式 | Root | SuSFS | Re:Kernel | BBG | DroidSpace |
-        |----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
-        | OnePlus 8 | instantnoodle | 4.19（`lineage-23.2`） | LineageOS 23.2 / 类原生 | 16 | AnyKernel3 | BakaSU | v2.4.0（内置） | ✓ | ✓ | ✓ |
+        | 设备 | 代号 | 内核 | 系统 | Android | 包格式 | Root | KPM | SuSFS | Re:Kernel | BBG | DroidSpace |
+        |----------|----------|----------|----------|----------|----------|----------|-----|-------|-----------|-----|------------|
+        | OnePlus 8 | instantnoodle | 4.19（`lineage-23.2`） | LineageOS 23.2 / 类原生 | 16 | AnyKernel3 | SukiSU-Nova | ✓（内置 + `patch_linux`） | v2.4.0（内置） | ✓ | ✓ | ✓ |
 
         **包含内容**
 
         - **内核源码**：`LineageOS/android_kernel_oneplus_sm8250` @ `lineage-23.2`
-        - **Root**：BakaSU，使用其官方 SuSFS inline 钩子内置集成 —— 请搭配 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**
-        - **SuSFS**：v2.4.0，直接编进内核（不是外置模块）
+        - **Root**：SukiSU-Nova（`builtin-new`），使用 SUSFS inline 钩子内置集成 —— 请搭配 **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)**（包名 `com.sukisu.nova`）
+        - **KPM**：默认开启 KernelPatch Module 支持（`CONFIG_KPM=y` + `CONFIG_KALLSYMS_ALL=y` + 为 4.19 解锁 `KSU_CAN_USE_KPM` + `patch_linux` 镜像修补）
+        - **SuSFS**：v2.4.0，直接编进内核（也支持可选 LKM 模式）
         - **VFS 后端**：**Hybrid Mount** 或 **NoMount**，二者互斥，内核里只会编进其中一个。实际集成的是哪个，请以刷机包标题为准。
         - **附加组件**：Re:Kernel-X、DroidSpaces、Baseband Guard（BBG）
 
@@ -143,7 +152,7 @@ jobs:
            adb sideload NonGKI_Kernel_<代号>_<构建号>.zip
            ```
         4. 重启进入 **系统**。
-        5. 安装 **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)**，确认 root 与 SuSFS 均已生效（管理器 → 设置 → SuSFS）。
+        5. 安装 **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)**，确认 root、KPM 与 SuSFS 均已生效。
 
         > **注意**
         > - 本包为 **AnyKernel3** 格式：仅替换内核镜像，**不会清空** `/data`。
@@ -182,10 +191,10 @@ jobs:
           else
             KSU_RSUNTK_VERSION="unavailable"
           fi
-          if GIT_TERMINAL_PROMPT=0 git clone -b builtin https://github.com/ShirkNeko/SukiSU-Ultra.git KernelSU-SukiSU-Ultra 2>/dev/null; then
-            KSU_SUKISU_ULTRA_VERSION=$(cd KernelSU-SukiSU-Ultra && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+          if GIT_TERMINAL_PROMPT=0 git clone -b builtin-new https://github.com/SukiSU-Nova/SukiSU-Nova.git KernelSU-SukiSU-Nova 2>/dev/null; then
+            KSU_SUKISU_NOVA_VERSION=$(cd KernelSU-SukiSU-Nova && expr $(/usr/bin/git rev-list --count HEAD) + 30000 - 4001)
           else
-            KSU_SUKISU_ULTRA_VERSION="unavailable"
+            KSU_SUKISU_NOVA_VERSION="unavailable"
           fi
           if GIT_TERMINAL_PROMPT=0 git clone -b legacy https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next 2>/dev/null; then
             KSU_NEXT_VERSION=$(cd KernelSU-Next && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
@@ -203,7 +212,7 @@ jobs:
           fi
 
           # 本分支实际内置的 root 实现是 BakaSU，tag 里的语义化版本号取它的版本。
-          ROOT_VERSION=$KSU_BAKASU_VERSION
+          ROOT_VERSION=$KSU_SUKISU_NOVA_VERSION
 
           # ---- tag 命名 ----
           # 格式：<分支>-v<管理器版本>-<Unix 时间戳>[ -N ]
@@ -267,13 +276,14 @@ jobs:
           echo "- Branch / 分支: \`$BRANCH\`" >> $GITHUB_ENV
           echo "- Kernel commit / 内核提交: \`$TAG_TARGET\`" >> $GITHUB_ENV
           echo "- Package format / 包格式: \`$PACK_METHOD\`" >> $GITHUB_ENV
+          echo "- KPM support / KPM 支持: \`${{ inputs.kpm_enable }}\`" >> $GITHUB_ENV
           echo "- VFS backend / VFS 后端: \`$VFS_LABEL\`" >> $GITHUB_ENV
           echo "" >> $GITHUB_ENV
           echo "**Component versions / 组件版本**" >> $GITHUB_ENV
           echo "" >> $GITHUB_ENV
           echo "[KernelSU-xxksu](https://github.com/backslashxx/KernelSU) Version: $KSU_XXKSU_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-rsuntk](https://github.com/rsuntk/KernelSU) Version: $KSU_RSUNTK_VERSION  " >> $GITHUB_ENV
-          echo "[KernelSU-SukiSU-Ultra](https://github.com/ShirkNeko/SukiSU-Ultra) Version: $KSU_SUKISU_ULTRA_VERSION  " >> $GITHUB_ENV
+          echo "[SukiSU-Nova](https://github.com/SukiSU-Nova/SukiSU-Nova) Version: $KSU_SUKISU_NOVA_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) Version: $KSU_NEXT_VERSION  " >> $GITHUB_ENV
           echo "[BakaSU](https://github.com/Baka-SU/BakaSU) Version: $KSU_BAKASU_VERSION  " >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV

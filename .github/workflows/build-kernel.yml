@@ -28,6 +28,11 @@ on:
         required: false
         type: boolean
         default: false
+      kpm_enable:
+        description: '集成 SukiSU-Nova KPM (KernelPatch Module 内核模块支持，默认开启)'
+        required: false
+        type: boolean
+        default: true
       vfs_hybridmount:
         description: 'VFS 后端: Hybrid Mount (默认开启)'
         required: false
@@ -56,6 +61,11 @@ on:
         required: true
         type: boolean
         default: false
+      kpm_enable:
+        description: '集成 SukiSU-Nova KPM (KernelPatch Module 内核模块支持，默认开启)'
+        required: true
+        type: boolean
+        default: true
       # ─────────────────────────────────────────────────────────────────────
       # VFS 路径重定向后端（二选一，互斥！）
       # ─────────────────────────────────────────────────────────────────────
@@ -78,7 +88,7 @@ on:
 jobs:
   # OnePlus 8 (LineageOS 23.2)
   build-oneplus-8-lineageos23-a16:
-    name: "OnePlus 8 (LineageOS 23.2 Android 16) (BakaSU+SUSFS v2.4.0)"
+    name: "OnePlus 8 (LineageOS 23.2 Android 16) (SukiSU-Nova+KPM+SUSFS v2.4.0)"
     strategy:
       fail-fast: true
     uses: ./.github/workflows/build-oneplus-8-los23-a16.yml
@@ -90,5 +100,6 @@ jobs:
       # 被 build-release.yml 调用时用对方 with: 传入的值。
       susfs_enable: ${{ inputs.susfs_enable }}
       susfs_lkm: ${{ inputs.susfs_lkm }}
+      kpm_enable: ${{ inputs.kpm_enable }}
       vfs_hybridmount: ${{ inputs.vfs_hybridmount }}
       vfs_nomount: ${{ inputs.vfs_nomount }}

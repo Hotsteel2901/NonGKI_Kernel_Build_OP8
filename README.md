@@ -7,7 +7,8 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Integrations
 | Component | Note |
 |---|---|
-| BakaSU | KernelSU fork (formerly ReSukiSU), CONFIG_KSU_SUSFS (inline hook) mode |
+| SukiSU-Nova | `SukiSU-Nova/SukiSU-Nova` (`builtin-new`), `CONFIG_KSU_SUSFS` inline hook mode (or `CONFIG_KSU_HACK_ARM64_BRANCH_LINK` when SUSFS is off) |
+| KPM | KernelPatch Module support enabled by default (`CONFIG_KPM=y`, `KSU_CAN_USE_KPM` unlocked for 4.19 + `patch_linux` binary patching) |
 | SUSFS v2.4.0 | Official gki v2.4.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
 | NoMount VFS | `fs/nomount` built-in via upstream `kernel/setup.sh` (keyring magic `"NOMOUNT"`), off by default |
@@ -24,7 +25,7 @@ Chinese docs: [README_cn.md](README_cn.md)
    - Reboot to **System**
    - The kernel image is the only thing replaced — `/data` is **not** wiped. Back up your stock `boot.img` first so you can roll back.
    - **Magisk is NOT compatible** with these builds.
-4. Install **[BakaSU Manager](https://github.com/Baka-SU/BakaSU/releases)** and verify in it: SUSFS version **2.4.0**, allowlist & modules working.
+4. Install **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)** (`com.sukisu.nova`) and verify in it: SUSFS version **2.4.0**, KPM support, allowlist & modules working.
 
 > The upstream ReSukiSU project has been renamed/migrated to **[BakaSU](https://github.com/Baka-SU/BakaSU)** (the old
 > `ReSukiSU/ReSukiSU` org is archived; GitHub keeps permanent redirects, so old URLs still resolve). This repo now
@@ -127,7 +128,8 @@ Two things here are deliberate and easy to get wrong:
 - `KERNEL_SOURCE/Branch`: LineageOS official repo, `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **required** (schgm-flash.c needs CONFIG_OPLUS_SM8250_CHARGER)
 - `VFS_HYBRIDMOUNT / VFS_NOMOUNT` — mutually exclusive, see the section above
-- BakaSU stays **latest** (setup.sh git pull each run)
+- SukiSU-Nova (`builtin-new`) stays **latest** (`setup.sh` `git pull` each run)
+- `KPM_ENABLE / KPM_INLINE`: controlled by `kpm_enable` input (default `true`)
 - dtb: custom step concatenates `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img`; dtbo not packed (stock partition used)
 
 ## Deviations from Jack's original (intentional)

@@ -146,14 +146,10 @@ runs:
                 fi
 
             elif [[ "${{ env.KERNELSU_AUTO_FORK }}" == "sukisu" ]]; then
-                KERNELSU_AUTHOR="SukiSU-Ultra"
-                KERNELSU_NAME="SukiSU-Ultra"
+                KERNELSU_AUTHOR="SukiSU-Nova"
+                KERNELSU_NAME="SukiSU-Nova"
                 KERNELSU_ORIGIN_BRANCH="main"
-                if [[ "${{ env.SUSFS_ENABLE }}" == "true" ]]; then
-                    KERNELSU_BRANCH="builtin"
-                else
-                    KERNELSU_BRANCH="builtin"
-                fi
+                KERNELSU_BRANCH="builtin-new"
 
             elif [[ "${{ env.KERNELSU_AUTO_FORK }}" == "next" ]]; then
                 KERNELSU_AUTHOR="KernelSU-Next"
@@ -353,6 +349,9 @@ runs:
           if [[ "${{ env.KERNELSU_SOURCE }}" == *SukiSU* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "sukisu" ]] || [[ "${{ env.KERNELSU_SOURCE }}" == *ReSukiSU* ]] || [[ "${{ env.KERNELSU_SOURCE }}" == *BakaSU* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "resukisu" ]]; then
             if [[ "${{ env.SUSFS_ENABLE }}" != "true" ]]; then
                 echo "CONFIG_KSU_SUSFS=n" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
+                if [[ "${{ env.KERNELSU_SOURCE }}" == *SukiSU* ]] || [[ "${{ env.KERNELSU_AUTO_FORK }}" == "sukisu" ]]; then
+                    echo "CONFIG_KSU_HACK_ARM64_BRANCH_LINK=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
+                fi
 
             elif [[ "${{ env.SUSFS_ENABLE }}" == "true" ]]; then
                 echo "CONFIG_KSU_SUSFS=y" >> ./arch/${{ env.KERNEL_ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
