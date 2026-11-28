@@ -105,15 +105,13 @@ env:
   DEFCONFIG_ORIGIN_IMAGE: ""
   DEFCONFIG_FROM_BOOT: false
 
-  KERNELSU_SOURCE : ""
-  KERNELSU_BRANCH : ""
+  # SukiSU-Nova 官方实际仓库位于 git.zako.shirkneko.top:20004/shirkneko/SukiSU (builtin-new)
+  # 上游 setup.sh 里的 clone URL 为网页链接非 .git，故使用 manual 模式直接 git clone
+  KERNELSU_SOURCE : "https://git.zako.shirkneko.top:20004/shirkneko/SukiSU.git"
+  KERNELSU_BRANCH : "builtin-new"
 
-  # 保持 latest: 每次构建都会通过 BakaSU setup.sh (git pull) 拉取最新 main 分支
-  KERNELSU_AUTO_GET : "true" # if u want easy setting kernelsu, u can true.
-  # 注意: "resukisu" 只是内部标识符(下游有多处分支判断, 改动无收益), 实际仓库指向
-  # Baka-SU/BakaSU, 拼出的 setup.sh 地址为:
-  #   https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/main/kernel/setup.sh
-  KERNELSU_AUTO_FORK : "sukisu" # xxksu, rsuntk, next, resukisu and sukisu (SukiSU-Nova builtin-new)
+  KERNELSU_AUTO_GET : "false"
+  KERNELSU_AUTO_FORK : ""
 
   # SUSFS 由 UI 勾选控制（workflow_dispatch / workflow_call 的 susfs_enable 输入），
   # 默认开启。关闭时：不应用 SUSFS 补丁，改用 Patches/syscall_hook_patches.sh
@@ -150,7 +148,7 @@ env:
   PACK_METHOD: "Anykernel3"
   PACK_KMODULES: "false"
 
-  KERNELSU_METHOD: "shell"
+  KERNELSU_METHOD: "manual"
 
   PATCHES_SOURCE: ""
   PATCHES_BRANCH: ""
@@ -304,7 +302,7 @@ jobs:
           # 且 extension/kpm/{kpm,compact,super_access}.c 已做 4.x 兼容；将其放宽至 4.4.0
           # 以便编译期启用 KPM 桥接，配合 patch_linux 修补内核镜像。
           COMPAT_H="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/kernel_compat.h"
-          KSU_MK="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/Makefile"
+          KSU_KBUILD="$GITHUB_WORKSPACE/device_kernel/drivers/kernelsu/Kbuild"
 
           python3 - "$COMPAT_H" << 'PYEOF'
           import sys
@@ -322,8 +320,8 @@ jobs:
               raise SystemExit("[-] KSU_CAN_USE_KPM guard not found in kernel_compat.h")
           PYEOF
 
-          if [ -f "$KSU_MK" ]; then
-            sed -i 's/ifeq ($(KERNEL_TYPE), GKI 2.0)/ifneq ($(KERNEL_TYPE),)/g' "$KSU_MK"
+          if [ -f "$KSU_KBUILD" ]; then
+            sed -i 's/ifeq ($(KERNEL_TYPE), GKI 2.0)/ifneq ($(KERNEL_TYPE),)/g' "$KSU_KBUILD"
           fi
 
       - name: 🪝 Patch Kernel of SUSFS

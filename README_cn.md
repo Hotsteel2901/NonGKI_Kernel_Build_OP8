@@ -7,7 +7,7 @@
 
 | 组件 | 说明 |
 |---|---|
-| SukiSU-Nova | `SukiSU-Nova/SukiSU-Nova` (`builtin-new`), `CONFIG_KSU_SUSFS` 内联钩子模式（关闭 SUSFS 时自动切换 `CONFIG_KSU_HACK_ARM64_BRANCH_LINK`） |
+| SukiSU-Nova | `https://git.zako.shirkneko.top:20004/shirkneko/SukiSU.git` (`builtin-new`), `CONFIG_KSU_SUSFS` 内联钩子模式（关闭 SUSFS 时自动切换 `CONFIG_KSU_HACK_ARM64_BRANCH_LINK`） |
 | KPM | 默认开启 KernelPatch Module 支持（`CONFIG_KPM=y`、为 4.19 解锁 `KSU_CAN_USE_KPM` 并通过 `patch_linux` 修补镜像） |
 | SUSFS v2.4.0 | 官方 gki v2.4.0 + JackA1ltman 实证的 4.19 适配 (i_state 标志位 / p->state=0 / 旧 fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` 4.19 内置移植 (keyring 魔数 `"hm1"`), **默认开启** |
@@ -27,7 +27,7 @@
    - 重启进入系统
    - 仅替换内核镜像, **不会清空** `/data`; 刷入前建议**备份原厂 `boot.img`** 以便回滚
    - 本包**与 Magisk 不兼容**, 请勿与 Magisk 一起刷入
-5. 安装 **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)**（包名 `com.sukisu.nova`）并验证: 显示 **SUSFS 2.4.0**、KPM 支持与授权/模块功能正常.
+5. 安装 **[SukiSU-Nova Manager](https://git.zako.shirkneko.top:20004/shirkneko/SukiSU/releases)**（包名 `com.sukisu.nova`）并验证: 显示 **SUSFS 2.4.0**、KPM 支持与授权/模块功能正常.
 
 > 上游 ReSukiSU 项目已更名/迁移为 **[BakaSU](https://github.com/Baka-SU/BakaSU)** (原 `ReSukiSU/ReSukiSU`
 > 组织已归档; GitHub 保留永久重定向, 旧地址仍可访问)。本仓库现已直接指向新地址。
@@ -126,7 +126,7 @@
 - `KERNEL_SOURCE/Branch`: LineageOS 官方仓库 `lineage-23.2`
 - `MERGE_CONFIG_FILES: vendor/oplus.config` — **必须保留** (schgm-flash.c 需要 CONFIG_OPLUS_SM8250_CHARGER)
 - `VFS_HYBRIDMOUNT / VFS_NOMOUNT` — 互斥, 详见上一节
-- `KERNELSU_AUTO_FORK: sukisu` — 自动获取最新 SukiSU-Nova (`builtin-new`)
+- `KERNELSU_SOURCE: https://git.zako.shirkneko.top:20004/shirkneko/SukiSU.git` (`builtin-new`) — 直连 SukiSU-Nova 实际仓库
 - `kpm_enable` — 控制 KPM 内核模块支持（默认 `true`）
 - dtb: 构建后自定义步骤拼接 `kona.dtb + kona-v2.dtb + kona-v2.1.dtb` → `dtb.img` (与官方 DTB_SZ 一致)
 - dtbo: 不打包 (NEED_DTBO=false, 沿用系统分区的 dtbo)

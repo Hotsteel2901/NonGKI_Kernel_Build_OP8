@@ -103,7 +103,7 @@ jobs:
         **What is inside**
 
         - **Kernel source**: `LineageOS/android_kernel_oneplus_sm8250` @ `lineage-23.2`
-        - **Root**: SukiSU-Nova (`builtin-new`), built in with SUSFS inline hooks (`CONFIG_KSU_SUSFS`) — pair it with **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)** (`com.sukisu.nova`)
+        - **Root**: SukiSU-Nova (`builtin-new` @ `git.zako.shirkneko.top:20004/shirkneko/SukiSU`), built in with SUSFS inline hooks (`CONFIG_KSU_SUSFS`) — pair it with **[SukiSU-Nova Manager](https://git.zako.shirkneko.top:20004/shirkneko/SukiSU/releases)** (`com.sukisu.nova`)
         - **KPM**: KernelPatch Module support enabled by default (`CONFIG_KPM=y` + `CONFIG_KALLSYMS_ALL=y` + `KSU_CAN_USE_KPM` unlocked for 4.19 + `patch_linux` binary image patching)
         - **SuSFS**: v2.4.0, compiled into the kernel (or optional LKM mode)
         - **VFS backend**: **Hybrid Mount** *or* **NoMount** — mutually exclusive, only one is compiled in. The backend actually included is printed in the installer title.
@@ -118,7 +118,7 @@ jobs:
            adb sideload NonGKI_Kernel_<codename>_<build>.zip
            ```
         4. Reboot to **System**.
-        5. Install **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)** and verify root, KPM, and SuSFS are active.
+        5. Install **[SukiSU-Nova Manager](https://git.zako.shirkneko.top:20004/shirkneko/SukiSU/releases)** and verify root, KPM, and SuSFS are active.
 
         > **Notes**
         > - This is an **AnyKernel3** package: only the kernel image is replaced, `/data` is untouched.
@@ -137,7 +137,7 @@ jobs:
         **包含内容**
 
         - **内核源码**：`LineageOS/android_kernel_oneplus_sm8250` @ `lineage-23.2`
-        - **Root**：SukiSU-Nova（`builtin-new`），使用 SUSFS inline 钩子内置集成 —— 请搭配 **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)**（包名 `com.sukisu.nova`）
+        - **Root**：SukiSU-Nova（`builtin-new` @ `git.zako.shirkneko.top:20004/shirkneko/SukiSU`），使用 SUSFS inline 钩子内置集成 —— 请搭配 **[SukiSU-Nova Manager](https://git.zako.shirkneko.top:20004/shirkneko/SukiSU/releases)**（包名 `com.sukisu.nova`）
         - **KPM**：默认开启 KernelPatch Module 支持（`CONFIG_KPM=y` + `CONFIG_KALLSYMS_ALL=y` + 为 4.19 解锁 `KSU_CAN_USE_KPM` + `patch_linux` 镜像修补）
         - **SuSFS**：v2.4.0，直接编进内核（也支持可选 LKM 模式）
         - **VFS 后端**：**Hybrid Mount** 或 **NoMount**，二者互斥，内核里只会编进其中一个。实际集成的是哪个，请以刷机包标题为准。
@@ -152,7 +152,7 @@ jobs:
            adb sideload NonGKI_Kernel_<代号>_<构建号>.zip
            ```
         4. 重启进入 **系统**。
-        5. 安装 **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)**，确认 root、KPM 与 SuSFS 均已生效。
+        5. 安装 **[SukiSU-Nova Manager](https://git.zako.shirkneko.top:20004/shirkneko/SukiSU/releases)**，确认 root、KPM 与 SuSFS 均已生效。
 
         > **注意**
         > - 本包为 **AnyKernel3** 格式：仅替换内核镜像，**不会清空** `/data`。
@@ -191,8 +191,9 @@ jobs:
           else
             KSU_RSUNTK_VERSION="unavailable"
           fi
-          if GIT_TERMINAL_PROMPT=0 git clone -b builtin-new https://github.com/SukiSU-Nova/SukiSU-Nova.git KernelSU-SukiSU-Nova 2>/dev/null; then
-            KSU_SUKISU_NOVA_VERSION=$(cd KernelSU-SukiSU-Nova && expr $(/usr/bin/git rev-list --count HEAD) + 30000 - 4001)
+          # SukiSU-Nova Kbuild 版本公式: VERSION_BASE (30000) + rev-list --count main + VERSION_OFFSET (996)
+          if GIT_TERMINAL_PROMPT=0 git clone -b main https://git.zako.shirkneko.top:20004/shirkneko/SukiSU.git KernelSU-SukiSU-Nova 2>/dev/null; then
+            KSU_SUKISU_NOVA_VERSION=$(cd KernelSU-SukiSU-Nova && expr $(/usr/bin/git rev-list --count HEAD) + 30000 + 996)
           else
             KSU_SUKISU_NOVA_VERSION="unavailable"
           fi
@@ -283,7 +284,7 @@ jobs:
           echo "" >> $GITHUB_ENV
           echo "[KernelSU-xxksu](https://github.com/backslashxx/KernelSU) Version: $KSU_XXKSU_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-rsuntk](https://github.com/rsuntk/KernelSU) Version: $KSU_RSUNTK_VERSION  " >> $GITHUB_ENV
-          echo "[SukiSU-Nova](https://github.com/SukiSU-Nova/SukiSU-Nova) Version: $KSU_SUKISU_NOVA_VERSION  " >> $GITHUB_ENV
+          echo "[SukiSU-Nova](https://git.zako.shirkneko.top:20004/shirkneko/SukiSU) Version: $KSU_SUKISU_NOVA_VERSION  " >> $GITHUB_ENV
           echo "[KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) Version: $KSU_NEXT_VERSION  " >> $GITHUB_ENV
           echo "[BakaSU](https://github.com/Baka-SU/BakaSU) Version: $KSU_BAKASU_VERSION  " >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV

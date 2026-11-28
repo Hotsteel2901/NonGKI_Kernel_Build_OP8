@@ -7,7 +7,7 @@ Chinese docs: [README_cn.md](README_cn.md)
 ## Integrations
 | Component | Note |
 |---|---|
-| SukiSU-Nova | `SukiSU-Nova/SukiSU-Nova` (`builtin-new`), `CONFIG_KSU_SUSFS` inline hook mode (or `CONFIG_KSU_HACK_ARM64_BRANCH_LINK` when SUSFS is off) |
+| SukiSU-Nova | `https://git.zako.shirkneko.top:20004/shirkneko/SukiSU.git` (`builtin-new`), `CONFIG_KSU_SUSFS` inline hook mode (or `CONFIG_KSU_HACK_ARM64_BRANCH_LINK` when SUSFS is off) |
 | KPM | KernelPatch Module support enabled by default (`CONFIG_KPM=y`, `KSU_CAN_USE_KPM` unlocked for 4.19 + `patch_linux` binary patching) |
 | SUSFS v2.4.0 | Official gki v2.4.0 + JackA1ltman's proven 4.19 adaptations (i_state flags / p->state=0 / legacy fsnotify API) |
 | Hybrid Mount VFS | `fs/hybridmount` built-in 4.19 port (keyring magic `"hm1"`), **default ON** |
@@ -25,7 +25,7 @@ Chinese docs: [README_cn.md](README_cn.md)
    - Reboot to **System**
    - The kernel image is the only thing replaced — `/data` is **not** wiped. Back up your stock `boot.img` first so you can roll back.
    - **Magisk is NOT compatible** with these builds.
-4. Install **[SukiSU-Nova Manager](https://github.com/SukiSU-Nova/SukiSU-Nova/releases)** (`com.sukisu.nova`) and verify in it: SUSFS version **2.4.0**, KPM support, allowlist & modules working.
+4. Install **[SukiSU-Nova Manager](https://git.zako.shirkneko.top:20004/shirkneko/SukiSU/releases)** (`com.sukisu.nova`) and verify in it: SUSFS version **2.4.0**, KPM support, allowlist & modules working.
 
 > The upstream ReSukiSU project has been renamed/migrated to **[BakaSU](https://github.com/Baka-SU/BakaSU)** (the old
 > `ReSukiSU/ReSukiSU` org is archived; GitHub keeps permanent redirects, so old URLs still resolve). This repo now
